@@ -4,7 +4,7 @@ import { Send, RotateCcw, Plus, Check, ExternalLink } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { clsx } from 'clsx'
 import { sendChatMessage, type ChatMessage } from '@/lib/chatService'
-import { searchWebShop, cleanProductTitle } from '@/lib/webShopService'
+import { searchWebShop, cleanProductTitle, type Retailer } from '@/lib/webShopService'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useUserStore } from '@/store/userStore'
 import { useChatStore } from '@/store/chatStore'
@@ -36,12 +36,26 @@ function findMentionedCatalogItems(content: string): CatalogItem[] {
 // query to run a live Exa search, so the recommendation resolves to a real,
 // current product link instead of a name she can't verify. The slot is for
 // the server's outfit check; older messages without one still parse.
-const SHOP_TAG_RE = /\[\[SHOP:\s*(?:[a-z]+\s*\|\s*)?([^\]]+)\]\]/i
+const SHOP_TAG_RE = /\[\[SHOP:\s*(?:[a-z]+\s*\|\s*)?([^\]]+)\]\]/gi
 
-function extractShopQuery(content: string): { text: string; query: string | null } {
-  const match = content.match(SHOP_TAG_RE)
-  if (!match) return { text: content, query: null }
-  return { text: content.replace(SHOP_TAG_RE, '').trim(), query: match[1].trim() }
+const RETAILERS: Retailer[] = ['zara', 'hm', 'cos', 'uniqlo', 'mango', 'stories', 'everlane']
+
+interface ShopQuery {
+  query: string
+  retailer: Retailer | null
+}
+
+// A tag can end with a store the user asked for: [[SHOP: dress | black slip dress | zara]].
+// A list of options carries one tag per piece, so every tag is stripped and searched.
+function extractShopQueries(content: string): { text: string; queries: ShopQuery[] } {
+  const queries: ShopQuery[] = []
+  for (const match of content.matchAll(SHOP_TAG_RE)) {
+    const [query, store] = match[1].split('|').map((part) => part.trim())
+    if (!query || queries.some((q) => q.query === query)) continue
+    queries.push({ query, retailer: RETAILERS.find((r) => r === store?.toLowerCase()) ?? null })
+  }
+  const text = content.replace(SHOP_TAG_RE, '').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim()
+  return { text, queries: queries.slice(0, 4) }
 }
 
 export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
@@ -408,9 +422,9 @@ function MessageBubble({
   onAddCatalogItem: (item: CatalogItem) => void
 }) {
   const isUser = message.role === 'user'
-  const { text, query: shopQuery } = isUser
-    ? { text: message.content, query: null as string | null }
-    : extractShopQuery(message.content)
+  const { text, queries: shopQueries } = isUser
+    ? { text: message.content, queries: [] as ShopQuery[] }
+    : extractShopQueries(message.content)
   const mentioned = isUser ? [] : findMentionedCatalogItems(text)
 
   return (
@@ -433,7 +447,15 @@ function MessageBubble({
         </div>
       </div>
 
-      {shopQuery && <ExternalShopSuggestion query={shopQuery} />}
+      {shopQueries.map((q) => (
+        <ExternalShopSuggestion
+          key={q.query}
+          query={q.query}
+          retailer={q.retailer}
+          // One store, one piece → show more of that store's options.
+          limit={shopQueries.length === 1 && q.retailer ? 6 : 3}
+        />
+      ))}
 
       {/* Real catalog pieces Kaia named — add them to the Kloset directly, or shop/rent, without leaving the chat. */}
       {mentioned.length > 0 && (
@@ -469,21 +491,21 @@ function MessageBubble({
 // results, or an upstream error all just mean no card renders, rather than
 // cluttering the chat with an error state for what's a bonus, not the reply.
 // Brand names are never shown — just the piece and a link.
-function ExternalShopSuggestion({ query }: { query: string }) {
+function ExternalShopSuggestion({ query, retailer, limit }: { query: string; retailer: Retailer | null; limit: number }) {
   const [status, setStatus] = useState<'loading' | 'done' | 'none'>('loading')
   const [results, setResults] = useState<WebShopResult[]>([])
 
   useEffect(() => {
     let cancelled = false
     setStatus('loading')
-    searchWebShop(query)
+    searchWebShop(query, retailer ? [retailer] : undefined)
       .then(({ results: found, noKey, error }) => {
         if (cancelled) return
         if (noKey || error || !found.length) {
           setStatus('none')
           return
         }
-        setResults(found.slice(0, 3))
+        setResults(found.slice(0, limit))
         setStatus('done')
       })
       .catch(() => {
@@ -492,7 +514,7 @@ function ExternalShopSuggestion({ query }: { query: string }) {
     return () => {
       cancelled = true
     }
-  }, [query])
+  }, [query, retailer, limit])
 
   if (status === 'none') return null
 

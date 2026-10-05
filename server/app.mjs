@@ -273,6 +273,19 @@ function isLikelyNonUS(url) {
   }
 }
 
+// Zara serves crawlers a placeholder title ("Search engine | ZARA United States")
+// on real product pages — fall back to the product name in the URL slug,
+// e.g. /satin-dress-with-spaghetti-straps-p07904331.html.
+function titleFor(r) {
+  const title = (r.title ?? '').trim()
+  if (title && !/search engine/i.test(title)) return title
+  const slug = (() => {
+    try { return new URL(r.url).pathname.split('/').pop() ?? '' } catch { return '' }
+  })()
+  const name = slug.replace(/\.html?$/i, '').replace(/-p\d+$/i, '').replace(/-/g, ' ').trim()
+  return name ? name.charAt(0).toUpperCase() + name.slice(1) : 'View item'
+}
+
 app.post('/api/web-shop-search', async (req, res) => {
   const { query, retailers } = req.body ?? {}
 
@@ -336,7 +349,7 @@ app.post('/api/web-shop-search', async (req, res) => {
       const domain = domainOf(r.url)
       return {
         id: r.id ?? r.url,
-        title: r.title ?? 'View item',
+        title: titleFor(r),
         url: r.url,
         domain,
         retailer: retailerNameFor(domain),
@@ -374,6 +387,14 @@ function cap(str, max) {
 // Calls Groq's gpt-oss-120b model. Throws with a `.status` set to the
 // upstream HTTP status so the caller can tell a capacity issue (429/413)
 // apart from a real failure.
+// The canned one-liner gpt-oss gives when it decides not to answer — never a
+// useful reply in a styling chat.
+function isBareRefusal(text) {
+  if (typeof text !== 'string') return false
+  const t = text.trim()
+  return t.length < 200 && /^i[’']?m sorry,? but i (can[’']?t|cannot|won[’']?t)/i.test(t)
+}
+
 async function callGroq(apiKey, systemPrompt, recentMessages) {
   const requestBody = JSON.stringify({
     model: 'openai/gpt-oss-120b',
@@ -483,16 +504,22 @@ CRITICAL RULES:
 - When wardrobe is small, be creative with combinations and suggest what to add next
 - If a good outfit needs a piece they don't own, or a real gap from their wardrobe patterns is worth filling, you may recommend ONE piece — either from Kloset's own catalog above, OR as an external piece to shop for
 - A recommended piece must fill a slot the outfit DOESN'T already have from their own clothes (e.g. they have a top and bottom but no shoes → recommend shoes; never recommend jeans for an outfit that already has jeans). Put it in the outfit as its slot line marked "(to buy)", e.g. "- Shoes: tan leather loafers (to buy)", and name the owned pieces it pairs with and why
-- NEVER name any brand, retailer, or store (no Zara, H&M, COS, Uniqlo, Mango, etc.) — Kloset suggests pieces, not brands. Describe what to look for, and the live product links that appear below your reply handle where to buy it
+- Don't bring up brands or stores on your own — describe what to look for, and the live product links that appear below your reply handle where to buy it
+- If they ASK for a specific store, that's a normal request — never refuse it. The live links can search Zara, H&M, COS, Uniqlo, Mango, & Other Stories and Everlane: add that store as a third part of the shop tag (see below) so the links come from it. For any other store, say the links come from those stores instead
+- If they ask for options or a list rather than one look, answer with a short bullet list of distinct pieces (one line each, no long outfit write-up), each followed by its own shop tag, and let the live links below show the actual products
+- Never reply with a bare refusal like "I can't help with that" — every request here is about clothes, so always give a useful styling answer
 - Ground every external recommendation in something specific about them: a colour they're missing, a formality gap, a favourite they own, their occupation/lifestyle — say why it complements their closet, not just that it's nice
-- When you recommend a specific external piece, end that recommendation with a tag on its own line: [[SHOP: <slot> | <colour> <specific item type>]] — e.g. [[SHOP: shoes | tan leather loafers]] or [[SHOP: bottom | black wide-leg trousers]]. <slot> is one of top, bottom, dress, outerwear, shoes, accessory. The query must name a specific item type (loafers, wide-leg trousers, denim jacket, slip dress) — never just "top" or "shoes" — because it's used to find real individual product pages, which appear below your message. Only include it for one genuine recommendation per reply, never for hypotheticals or general musing
+- When you recommend a specific external piece, end that recommendation with a tag on its own line: [[SHOP: <slot> | <colour> <specific item type>]] — e.g. [[SHOP: shoes | tan leather loafers]] or [[SHOP: bottom | black wide-leg trousers]]. <slot> is one of top, bottom, dress, outerwear, shoes, accessory. When they asked for a specific store from the list above, add it as a third part: [[SHOP: dress | black slip dress | zara]] (one of zara, hm, cos, uniqlo, mango, stories, everlane). The query must name a specific item type (loafers, wide-leg trousers, denim jacket, slip dress) — never just "top" or "shoes" — because it's used to find real individual product pages, which appear below your message. Use one tag per genuinely recommended piece (at most 4, e.g. one per option in a list), never for hypotheticals or general musing
 - You have NO live inventory access and have not "found," "seen," or "spotted" any specific external item. Describe the piece only by its colour and item type (the same words as the tag) plus the personal reasoning — don't invent fabric, fit details, or features the real listing might contradict. E.g. correct: "Tan loafers would warm up your white-and-denim look." Wrong: "Buttery soft Italian-leather loafers with a cushioned sole."
 - Don't invent specific prices, stock, or exact product names for external pieces
 - Keep responses concise (2–4 sentences for simple questions, more for outfit requests)
 - When building an outfit, list pieces clearly
 - Be encouraging, warm, and fashion-forward`
 
-  const recentMessages = messages.slice(-12)
+  // A refusal left in the history makes the model keep refusing ("why" → same line).
+  const recentMessages = messages
+    .filter((m) => !(m.role === 'assistant' && isBareRefusal(m.content)))
+    .slice(-12)
 
   // Sized to catch exactly this class of bug — a huge paste into the chat
   // input, or a wardrobe/shop summary that's grown unexpectedly large — by
@@ -511,7 +538,11 @@ CRITICAL RULES:
     let lastError = null
     if (groqKey) {
       try {
-        return { reply: await callGroq(groqKey, systemPrompt, msgs), source: 'groq' }
+        const reply = await callGroq(groqKey, systemPrompt, msgs)
+        if (!isBareRefusal(reply)) return { reply, source: 'groq' }
+        // gpt-oss sometimes answers a harmless styling ask with its canned refusal.
+        console.warn(`[chat] Groq returned a bare refusal ("${reply}") — trying the fallback`)
+        lastError = new Error('Groq refused')
       } catch (e) {
         lastError = e
         const isCapacityIssue = e.status === 429 || e.status === 413
