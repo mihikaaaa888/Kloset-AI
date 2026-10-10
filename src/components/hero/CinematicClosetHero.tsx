@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { useCinematicChromaHero } from '@/hooks/useCinematicChromaHero'
 
-const VIDEO_SRC = '/videos/closet-hero.mp4'
-const BACKGROUND_VIDEO_SRC = '/videos/kloset-hero-bg.mp4' // full-bleed background the closet door opens onto
+// Versioned names: these are served with a year-long immutable cache, so a
+// re-encode must ship under a new filename. Both are 720p; the closet video has a
+// keyframe every 4 frames so scroll-scrubbing can land on any frame quickly.
+const VIDEO_SRC = '/videos/closet-hero-v2.mp4'
+const BACKGROUND_VIDEO_SRC = '/videos/kloset-hero-bg-v2.mp4' // full-bleed background the closet door opens onto
+const BACKGROUND_POSTER_SRC = '/videos/kloset-hero-bg-poster.jpg' // its first frame, shown before the video loads
 const HERO_SCROLL_VH = 600 // scroll runway for the pinned closet animation — more room to breathe
-// The cabinet's inner opening in closet-hero.mp4 (1920x1080), as
+// The cabinet's inner opening in the closet video, as
 // [left, top, right, bottom] fractions of the frame — measured from the
 // fully-open frame. The background video shows through this area only.
 const DOORWAY_RECT: [number, number, number, number] = [0.391, 0.153, 0.608, 0.732]
@@ -40,10 +44,13 @@ function HeroBackdrop() {
 function BackgroundVideo({
   visible,
   playing = visible,
+  preload = 'auto',
   videoRef,
 }: {
   visible: boolean
   playing?: boolean
+  /** 'none' holds off the download, so it doesn't compete with the closet video. */
+  preload?: 'auto' | 'none'
   videoRef?: RefObject<HTMLVideoElement>
 }) {
   const ownRef = useRef<HTMLVideoElement>(null)
@@ -72,10 +79,11 @@ function BackgroundVideo({
         ref={ref}
         className="absolute inset-0 w-full h-full object-cover"
         src={BACKGROUND_VIDEO_SRC}
+        poster={BACKGROUND_POSTER_SRC}
         muted
         loop
         playsInline
-        preload="auto"
+        preload={preload}
         tabIndex={-1}
         onError={() => console.error('[hero-bg-video] failed to load', BACKGROUND_VIDEO_SRC)}
       />
@@ -138,9 +146,10 @@ function CinematicHeroDesktop({ onDoorOpenChange }: CinematicClosetHeroProps) {
     onDoorOpenChange?.(open)
   }, [onDoorOpenChange])
 
-  const { isReady, hasError } = useCinematicChromaHero({
+  const { isReady, hasError, progress } = useCinematicChromaHero({
     containerRef,
     videoRef,
+    src: VIDEO_SRC,
     canvasRef,
     innerVideoRef: backgroundVideoRef,
     innerRect: DOORWAY_RECT,
@@ -173,6 +182,7 @@ function CinematicHeroDesktop({ onDoorOpenChange }: CinematicClosetHeroProps) {
           videoRef={backgroundVideoRef}
           visible={isReady && doorOpen}
           playing={isReady && doorOpening}
+          preload={isReady ? 'auto' : 'none'}
         />
 
         {/* Closet video layer — chroma-keyed transparent portal, zooms toward
@@ -190,7 +200,6 @@ function CinematicHeroDesktop({ onDoorOpenChange }: CinematicClosetHeroProps) {
             show up. Laid out off-screen instead, so decoding stays reliable. */}
         <video
           ref={videoRef}
-          src={VIDEO_SRC}
           aria-hidden="true"
           tabIndex={-1}
           style={{ position: 'absolute', width: 1, height: 1, left: -9999, top: -9999, opacity: 0, pointerEvents: 'none' }}
@@ -198,7 +207,14 @@ function CinematicHeroDesktop({ onDoorOpenChange }: CinematicClosetHeroProps) {
 
         {!isReady && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-8 h-8 rounded-full border-2 border-butter-yellow/30 border-t-butter-yellow animate-spin" />
+            <div
+              className="w-40 h-0.5 rounded-full bg-butter-yellow/20 overflow-hidden"
+              role="progressbar"
+              aria-label="Loading"
+              aria-valuenow={Math.round(progress * 100)}
+            >
+              <div className="h-full bg-butter-yellow transition-[width] duration-200" style={{ width: `${Math.max(progress, 0.03) * 100}%` }} />
+            </div>
           </div>
         )}
       </div>
