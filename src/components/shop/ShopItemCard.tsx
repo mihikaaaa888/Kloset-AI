@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Plus, Check, ArrowUpRight } from 'lucide-react'
-import { colourNameToHex } from '@/lib/colourUtils'
+import { colourNameToHex, isLightColour } from '@/lib/colourUtils'
+import { CategoryGlyph } from '@/components/wardrobe/categoryVisuals'
 import { formatINR } from '@/lib/shopping'
 import type { CatalogItem } from '@/types'
 
@@ -15,6 +16,7 @@ interface ShopItemCardProps {
 export function ShopItemCard({ item, mode, inWardrobe, onAdd }: ShopItemCardProps) {
   const [imageFailed, setImageFailed] = useState(false)
   const fallbackHex = item.colours[0] ? colourNameToHex(item.colours[0]) : '#EDE9E2'
+  const fallbackText = isLightColour(fallbackHex) ? 'text-text-primary/35' : 'text-white/45'
   const href = mode === 'rent' ? item.rentUrl : item.shopUrl
 
   return (
@@ -26,7 +28,7 @@ export function ShopItemCard({ item, mode, inWardrobe, onAdd }: ShopItemCardProp
         onClick={() => console.log('[shop] open item', { id: item.id, mode })}
         className="relative block aspect-[3/4] overflow-hidden bg-cream-200"
       >
-        {!imageFailed ? (
+        {item.imageUrl && !imageFailed ? (
           <img
             src={item.imageUrl}
             alt={item.name}
@@ -35,7 +37,13 @@ export function ShopItemCard({ item, mode, inWardrobe, onAdd }: ShopItemCardProp
             className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
           />
         ) : (
-          <div className="w-full h-full" style={{ backgroundColor: fallbackHex }} />
+          <div
+            aria-hidden="true"
+            className="w-full h-full flex items-center justify-center"
+            style={{ backgroundColor: fallbackHex }}
+          >
+            <CategoryGlyph category={item.category} size={56} className={fallbackText} />
+          </div>
         )}
         {inWardrobe && (
           <span className="absolute top-3 left-3 text-2xs uppercase tracking-widest text-text-primary bg-warm-cream/90 px-2 py-1">
