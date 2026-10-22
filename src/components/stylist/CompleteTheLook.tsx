@@ -85,7 +85,7 @@ function MissingPiece({ role, suggestion }: { role: MissingRole; suggestion: Out
                 href={r.url}
                 target="_blank"
                 rel="noreferrer"
-                onClick={() => console.log('[complete-the-look] open', { role, id: r.id })}
+                onClick={() => { console.log('[complete-the-look] open', { role, id: r.id }) }}
                 className="group flex items-center gap-3"
               >
                 <div className="w-14 h-16 flex-shrink-0 bg-cream-200 overflow-hidden">

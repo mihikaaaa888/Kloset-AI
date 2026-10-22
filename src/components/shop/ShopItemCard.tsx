@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Check, ArrowUpRight } from 'lucide-react'
+import { Plus, Check, ArrowUpRight, Shirt } from 'lucide-react'
 import { colourNameToHex } from '@/lib/colourUtils'
 import { formatINR } from '@/lib/shopping'
 import type { CatalogItem } from '@/types'
@@ -11,7 +11,7 @@ interface ShopItemCardProps {
   onAdd: () => void
 }
 
-/** H&M-style product tile — photo, name, price, plain-text actions. No card box, no brand. */
+/** H&M-style product tile — photo, name, price, plain-text actions. No card box; a small retailer tag sits on the photo. */
 export function ShopItemCard({ item, mode, inWardrobe, onAdd }: ShopItemCardProps) {
   const [imageFailed, setImageFailed] = useState(false)
   const fallbackHex = item.colours[0] ? colourNameToHex(item.colours[0]) : '#EDE9E2'
@@ -23,7 +23,7 @@ export function ShopItemCard({ item, mode, inWardrobe, onAdd }: ShopItemCardProp
         href={href}
         target="_blank"
         rel="noreferrer"
-        onClick={() => console.log('[shop] open item', { id: item.id, mode })}
+        onClick={() => { console.log('[shop] open item', { id: item.id, mode }) }}
         className="relative block aspect-[3/4] overflow-hidden bg-cream-200"
       >
         {!imageFailed ? (
@@ -31,11 +31,28 @@ export function ShopItemCard({ item, mode, inWardrobe, onAdd }: ShopItemCardProp
             src={item.imageUrl}
             alt={item.name}
             loading="lazy"
+            referrerPolicy="no-referrer"
             onError={() => setImageFailed(true)}
+            onLoad={(e) => {
+              const { naturalWidth: w, naturalHeight: h } = e.currentTarget
+              // Retailer logos / 1px placeholders load fine but aren't product photos.
+              if (w < 200 || h < 200 || w / h > 1.6) setImageFailed(true)
+            }}
             className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
           />
         ) : (
-          <div className="w-full h-full" style={{ backgroundColor: fallbackHex }} />
+          <div
+            className="w-full h-full flex flex-col items-center justify-center gap-3 px-4 text-center"
+            style={{ background: `linear-gradient(160deg, ${fallbackHex}33, ${fallbackHex}99)` }}
+          >
+            <Shirt size={32} strokeWidth={1.25} className="text-text-primary/40" />
+            <span className="text-2xs uppercase tracking-widest text-text-primary/50">Photo unavailable</span>
+          </div>
+        )}
+        {item.brand && (
+          <span className="absolute bottom-3 left-3 text-2xs uppercase tracking-widest text-text-primary bg-warm-cream/90 px-2 py-1">
+            {item.brand}
+          </span>
         )}
         {inWardrobe && (
           <span className="absolute top-3 left-3 text-2xs uppercase tracking-widest text-text-primary bg-warm-cream/90 px-2 py-1">

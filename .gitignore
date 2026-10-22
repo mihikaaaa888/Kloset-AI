@@ -10,3 +10,18 @@ dist-ssr
 
 # Claude Code local artifacts
 .claude/
+
+# Hosting CLIs
+.netlify/
+.vercel/
+
+# Tooling output
+*.tsbuildinfo
+coverage/
+playwright-report/
+test-results/
+
+# Editors
+.idea/
+.vscode/
+*.swp

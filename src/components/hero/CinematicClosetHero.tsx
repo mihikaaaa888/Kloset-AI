@@ -62,7 +62,7 @@ function BackgroundVideo({
     if (playing) {
       video.currentTime = 0
       video.play()
-        .then(() => console.log('[hero-bg-video] playing'))
+        .then(() => { console.log('[hero-bg-video] playing') })
         .catch((err) => console.error('[hero-bg-video] play failed', err))
     } else {
       video.pause()
