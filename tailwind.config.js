@@ -93,6 +93,7 @@ export default {
         'fade-in': 'fadeIn 0.4s ease-out forwards',
         'slide-in-right': 'slideInRight 0.4s ease-out forwards',
         'slide-up': 'slideUp 0.35s cubic-bezier(0.32, 0.72, 0, 1) forwards',
+        'scroll-cue': 'scrollCue 2.2s cubic-bezier(0.65, 0, 0.35, 1) infinite',
       },
       keyframes: {
         fadeUp: {
@@ -106,6 +107,13 @@ export default {
         slideInRight: {
           '0%': { opacity: '0', transform: 'translateX(24px)' },
           '100%': { opacity: '1', transform: 'translateX(0)' },
+        },
+        // A hairline that draws downward, then slips away below — "keep going".
+        scrollCue: {
+          '0%': { transform: 'scaleY(0)', transformOrigin: 'top' },
+          '45%': { transform: 'scaleY(1)', transformOrigin: 'top' },
+          '55%': { transform: 'scaleY(1)', transformOrigin: 'bottom' },
+          '100%': { transform: 'scaleY(0)', transformOrigin: 'bottom' },
         },
         slideUp: {
           '0%': { opacity: '0', transform: 'translateY(100%)' },
