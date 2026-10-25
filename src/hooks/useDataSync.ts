@@ -3,7 +3,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useUserStore } from '@/store/userStore'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { fetchProfile, upsertProfile } from '@/lib/profileService'
-import { fetchWardrobe, backfillPhotos } from '@/lib/wardrobeService'
+import { fetchWardrobe, backfillPhotos, updateItem } from '@/lib/wardrobeService'
+import { SAMPLE_PHOTOS } from '@/lib/sampleData'
 import type { ClothingItem } from '@/types'
 
 // Loads the authenticated user's profile and wardrobe from Supabase into local stores.
@@ -54,6 +55,7 @@ export function useDataSync() {
 
       if (items) setItems(items)
       markLoaded(userId)
+      addSamplePhotos(userId)
       backfillPhotos(userId, items ?? useWardrobeStore.getState().items).catch((e) => console.error('[sync] photo backfill failed', e))
       console.log('[sync] profile ready', {
         onboardingComplete: !!useUserStore.getState().profile?.onboardingComplete,
@@ -97,4 +99,20 @@ function mergeWithUnsaved(remote: ClothingItem[], local: ClothingItem[]): Clothi
   const cutoff = Date.now() - 60_000
   const unsaved = local.filter((i) => !remoteIds.has(i.id) && Date.parse(i.createdAt) > cutoff)
   return [...remote, ...unsaved]
+}
+
+// Demo pieces from "Load sample wardrobe" used to be saved without photos.
+// Give any that still have none their stock photo, locally and on the server.
+function addSamplePhotos(userId: string) {
+  const { items, updateItem: updateLocal } = useWardrobeStore.getState()
+  const missing = items.filter(
+    (i) => SAMPLE_PHOTOS[i.name] && !i.imageUrl && !i.imageId && !i.imageStoragePath
+  )
+  if (!missing.length) return
+  console.log('[sync] adding stock photos to', missing.length, 'sample pieces')
+  for (const item of missing) {
+    const updated: ClothingItem = { ...item, imageUrl: SAMPLE_PHOTOS[item.name], imageSource: 'remote' }
+    updateLocal(item.id, updated)
+    updateItem(userId, updated).catch((e) => console.error('[sync] sample photo save failed', item.name, e))
+  }
 }

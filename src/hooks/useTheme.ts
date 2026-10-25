@@ -32,7 +32,7 @@ export function useApplyTheme() {
   useEffect(() => {
     const root = document.documentElement
     root.classList.toggle('dark', dark)
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0E1811' : '#FCFAF4')
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#355E3B' : '#FCFAF4')
     console.log('[theme] applied', dark ? 'dark' : 'light', { resolved, pathname })
   }, [dark, resolved, pathname])
 }

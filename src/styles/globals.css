@@ -22,7 +22,7 @@
 @layer base {
   /* Kloset palette as RGB channels (so Tailwind's /opacity modifiers work).
      Light: cream paper, aubergine ink, forest-green accent.
-     Dark: deep forest night, cream ink, sage accent. */
+     Dark: brand forest page, cream ink and accents. */
   :root {
     color-scheme: light;
     --c-warm-cream: 252 250 244;
@@ -53,34 +53,38 @@
     --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.06);
   }
 
+  /* Dark mode uses ONLY the two brand colours — forest green #355E3B and
+     cream #FFFDD0 (see the Kloset hanger artwork). Every in-between tone is
+     a mix of those two (the % is how much cream is mixed into the green),
+     so nothing introduces a new green. */
   .dark {
     color-scheme: dark;
-    --c-warm-cream: 14 24 17;      /* page: deep forest night */
-    --c-surface: 23 36 27;         /* cards: one step up */
-    --c-tile: 31 47 36;
-    --c-text-primary: 244 239 218; /* cream ink */
-    --c-text-muted: 160 171 155;
-    --c-dark-purple: 36 58 43;     /* the cream chip/button base becomes forest */
-    --c-deep-purple: 46 72 54;
-    --c-butter-yellow: 168 203 160;/* forest accent becomes sage, readable on dark */
-    --c-soft-butter: 192 221 183;
-    --c-scrim: 4 8 5;
-    --c-cream-50: 14 24 17;
-    --c-cream-100: 23 36 27;
-    --c-cream-200: 31 47 36;
-    --c-cream-300: 52 72 58;
-    --c-charcoal-900: 244 239 218;
-    --c-charcoal-800: 228 224 204;
-    --c-charcoal-700: 208 206 188;
-    --c-charcoal-600: 186 188 170;
-    --c-charcoal-500: 165 172 156;
-    --c-charcoal-400: 140 152 136;
-    --c-charcoal-300: 105 120 104;
-    --c-gold-muted: 58 52 36;
-    --shadow-soft: 0 2px 20px rgba(0, 0, 0, 0.35);
-    --shadow-medium: 0 4px 40px rgba(0, 0, 0, 0.45);
-    --shadow-lifted: 0 8px 60px rgba(0, 0, 0, 0.55);
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(244, 239, 218, 0.05);
+    --c-warm-cream: 53 94 59;      /* page: brand forest */
+    --c-surface: 69 107 71;       /* cards: forest + 8% cream */
+    --c-tile: 81 116 80;
+    --c-text-primary: 255 253 208;   /* brand cream */
+    --c-text-muted: 198 208 166;
+    --c-dark-purple: 81 116 80;
+    --c-deep-purple: 97 129 92;
+    --c-butter-yellow: 255 253 208;  /* accent: brand cream */
+    --c-soft-butter: 231 234 190;
+    --c-scrim: 19 33 21;
+    --c-cream-50: 53 94 59;
+    --c-cream-100: 69 107 71;
+    --c-cream-200: 81 116 80;
+    --c-cream-300: 110 139 101;
+    --c-charcoal-900: 255 253 208;
+    --c-charcoal-800: 243 243 199;
+    --c-charcoal-700: 231 234 190;
+    --c-charcoal-600: 215 221 178;
+    --c-charcoal-500: 198 208 166;
+    --c-charcoal-400: 178 193 151;
+    --c-charcoal-300: 144 166 126;
+    --c-gold-muted: 93 126 89;
+    --shadow-soft: 0 2px 20px rgba(19, 33, 21, 0.35);
+    --shadow-medium: 0 4px 40px rgba(19, 33, 21, 0.45);
+    --shadow-lifted: 0 8px 60px rgba(19, 33, 21, 0.55);
+    --shadow-card: 0 1px 2px rgba(19, 33, 21, 0.3), 0 0 0 1px rgba(255, 253, 208, 0.08);
   }
 
   html {
