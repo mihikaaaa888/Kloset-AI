@@ -22,7 +22,7 @@
 @layer base {
   /* Kloset palette as RGB channels (so Tailwind's /opacity modifiers work).
      Light: cream paper, aubergine ink, forest-green accent.
-     Dark: brand forest page, cream ink and accents. */
+     Dark: black page, cream ink and accents, forest for small fills. */
   :root {
     color-scheme: light;
     --c-warm-cream: 252 250 244;
@@ -53,38 +53,38 @@
     --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.06);
   }
 
-  /* Dark mode uses ONLY the two brand colours — forest green #355E3B and
-     cream #FFFDD0 (see the Kloset hanger artwork). Every in-between tone is
-     a mix of those two (the % is how much cream is mixed into the green),
-     so nothing introduces a new green. */
+  /* Dark mode: black, with the brand cream (#FFFDD0) for text and accents
+     and the brand forest (#355E3B) kept for small filled accents only
+     (selected chips, chat bubbles, badges). Greys are cream mixed into
+     black, so they stay warm rather than blue-grey. */
   .dark {
     color-scheme: dark;
-    --c-warm-cream: 53 94 59;      /* page: brand forest */
-    --c-surface: 69 107 71;       /* cards: forest + 8% cream */
-    --c-tile: 81 116 80;
-    --c-text-primary: 255 253 208;   /* brand cream */
-    --c-text-muted: 198 208 166;
-    --c-dark-purple: 81 116 80;
-    --c-deep-purple: 97 129 92;
-    --c-butter-yellow: 255 253 208;  /* accent: brand cream */
-    --c-soft-butter: 231 234 190;
-    --c-scrim: 19 33 21;
-    --c-cream-50: 53 94 59;
-    --c-cream-100: 69 107 71;
-    --c-cream-200: 81 116 80;
-    --c-cream-300: 110 139 101;
+    --c-warm-cream: 10 10 9;        /* page: black */
+    --c-surface: 23 23 20;          /* cards */
+    --c-tile: 31 31 27;
+    --c-text-primary: 255 253 208;    /* brand cream */
+    --c-text-muted: 158 157 129;
+    --c-dark-purple: 53 94 59;      /* brand forest — small filled accents */
+    --c-deep-purple: 18 18 16;      /* page-header bands */
+    --c-butter-yellow: 255 253 208;   /* accent: brand cream */
+    --c-soft-butter: 217 215 177;
+    --c-scrim: 0 0 0;
+    --c-cream-50: 10 10 9;
+    --c-cream-100: 23 23 20;
+    --c-cream-200: 31 31 27;
+    --c-cream-300: 46 46 37;
     --c-charcoal-900: 255 253 208;
-    --c-charcoal-800: 243 243 199;
-    --c-charcoal-700: 231 234 190;
-    --c-charcoal-600: 215 221 178;
-    --c-charcoal-500: 198 208 166;
-    --c-charcoal-400: 178 193 151;
-    --c-charcoal-300: 144 166 126;
-    --c-gold-muted: 93 126 89;
-    --shadow-soft: 0 2px 20px rgba(19, 33, 21, 0.35);
-    --shadow-medium: 0 4px 40px rgba(19, 33, 21, 0.45);
-    --shadow-lifted: 0 8px 60px rgba(19, 33, 21, 0.55);
-    --shadow-card: 0 1px 2px rgba(19, 33, 21, 0.3), 0 0 0 1px rgba(255, 253, 208, 0.08);
+    --c-charcoal-800: 240 238 196;
+    --c-charcoal-700: 219 218 179;
+    --c-charcoal-600: 199 197 162;
+    --c-charcoal-500: 178 177 146;
+    --c-charcoal-400: 153 152 125;
+    --c-charcoal-300: 107 106 87;
+    --c-gold-muted: 36 35 29;
+    --shadow-soft: 0 2px 20px rgba(0, 0, 0, 0.5);
+    --shadow-medium: 0 4px 40px rgba(0, 0, 0, 0.6);
+    --shadow-lifted: 0 8px 60px rgba(0, 0, 0, 0.7);
+    --shadow-card: 0 0 0 1px rgba(255, 253, 208, 0.07);
   }
 
   html {

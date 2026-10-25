@@ -10,7 +10,7 @@ export default {
         // so one class works in both light and dark mode.
         // Token names are historical: 'dark-purple'/'deep-purple' hold the
         // cream base and 'butter-yellow'/'soft-butter' the forest-green
-        // accent. In dark mode they swap to forest and cream, keeping
+        // accent. In dark mode the base turns black with cream text, keeping
         // every pairing (e.g. bg-dark-purple + text-butter-yellow) readable.
         'dark-purple': 'rgb(var(--c-dark-purple) / <alpha-value>)',
         'deep-purple': 'rgb(var(--c-deep-purple) / <alpha-value>)',

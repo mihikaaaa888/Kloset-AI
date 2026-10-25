@@ -36,7 +36,7 @@ function ScrollToTop() {
 // Redirects unauthenticated users to /login, preserving the intended destination.
 function PageSpinner() {
   return (
-    <div className="min-h-screen bg-dark-purple flex items-center justify-center">
+    <div className="min-h-screen bg-dark-purple dark:bg-warm-cream flex items-center justify-center">
       <div className="w-8 h-8 rounded-full border-2 border-butter-yellow/30 border-t-butter-yellow animate-spin" />
     </div>
   )
