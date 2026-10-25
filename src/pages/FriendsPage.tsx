@@ -123,7 +123,7 @@ export function FriendsPage() {
         </div>
 
         {error && (
-          <div className="mb-8 flex items-start justify-between gap-4 py-3 px-4 bg-red-50 text-red-800 text-sm">
+          <div className="mb-8 flex items-start justify-between gap-4 py-3 px-4 bg-red-50 dark:bg-red-950/40 text-red-800 text-sm">
             <p>{error}</p>
             <button onClick={() => setError(null)} aria-label="Dismiss" className="flex-shrink-0">
               <X size={16} strokeWidth={1.25} />
@@ -232,7 +232,7 @@ function FriendsTab({
           </button>
         </form>
         {note && (
-          <p className={clsx('text-sm mt-3', note.tone === 'ok' ? 'text-butter-yellow' : 'text-red-700')} role="status">
+          <p className={clsx('text-sm mt-3', note.tone === 'ok' ? 'text-butter-yellow' : 'text-red-700 dark:text-red-400')} role="status">
             {note.text}
           </p>
         )}
@@ -364,7 +364,7 @@ function ShareGrid({
               <div className="aspect-[3/4] grid grid-cols-2 gap-px bg-text-primary/5 overflow-hidden">
                 {padTo4(s.payload.pieces).map((p, i) => (
                   <div key={i} className="overflow-hidden">
-                    {p ? <PieceImage piece={p} images={images} glyphSize={36} /> : <div className="w-full h-full bg-[#F3F0E8]" />}
+                    {p ? <PieceImage piece={p} images={images} glyphSize={36} /> : <div className="w-full h-full bg-tile" />}
                   </div>
                 ))}
               </div>
@@ -489,7 +489,7 @@ function ShareDetail({
 
 function PieceImage({ piece, images, glyphSize }: { piece: SharedPiece; images: Record<string, string>; glyphSize: number }) {
   const src = piece.imagePath ? images[piece.imagePath] : piece.imageUrl
-  if (src) return <img src={src} alt={piece.name} loading="lazy" className="w-full h-full object-cover bg-[#F3F0E8]" />
+  if (src) return <img src={src} alt={piece.name} loading="lazy" className="w-full h-full object-cover bg-tile" />
   const bgHex = piece.colour[0] ? colourNameToHex(piece.colour[0]) : '#EDE9E2'
   return (
     <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: bgHex }}>

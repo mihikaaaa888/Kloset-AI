@@ -1,24 +1,30 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        // ── Palette (Phase C rebrand) ─────────────────────────────────────
-        // 'dark-purple'/'deep-purple' now hold a light cream (previously a
-        // dark purple — token names kept so every existing class still
-        // applies, but they're a light base color now, not a dark one) and
-        // 'butter-yellow'/'soft-butter' hold a dark forest green (previously
-        // a light butter yellow). Any spot that paired the old dark-purple
-        // with white text, or used dark-purple as standalone foreground
-        // text, needed a manual follow-up fix — see git history for that pass.
-        'dark-purple': '#FFFDD0',
-        'deep-purple': '#F5F0B8',
-        'butter-yellow': '#355E3B',
-        'soft-butter': '#4A7856',
-        'warm-cream': '#FCFAF4',
-        'text-primary': '#241B29',
-        'text-muted': '#766C78',
+        // ── Palette ──────────────────────────────────────────────────────
+        // Every colour is a CSS variable (see :root / .dark in globals.css),
+        // so one class works in both light and dark mode.
+        // Token names are historical: 'dark-purple'/'deep-purple' hold the
+        // cream base and 'butter-yellow'/'soft-butter' the forest-green
+        // accent. In dark mode they swap to deep forest and sage, keeping
+        // every pairing (e.g. bg-dark-purple + text-butter-yellow) readable.
+        'dark-purple': 'rgb(var(--c-dark-purple) / <alpha-value>)',
+        'deep-purple': 'rgb(var(--c-deep-purple) / <alpha-value>)',
+        'butter-yellow': 'rgb(var(--c-butter-yellow) / <alpha-value>)',
+        'soft-butter': 'rgb(var(--c-soft-butter) / <alpha-value>)',
+        'warm-cream': 'rgb(var(--c-warm-cream) / <alpha-value>)',
+        'text-primary': 'rgb(var(--c-text-primary) / <alpha-value>)',
+        'text-muted': 'rgb(var(--c-text-muted) / <alpha-value>)',
+        // Cards, inputs and sheets that sit on the page background.
+        surface: 'rgb(var(--c-surface) / <alpha-value>)',
+        // Backdrop behind a clothing photo or placeholder glyph.
+        tile: 'rgb(var(--c-tile) / <alpha-value>)',
+        // Modal/menu backdrops — always dark, whatever the theme.
+        scrim: 'rgb(var(--c-scrim) / <alpha-value>)',
         purple: {
           950: '#2B173F',
           900: '#3A2154',
@@ -29,18 +35,19 @@ export default {
         },
         // ── Legacy palette (kept for existing components during migration) ─
         cream: {
-          50: '#FAFAF8',
-          100: '#F5F4F0',
-          200: '#EDE9E2',
-          300: '#DDD8CE',
+          50: 'rgb(var(--c-cream-50) / <alpha-value>)',
+          100: 'rgb(var(--c-cream-100) / <alpha-value>)',
+          200: 'rgb(var(--c-cream-200) / <alpha-value>)',
+          300: 'rgb(var(--c-cream-300) / <alpha-value>)',
         },
         charcoal: {
-          900: '#111110',
-          800: '#1A1A19',
-          700: '#2C2C2A',
-          600: '#3D3D3A',
-          500: '#5C5C58',
-          400: '#7A7A75',
+          900: 'rgb(var(--c-charcoal-900) / <alpha-value>)',
+          800: 'rgb(var(--c-charcoal-800) / <alpha-value>)',
+          700: 'rgb(var(--c-charcoal-700) / <alpha-value>)',
+          600: 'rgb(var(--c-charcoal-600) / <alpha-value>)',
+          500: 'rgb(var(--c-charcoal-500) / <alpha-value>)',
+          400: 'rgb(var(--c-charcoal-400) / <alpha-value>)',
+          300: 'rgb(var(--c-charcoal-300) / <alpha-value>)',
         },
         stone: {
           warm: '#8C7B6E',
@@ -50,7 +57,7 @@ export default {
         gold: {
           DEFAULT: '#C9A96E',
           light: '#E8D5B0',
-          muted: '#F0E6D3',
+          muted: 'rgb(var(--c-gold-muted) / <alpha-value>)',
         },
       },
       fontFamily: {
@@ -76,10 +83,10 @@ export default {
         '4xl': '2rem',
       },
       boxShadow: {
-        'soft': '0 2px 20px rgba(0,0,0,0.06)',
-        'medium': '0 4px 40px rgba(0,0,0,0.10)',
-        'lifted': '0 8px 60px rgba(0,0,0,0.14)',
-        'card': '0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06)',
+        'soft': 'var(--shadow-soft)',
+        'medium': 'var(--shadow-medium)',
+        'lifted': 'var(--shadow-lifted)',
+        'card': 'var(--shadow-card)',
       },
       animation: {
         'fade-up': 'fadeUp 0.6s ease-out forwards',

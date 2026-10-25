@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { ThemePicker } from '@/components/ui/ThemeToggle'
 import { Pencil, ArrowRight } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -161,6 +162,12 @@ export function ProfilePage() {
           </dl>
         </ProfileSection>
 
+        {/* ── Appearance ── */}
+        <ProfileSection title="Appearance">
+          <ThemePicker />
+          <p className="text-sm text-text-muted mt-3">System follows your device's light or dark setting.</p>
+        </ProfileSection>
+
         {/* ── Account ── */}
         <ProfileSection title="Account">
           <div>
@@ -244,12 +251,12 @@ function ActionRow({
       className="group w-full flex items-center justify-between gap-4 py-4 border-b border-text-primary/10 last:border-0 first:pt-0 text-left"
     >
       <div>
-        <p className={clsx('text-xs uppercase tracking-widest font-semibold transition-colors', danger ? 'text-red-700' : 'text-text-primary group-hover:text-butter-yellow')}>
+        <p className={clsx('text-xs uppercase tracking-widest font-semibold transition-colors', danger ? 'text-red-700 dark:text-red-400' : 'text-text-primary group-hover:text-butter-yellow')}>
           {label}
         </p>
         <p className="text-sm text-text-muted mt-1">{description}</p>
       </div>
-      <ArrowRight size={15} className={clsx('flex-shrink-0 transition-transform duration-300 group-hover:translate-x-1', danger ? 'text-red-700/60' : 'text-text-muted')} />
+      <ArrowRight size={15} className={clsx('flex-shrink-0 transition-transform duration-300 group-hover:translate-x-1', danger ? 'text-red-700/60 dark:text-red-400/60' : 'text-text-muted')} />
     </button>
   )
 }

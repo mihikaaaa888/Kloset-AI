@@ -278,7 +278,7 @@ export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
             placeholder="Ask Kaia anything…"
             rows={1}
             maxLength={4000}
-            className="flex-1 resize-none px-4 py-3 rounded-2xl border border-text-primary/15 bg-white text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-primary/40 transition-colors leading-relaxed"
+            className="flex-1 resize-none px-4 py-3 rounded-2xl border border-text-primary/15 bg-surface text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-primary/40 transition-colors leading-relaxed"
             style={{ maxHeight: 120 }}
           />
           <button
@@ -511,7 +511,7 @@ function MessageBubble({
             'max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed space-y-1',
             isUser
               ? 'bg-dark-purple text-text-primary rounded-br-md'
-              : 'bg-white text-text-primary shadow-card rounded-bl-md'
+              : 'bg-surface text-text-primary shadow-card rounded-bl-md'
           )}
         >
           <MessageContent text={text} shopQueries={shopQueries} />
@@ -534,7 +534,7 @@ function MessageBubble({
           {mentioned.map((item) => {
             const added = addedCatalogIds.has(item.id)
             return (
-              <div key={item.id} className="w-32 flex-shrink-0 rounded-2xl bg-white shadow-card overflow-hidden">
+              <div key={item.id} className="w-32 flex-shrink-0 rounded-2xl bg-surface shadow-card overflow-hidden">
                 <img src={item.imageUrl} alt={item.name} loading="lazy" className="w-full aspect-[3/4] object-cover bg-text-primary/5" />
                 <div className="p-2 space-y-1.5">
                   <p className="text-xs font-medium text-text-primary leading-snug line-clamp-2">{item.name}</p>
@@ -608,7 +608,7 @@ function ExternalShopSuggestion({ query, retailer, limit }: { query: string; ret
     return (
       <div className="flex gap-2.5 mt-2 ml-9 max-w-[calc(100%-2.25rem)] md:max-w-[80%] overflow-hidden" aria-label={`Finding pieces for ${query}`}>
         {Array.from({ length: Math.min(limit, 3) }).map((_, i) => (
-          <div key={i} className="w-32 flex-shrink-0 rounded-2xl bg-white shadow-card overflow-hidden">
+          <div key={i} className="w-32 flex-shrink-0 rounded-2xl bg-surface shadow-card overflow-hidden">
             <div className="w-full aspect-[3/4] bg-text-primary/5 animate-pulse" />
             <div className="p-2 space-y-1.5">
               <div className="h-2.5 rounded bg-text-primary/8 animate-pulse" />
@@ -630,7 +630,7 @@ function ExternalShopSuggestion({ query, retailer, limit }: { query: string; ret
             href={r.url}
             target="_blank"
             rel="noreferrer"
-            className="group w-32 flex-shrink-0 rounded-2xl bg-white shadow-card overflow-hidden hover:ring-2 hover:ring-butter-yellow transition-shadow"
+            className="group w-32 flex-shrink-0 rounded-2xl bg-surface shadow-card overflow-hidden hover:ring-2 hover:ring-butter-yellow transition-shadow"
           >
             <ShopImage src={r.imageUrl} alt={cleanProductTitle(r.title)} />
             <div className="p-2">
@@ -707,7 +707,7 @@ function OwnedTile({ piece, item }: { piece: OutfitPiece; item: ClothingItem | n
             <CategoryGlyph category={SLOT_CATEGORY[piece.slot]} size={44} />
           </div>
         )}
-        <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-white/90 text-2xs font-medium text-text-primary">
+        <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-surface/90 text-2xs font-medium text-text-primary">
           {SLOT_LABEL[piece.slot]}
         </span>
       </div>
@@ -757,7 +757,7 @@ function TypingIndicator() {
       <div className="w-7 h-7 rounded-full bg-dark-purple flex items-center justify-center flex-shrink-0">
         <HangerIcon size={13} className="text-butter-yellow" />
       </div>
-      <div className="bg-white shadow-card px-4 py-3 rounded-2xl rounded-bl-md flex items-center gap-1.5">
+      <div className="bg-surface shadow-card px-4 py-3 rounded-2xl rounded-bl-md flex items-center gap-1.5">
         {[0, 1, 2].map((i) => (
           <div
             key={i}
@@ -785,7 +785,7 @@ function EmptyState({ onPrompt }: { onPrompt: (p: string) => void }) {
           <button
             key={p}
             onClick={() => onPrompt(p)}
-            className="w-full text-left px-4 py-3 rounded-2xl bg-white border border-text-primary/10 text-sm text-text-primary hover:border-text-primary/30 hover:bg-text-primary/3 transition-all duration-200"
+            className="w-full text-left px-4 py-3 rounded-2xl bg-surface border border-text-primary/10 text-sm text-text-primary hover:border-text-primary/30 hover:bg-text-primary/3 transition-all duration-200"
           >
             {p}
           </button>

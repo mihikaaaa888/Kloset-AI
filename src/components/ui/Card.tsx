@@ -25,7 +25,7 @@ export function Card({
   return (
     <div
       className={clsx(
-        'rounded-3xl bg-white',
+        'rounded-3xl bg-surface',
         elevated ? 'shadow-medium' : 'shadow-card',
         interactive &&
           'cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-medium',

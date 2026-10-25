@@ -224,7 +224,7 @@ function OutfitItemTile({
   const isLight = isLightColour(bgHex)
 
   return (
-    <div className="rounded-3xl overflow-hidden bg-white shadow-card">
+    <div className="rounded-3xl overflow-hidden bg-surface shadow-card">
       {/* Image / placeholder */}
       <div className={clsx('relative', featured ? 'aspect-[3/4]' : 'aspect-square')}>
         {imageUrl ? (
@@ -247,7 +247,7 @@ function OutfitItemTile({
 
         {/* Role badge */}
         <div className="absolute top-3 left-3">
-          <span className="text-2xs font-medium uppercase tracking-widest px-2.5 py-1 rounded-full bg-white/90 backdrop-blur-sm text-charcoal-700 capitalize">
+          <span className="text-2xs font-medium uppercase tracking-widest px-2.5 py-1 rounded-full bg-surface/90 backdrop-blur-sm text-charcoal-700 capitalize">
             {role}
           </span>
         </div>

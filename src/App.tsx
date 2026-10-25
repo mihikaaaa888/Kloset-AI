@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-route
 import { Navigation } from '@/components/layout/Navigation'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { useDataSync } from '@/hooks/useDataSync'
+import { useApplyTheme } from '@/hooks/useTheme'
 import { LandingPage } from '@/pages/LandingPage'
 
 // Everything past the landing page loads on demand, so a first visit to /
@@ -18,6 +19,11 @@ const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then((m) => ({ def
 const SignupPage = lazy(() => import('@/pages/auth/SignupPage').then((m) => ({ default: m.SignupPage })))
 const ForgotPasswordPage = lazy(() => import('@/pages/auth/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })))
 const ResetPasswordPage = lazy(() => import('@/pages/auth/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })))
+
+function ThemeSync() {
+  useApplyTheme()
+  return null
+}
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -64,6 +70,7 @@ function AppRoutes() {
   return (
     <>
       <ScrollToTop />
+      <ThemeSync />
       <Navigation />
       <Suspense fallback={<PageSpinner />}>
       <Routes>

@@ -418,7 +418,7 @@ function PinnedPiece({
             <CategoryGlyph category={piece.category} size={40} className={isLightColour(bgHex) ? 'text-text-primary/35' : 'text-white/45'} />
           </div>
         )}
-        <p className="absolute left-[5%] right-[5%] bottom-[3%] truncate text-[10px] leading-tight text-text-primary/80 font-display">
+        <p className="absolute left-[5%] right-[5%] bottom-[3%] truncate text-[10px] leading-tight text-[#241B29]/80 font-display">
           {piece.name}
         </p>
         {selected && (
@@ -552,7 +552,7 @@ function CandidateTile({ candidate, onPick }: { candidate: Candidate; onPick: ()
       className="group text-left"
       title={`Pin ${candidate.name}`}
     >
-      <div className="relative aspect-[3/4] overflow-hidden bg-[#F3F0E8] ring-1 ring-inset ring-text-primary/5 group-hover:ring-text-primary/30 transition-shadow">
+      <div className="relative aspect-[3/4] overflow-hidden bg-tile ring-1 ring-inset ring-text-primary/5 group-hover:ring-text-primary/30 transition-shadow">
         {src ? (
           <img src={src} alt="" loading="lazy" draggable={false} className="w-full h-full object-cover" />
         ) : (

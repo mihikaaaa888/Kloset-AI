@@ -20,8 +20,67 @@
 }
 
 @layer base {
+  /* Kloset palette as RGB channels (so Tailwind's /opacity modifiers work).
+     Light: cream paper, aubergine ink, forest-green accent.
+     Dark: deep forest night, cream ink, sage accent. */
   :root {
     color-scheme: light;
+    --c-warm-cream: 252 250 244;
+    --c-surface: 255 255 255;
+    --c-tile: 243 240 232;
+    --c-text-primary: 36 27 41;
+    --c-text-muted: 118 108 120;
+    --c-dark-purple: 255 253 208;
+    --c-deep-purple: 245 240 184;
+    --c-butter-yellow: 53 94 59;
+    --c-soft-butter: 74 120 86;
+    --c-scrim: 36 27 41;
+    --c-cream-50: 250 250 248;
+    --c-cream-100: 245 244 240;
+    --c-cream-200: 237 233 226;
+    --c-cream-300: 221 216 206;
+    --c-charcoal-900: 17 17 16;
+    --c-charcoal-800: 26 26 25;
+    --c-charcoal-700: 44 44 42;
+    --c-charcoal-600: 61 61 58;
+    --c-charcoal-500: 92 92 88;
+    --c-charcoal-400: 122 122 117;
+    --c-charcoal-300: 160 160 154;
+    --c-gold-muted: 240 230 211;
+    --shadow-soft: 0 2px 20px rgba(0, 0, 0, 0.06);
+    --shadow-medium: 0 4px 40px rgba(0, 0, 0, 0.10);
+    --shadow-lifted: 0 8px 60px rgba(0, 0, 0, 0.14);
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.06);
+  }
+
+  .dark {
+    color-scheme: dark;
+    --c-warm-cream: 14 24 17;      /* page: deep forest night */
+    --c-surface: 23 36 27;         /* cards: one step up */
+    --c-tile: 31 47 36;
+    --c-text-primary: 244 239 218; /* cream ink */
+    --c-text-muted: 160 171 155;
+    --c-dark-purple: 36 58 43;     /* the cream chip/button base becomes forest */
+    --c-deep-purple: 46 72 54;
+    --c-butter-yellow: 168 203 160;/* forest accent becomes sage, readable on dark */
+    --c-soft-butter: 192 221 183;
+    --c-scrim: 4 8 5;
+    --c-cream-50: 14 24 17;
+    --c-cream-100: 23 36 27;
+    --c-cream-200: 31 47 36;
+    --c-cream-300: 52 72 58;
+    --c-charcoal-900: 244 239 218;
+    --c-charcoal-800: 228 224 204;
+    --c-charcoal-700: 208 206 188;
+    --c-charcoal-600: 186 188 170;
+    --c-charcoal-500: 165 172 156;
+    --c-charcoal-400: 140 152 136;
+    --c-charcoal-300: 105 120 104;
+    --c-gold-muted: 58 52 36;
+    --shadow-soft: 0 2px 20px rgba(0, 0, 0, 0.35);
+    --shadow-medium: 0 4px 40px rgba(0, 0, 0, 0.45);
+    --shadow-lifted: 0 8px 60px rgba(0, 0, 0, 0.55);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(244, 239, 218, 0.05);
   }
 
   html {
@@ -38,6 +97,7 @@
   body {
     @apply bg-warm-cream text-text-primary font-sans;
     overflow-x: hidden;
+    transition: background-color 0.3s ease, color 0.3s ease;
     font-feature-settings: 'cv11', 'ss01';
   }
 
@@ -65,8 +125,8 @@
   }
 
   ::selection {
-    background-color: #355E3B;
-    color: #FFFDD0;
+    background-color: rgb(var(--c-butter-yellow));
+    color: rgb(var(--c-warm-cream));
   }
 
   /* Scrollbar */
@@ -75,14 +135,14 @@
     height: 5px;
   }
   ::-webkit-scrollbar-track {
-    background: #FCFAF4;
+    background: rgb(var(--c-warm-cream));
   }
   ::-webkit-scrollbar-thumb {
-    background: #4A7856;
+    background: rgb(var(--c-soft-butter) / 0.6);
     border-radius: 9999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #355E3B;
+    background: rgb(var(--c-butter-yellow));
   }
 }
 

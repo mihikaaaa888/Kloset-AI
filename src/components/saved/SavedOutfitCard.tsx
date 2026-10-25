@@ -87,7 +87,7 @@ function MosaicCell({ item, role }: { item: ClothingItem | null; role: string })
   const imageUrl = useItemImage(item)
 
   if (!item) {
-    return <div className="bg-[#F3F0E8]" />
+    return <div className="bg-tile" />
   }
 
   const primaryColour = item.colour[0]

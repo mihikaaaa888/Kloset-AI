@@ -200,7 +200,7 @@ export function StylistPage() {
 
             {/* Error */}
             {error && !isEmpty && (
-              <div className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-100 text-sm text-red-700">{error}</div>
+              <div className="mb-6 p-4 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-100 text-sm text-red-700 dark:text-red-400">{error}</div>
             )}
 
             {/* Item picker (mode = item, no pinned item yet) */}

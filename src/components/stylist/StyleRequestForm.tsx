@@ -74,7 +74,7 @@ export function StyleRequestForm({ onSubmit, isLoading }: StyleRequestFormProps)
                 'transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow',
                 occasion === opt.value
                   ? 'bg-dark-purple text-butter-yellow border-dark-purple shadow-soft'
-                  : 'bg-white text-text-primary border-text-primary/15 hover:border-text-primary/40 hover:text-text-primary'
+                  : 'bg-surface text-text-primary border-text-primary/15 hover:border-text-primary/40 hover:text-text-primary'
               )}
             >
               {opt.label}
@@ -99,7 +99,7 @@ export function StyleRequestForm({ onSubmit, isLoading }: StyleRequestFormProps)
                 'transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow',
                 weather === opt.value
                   ? 'bg-dark-purple text-butter-yellow border-dark-purple shadow-soft'
-                  : 'bg-white text-text-primary border-text-primary/15 hover:border-text-primary/40'
+                  : 'bg-surface text-text-primary border-text-primary/15 hover:border-text-primary/40'
               )}
             >
               <span className="text-sm font-medium">{opt.label}</span>
@@ -132,7 +132,7 @@ export function StyleRequestForm({ onSubmit, isLoading }: StyleRequestFormProps)
                 'transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow',
                 mood === opt.value
                   ? 'bg-dark-purple text-butter-yellow border-dark-purple shadow-soft'
-                  : 'bg-white text-text-primary border-text-primary/15 hover:border-text-primary/40 hover:text-text-primary'
+                  : 'bg-surface text-text-primary border-text-primary/15 hover:border-text-primary/40 hover:text-text-primary'
               )}
             >
               {opt.label}

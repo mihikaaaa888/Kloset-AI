@@ -263,7 +263,7 @@ function PhotoUpload({ onReady }: { onReady: (previewUrl: string, anchor: PieceA
         className="hidden"
         onChange={(e) => { handleFile(e.target.files?.[0]); e.target.value = '' }}
       />
-      {status === 'error' && <p className="text-sm text-red-700 text-center mt-4">{error}</p>}
+      {status === 'error' && <p className="text-sm text-red-700 dark:text-red-400 text-center mt-4">{error}</p>}
     </div>
   )
 }

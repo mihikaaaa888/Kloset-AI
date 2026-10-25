@@ -122,7 +122,7 @@ export function LandingPage() {
         className={clsx('fixed inset-0 z-50 transition-[opacity,visibility] duration-300', menuOpen ? 'opacity-100 visible' : 'opacity-0 invisible pointer-events-none')}
         aria-hidden={!menuOpen}
       >
-        <div className="absolute inset-0 bg-text-primary/40 backdrop-blur-sm" onClick={() => setMenuOpen(false)} />
+        <div className="absolute inset-0 bg-scrim/40 backdrop-blur-sm" onClick={() => setMenuOpen(false)} />
         <aside
           id="landing-sidebar"
           role="dialog"
