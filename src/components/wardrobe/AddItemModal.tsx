@@ -8,6 +8,7 @@ import { TextInput } from '@/components/ui/TextInput'
 import { SelectChip } from '@/components/ui/SelectChip'
 import { ColourSwatch } from '@/components/ui/ColourSwatch'
 import { COLOUR_PALETTE } from '@/lib/colourUtils'
+import { apiUrl } from '@/lib/apiUrl'
 import {
   saveImage,
   getImage,
@@ -817,7 +818,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
           {!displayUrl && photoTab === 'upload' && !imageProcessing && (
             <p className="text-xs text-text-muted mt-2">
-              Outfit scanning runs on this device. When PhotoRoom is configured, only each isolated garment cutout is sent to refine its edges; faces and the full photo are not sent.
+              Outfit scanning runs on this device. When PhotoRoom is configured, it only receives isolated garment cut-outs, or a product photo with no one in it; faces and photos of people are never sent.
             </p>
           )}
 
@@ -1074,9 +1075,7 @@ function ImageSearchBrowser({
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(
-        `/api/search-images?q=${encodeURIComponent(q)}&page=${p}`
-      )
+      const res = await fetch(apiUrl(`/api/search-images?q=${encodeURIComponent(q)}&page=${p}`))
       const data = await res.json()
       if (data.noKey) { setNoKey(true); return }
       setPhotos(data.photos ?? [])

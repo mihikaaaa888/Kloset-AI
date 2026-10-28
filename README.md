@@ -1,6 +1,6 @@
 # Kloset.ai
 
-An AI-powered personal wardrobe and styling web app.
+An AI-powered personal wardrobe and styling app for web, iOS, and Android.
 
 ## Features
 
@@ -18,7 +18,7 @@ An AI-powered personal wardrobe and styling web app.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) v18 or later
+- [Node.js](https://nodejs.org/) v22 or later (required by Capacitor 8)
 - A [Supabase](https://supabase.com) project
 
 ## Getting Started
@@ -55,6 +55,22 @@ npm run build      # type-check and production build
 npm run preview    # preview the production build
 npm run type-check # TypeScript only
 ```
+
+## Mobile App (iOS and Android)
+
+Kloset packages the existing React app with Capacitor. Install the native
+platform toolchains with Xcode (iOS) and Android Studio (Android), then set
+`VITE_API_BASE_URL` in `.env` to the deployed Kloset site origin before syncing
+or building a native app. Web builds keep using the same-origin `/api` routes.
+
+```bash
+npm run mobile:sync   # build the web bundle and sync both native projects
+npm run mobile:ios    # build, sync, and open the iOS project
+npm run mobile:android # build, sync, and open the Android project
+```
+
+Native email confirmation and password reset links need a registered mobile
+deep-link scheme in Supabase before those flows are ready for release.
 
 ## Project Structure
 

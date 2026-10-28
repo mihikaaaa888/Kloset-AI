@@ -8,11 +8,18 @@
     "dev:all": "concurrently -n \"vite,api\" -c \"cyan,yellow\" \"vite\" \"node server/index.mjs\"",
     "server": "node server/index.mjs",
     "build": "tsc && vite build",
+    "mobile:sync": "npm run build && cap sync",
+    "mobile:ios": "npm run build && cap sync ios && cap open ios",
+    "mobile:android": "npm run build && cap sync android && cap open android",
     "preview": "vite preview",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.3",
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/ios": "^8.5.3",
+    "@google/generative-ai": "^0.24.1",
     "@huggingface/transformers": "^4.3.2",
     "@supabase/supabase-js": "^2.109.0",
     "clsx": "^2.1.1",
@@ -26,6 +33,7 @@
     "zustand": "^4.5.5"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/react": "^18.3.8",
