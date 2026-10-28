@@ -13,35 +13,7 @@ export function LandingPage() {
   const { user, signOut } = useAuth()
   const profile = useUserStore((s) => s.profile)
   const [menuOpen, setMenuOpen] = useState(false)
-  // The menu button stays hidden on first load — it only appears once the
-  // user has scrolled AND (on the cinematic hero) the closet door has opened.
   const [doorOpen, setDoorOpen] = useState(false)
-  const [hasScrolled, setHasScrolled] = useState(false)
-  const showMenuButton = hasScrolled && doorOpen
-  // "Scroll" cue: fades in a beat after load (once the hero has had a moment to
-  // appear), and leaves for good the moment the user starts scrolling.
-  const [cueReady, setCueReady] = useState(false)
-  const showScrollCue = cueReady && !hasScrolled
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setCueReady(true), 1200)
-    return () => window.clearTimeout(timer)
-  }, [])
-
-  useEffect(() => {
-    if (cueReady) console.log('[landing-scroll-cue]', showScrollCue ? 'shown' : 'hidden (user scrolled)')
-  }, [cueReady, showScrollCue])
-
-  useEffect(() => {
-    const onScroll = () => setHasScrolled(window.scrollY > 40)
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
-
-  useEffect(() => {
-    console.log('[landing-menu-button]', showMenuButton ? 'shown' : 'hidden', { hasScrolled, doorOpen })
-  }, [showMenuButton])
 
   // Close the sidebar on Escape, and stop the page behind it from scrolling while open.
   useEffect(() => {
@@ -79,61 +51,28 @@ export function LandingPage() {
     <div className="min-h-screen bg-warm-cream">
 
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
-      <CinematicClosetHero
-        onDoorOpenChange={setDoorOpen}
-      />
+      <CinematicClosetHero onDoorOpenChange={setDoorOpen} />
 
-      {/* ── Mobile top bar — no scroll-driven door on phones, so the logo and menu are there from the start ── */}
-      <header className="md:hidden fixed top-0 inset-x-0 z-40 h-16 px-4 flex items-center justify-between bg-[#FBF5EC]/95 backdrop-blur-md border-b border-text-primary/10">
-        <span className="font-brand text-xl text-butter-yellow">Kloset<span className="text-butter-yellow/50">.</span>ai</span>
+      {/* Brand bar belongs to the rack page and appears after the door is fully open. */}
+      <header className={clsx(
+        'fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between bg-[#355f43] px-5 text-[#fffbd5] shadow-[0_2px_16px_rgba(26,46,33,0.14)] transition-[opacity,visibility] duration-500',
+        doorOpen ? 'visible opacity-100' : 'invisible pointer-events-none opacity-0'
+      )}>
+        <span className="font-brand text-xl tracking-wide">
+          Kloset<span className="text-[#fffbd5]/65">.</span>ai
+        </span>
         <button
           onClick={() => setMenuOpen(true)}
           aria-expanded={menuOpen}
           aria-controls="landing-sidebar"
           aria-label="Open menu"
-          className="w-11 h-11 -mr-1.5 flex items-center justify-center rounded-full text-text-primary active:bg-text-primary/5"
+          className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full text-[#fffbd5] transition-colors hover:bg-[#fffbd5]/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fffbd5]"
         >
-          <Menu size={22} />
+          <Menu size={22} strokeWidth={1.8} />
         </button>
       </header>
 
-      {/* ── Scroll cue — tells first-time visitors the desktop hero opens by
-           scrolling. Sits in the bottom-left corner, clear of the closet.
-           Phones skip it: their hero isn't scroll-driven and the CTA is
-           already on screen. ── */}
-      <div
-        aria-hidden={!showScrollCue}
-        className={clsx(
-          'hidden md:flex fixed bottom-10 left-10 z-30 items-end gap-4 pointer-events-none select-none text-butter-yellow',
-          'transition-[opacity,transform] duration-700 ease-editorial',
-          showScrollCue ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
-        )}
-      >
-        <span className="relative block w-px h-16 overflow-hidden">
-          <span className="absolute inset-0 bg-current opacity-20" />
-          <span className="absolute inset-0 bg-current motion-safe:animate-scroll-cue" />
-        </span>
-        <span className="flex flex-col gap-1.5">
-          <span className="font-display italic text-5xl leading-none tracking-tight">Scroll</span>
-          <span className="text-2xs font-medium uppercase tracking-ultra-wide opacity-75">to open your Kloset</span>
-        </span>
-      </div>
-
-      {/* ── Menu button — pinned top-left, fades in once the closet door has opened ── */}
-      <button
-        onClick={() => setMenuOpen(true)}
-        aria-expanded={menuOpen}
-        aria-controls="landing-sidebar"
-        className={clsx(
-          'hidden md:flex fixed top-6 left-6 z-40 items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium bg-butter-yellow text-dark-purple ring-1 ring-dark-purple/30 shadow-lifted hover:bg-soft-butter transition-[opacity,visibility,background-color] duration-500',
-          showMenuButton ? 'opacity-100 visible' : 'opacity-0 invisible pointer-events-none'
-        )}
-      >
-        <Menu size={16} />
-        Menu
-      </button>
-
-      {/* ── Page 2: headline + CTA (moved here from the hero, which is video-only once the door opens) ── */}
+      {/* ── Intro copy and CTA ──────────────────────────────────────────────── */}
       <section className="py-16 md:py-28 lg:py-40 bg-butter-yellow">
         <div className="mx-auto max-w-7xl px-6 lg:px-8">
           <HeroCopy onCTA={handleCTA} animate={false} align="center" tone="green" />

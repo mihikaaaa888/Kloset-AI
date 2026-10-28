@@ -157,8 +157,8 @@ export async function compressImage(file: File): Promise<Blob> {
 const PORTABLE_EDGE = 800
 
 /**
- * A small JPEG data URL of a stored photo (~50–90 KB). Saved on the wardrobe row
- * when the Storage upload fails, so the piece still shows on every other device.
+ * A small PNG data URL of a stored photo. Saved on the wardrobe row when the
+ * Storage upload fails, so transparent cutouts still show on every device.
  */
 export async function toPortableDataUrl(blob: Blob): Promise<string | null> {
   const url = URL.createObjectURL(blob)
@@ -171,10 +171,8 @@ export async function toPortableDataUrl(blob: Blob): Promise<string | null> {
     canvas.width = Math.round(img.naturalWidth * scale)
     canvas.height = Math.round(img.naturalHeight * scale)
     const ctx = canvas.getContext('2d')!
-    ctx.fillStyle = '#FFFFFF'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-    return canvas.toDataURL('image/jpeg', 0.72)
+    return canvas.toDataURL('image/png')
   } catch (e) {
     console.warn('[imageStorage] portable copy failed', e)
     return null

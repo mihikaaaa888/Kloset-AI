@@ -18,7 +18,14 @@ import { findOutfitProblems } from './outfitRules.mjs'
 export const app = express()
 
 // Only matters in local dev — in production the site and /api share an origin.
-app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:4173'] }))
+app.use(cors({
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:4173',
+    'capacitor://localhost', // iOS WebView origin
+    'https://localhost', // Android WebView origin
+  ],
+}))
 app.use(express.json({ limit: '15mb' }))
 
 // ─── Health check ─────────────────────────────────────────────────────────────
@@ -29,6 +36,7 @@ app.get('/api/health', (_req, res) => {
     hasGroqKey: !!process.env.GROQ_API_KEY,
     hasClaudeKey: !!process.env.CLAUDE_API_KEY,
     hasExaKey: !!process.env.EXA_API_KEY,
+    hasPhotoRoomKey: !!process.env.PHOTOROOM_API_KEY,
     timestamp: new Date().toISOString(),
   })
 })
@@ -208,6 +216,50 @@ app.post('/api/analyze-image-url', async (req, res) => {
       error: 'AI analysis failed. You can still add the item manually.',
       details: e instanceof Error ? e.message : String(e),
     })
+  }
+})
+
+// Remove the background through PhotoRoom when a server-side key is configured.
+// The key never reaches the browser; callers send only the image bytes.
+app.post('/api/remove-background', async (req, res) => {
+  const { imageData, mediaType } = req.body ?? {}
+  const apiKey = process.env.PHOTOROOM_API_KEY
+
+  if (!apiKey) {
+    return res.status(503).json({ error: 'PhotoRoom background removal is not configured.' })
+  }
+  if (!imageData || typeof imageData !== 'string') {
+    return res.status(400).json({ error: 'imageData (base64 string) is required' })
+  }
+  if (!mediaType || !['image/jpeg', 'image/png', 'image/webp'].includes(mediaType)) {
+    return res.status(400).json({ error: 'mediaType must be image/jpeg, image/png, or image/webp' })
+  }
+
+  try {
+    const imageBytes = Buffer.from(imageData, 'base64')
+    if (imageBytes.length > 10 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Image is too large for background removal.' })
+    }
+
+    const form = new FormData()
+    form.append('image_file', new Blob([imageBytes], { type: mediaType }), `upload.${mediaType.split('/')[1]}`)
+    const response = await fetch('https://sdk.photoroom.com/v1/segment', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey },
+      body: form,
+    })
+
+    if (!response.ok) {
+      const detail = (await response.text()).slice(0, 500)
+      console.error(`[remove-background] PhotoRoom ${response.status}:`, detail)
+      return res.status(502).json({ error: 'PhotoRoom could not process this image.' })
+    }
+
+    const output = Buffer.from(await response.arrayBuffer())
+    return res.json({ imageData: output.toString('base64'), mediaType: response.headers.get('content-type') || 'image/png' })
+  } catch (e) {
+    console.error('[remove-background] PhotoRoom error:', e?.message ?? e)
+    return res.status(502).json({ error: 'PhotoRoom background removal failed.' })
   }
 })
 

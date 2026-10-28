@@ -104,27 +104,28 @@ export async function fetchWardrobe(userId: string): Promise<ClothingItem[] | nu
 // Photos are captured into this browser's IndexedDB. A copy goes to the private
 // wardrobe-images bucket (supabase/wardrobe_photos.sql) so the phone can show
 // pieces added on the laptop and vice versa. If that upload fails (bucket
-// missing, policy error, flaky mobile network) a small JPEG goes on the row
+// missing, policy error, flaky mobile network) a small PNG goes on the row
 // itself as image_url, so the other device never ends up with a blank card.
 
 const PHOTO_BUCKET = 'wardrobe-images'
 
-function photoPath(userId: string, item: ClothingItem): string | null {
-  return item.imageId ? `${userId}/${item.imageId}.jpg` : null
+function photoPath(userId: string, item: ClothingItem, contentType = 'image/jpeg'): string | null {
+  if (!item.imageId) return null
+  const extension = contentType === 'image/png' ? 'png' : 'jpg'
+  return `${userId}/${item.imageId}.${extension}`
 }
 
 /** True when another device can't show this item's photo yet. */
-function needsPhotoSync(userId: string, item: ClothingItem): boolean {
-  return !!item.imageId && item.imageStoragePath !== photoPath(userId, item) && !item.imageUrl
+function needsPhotoSync(item: ClothingItem): boolean {
+  return !!item.imageId && !item.imageStoragePath && !item.imageUrl
 }
 
 /** Uploads the item's local photo if other devices can't see it yet. Returns the item to save. */
 async function withUploadedPhoto(userId: string, item: ClothingItem): Promise<ClothingItem> {
-  if (!needsPhotoSync(userId, item)) return item
-  const path = photoPath(userId, item)!
-
+  if (!needsPhotoSync(item)) return item
   const blob = await getImage(item.imageId!).catch(() => null)
   if (!blob) return item // Photo lives on another device; nothing to upload from here.
+  const path = photoPath(userId, item, blob.type || 'image/jpeg')!
 
   const { error } = await supabase.storage
     .from(PHOTO_BUCKET)
@@ -166,7 +167,7 @@ export function getPhotoUrl(path: string): Promise<string | null> {
 
 /** Uploads photos this device has that other devices can't see — heals items whose upload failed. */
 export async function backfillPhotos(userId: string, items: ClothingItem[]): Promise<void> {
-  const pending = items.filter((i) => needsPhotoSync(userId, i))
+  const pending = items.filter((i) => needsPhotoSync(i))
   if (pending.length === 0) return
   console.log('[wardrobe] checking', pending.length, 'photos for upload')
   for (const item of pending) {
