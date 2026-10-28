@@ -42,7 +42,10 @@ function getSegmenter(): Promise<Segmenter> {
   if (!segmenterPromise) {
     segmenterPromise = import('@huggingface/transformers').then(async ({ pipeline }) => {
       const segmenter = await pipeline('image-segmentation', 'Xenova/segformer_b2_clothes', { dtype: 'q8' })
-      return (image: string) => segmenter(image, { subtask: 'semantic' }) as Promise<SegmentationMask[]>
+      // Let Transformers.js select and bind the semantic post-processor from
+      // the model's image processor. Passing `subtask: 'semantic'` explicitly
+      // leaves a method name string unbound in the current library version.
+      return (image: string) => segmenter(image) as Promise<SegmentationMask[]>
     }).catch((error) => {
       segmenterPromise = null
       throw error
