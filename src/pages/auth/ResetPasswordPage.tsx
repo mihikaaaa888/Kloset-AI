@@ -57,7 +57,7 @@ export function ResetPasswordPage() {
         <div className="text-center mb-10">
           <Link to="/" className="inline-flex items-center gap-2 mb-8">
             <span className="font-brand text-2xl text-butter-yellow">
-              Kloset<span className="text-butter-yellow/50">.</span>ai
+              Kloset AI
             </span>
           </Link>
           <h1 className="font-display text-3xl font-medium text-text-primary mb-1">Choose a new password</h1>

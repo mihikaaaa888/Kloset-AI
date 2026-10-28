@@ -182,7 +182,7 @@ export function ProfilePage() {
           </div>
         </ProfileSection>
 
-        <p className="text-center text-2xs text-text-muted/60 uppercase tracking-widest py-12">Kloset.ai · V1</p>
+        <p className="text-center text-2xs text-text-muted/60 uppercase tracking-widest py-12">Kloset AI · V1</p>
       </div>
     </div>
   )
