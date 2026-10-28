@@ -1,5 +1,7 @@
 import { CATALOG_ITEMS } from '@/lib/catalogData'
 import type { CatalogItem, ClothingCategory, ClothingItem, StylePreference, UserProfile } from '@/types'
+import { affinityForLearnedTraits } from '@/lib/styleLearning'
+import { learnStyleFromWardrobe } from '@/lib/styleLearning'
 
 // ─── Budget ───────────────────────────────────────────────────────────────────
 // One dropdown drives every shopping mode. Buying filters on the per-piece
@@ -55,7 +57,7 @@ function gapCategories(wardrobe: ClothingItem[]): Set<ClothingCategory> {
   return new Set(all.filter((c) => (counts.get(c) ?? 0) <= 1))
 }
 
-function personalScore(item: CatalogItem, profile: UserProfile | null, gaps: Set<ClothingCategory>): number {
+function personalScore(item: CatalogItem, profile: UserProfile | null, gaps: Set<ClothingCategory>, learnedStyle: ReturnType<typeof learnStyleFromWardrobe>): number {
   const styles = profile?.stylePreferences ?? []
   const lower = (list: string[] | undefined) => (list ?? []).map((c) => c.toLowerCase())
   const favourite = lower(profile?.favouriteColours)
@@ -67,13 +69,21 @@ function personalScore(item: CatalogItem, profile: UserProfile | null, gaps: Set
   if (colours.some((c) => favourite.includes(c))) score += 1
   if (colours.some((c) => avoid.includes(c))) score -= 3
   score += Math.min(2, item.occasions.filter((o) => profile?.typicalOccasions?.includes(o)).length)
+  score += affinityForLearnedTraits(learnedStyle, {
+    colours: item.colours,
+    subcategory: item.subcategory,
+    material: item.material,
+    pattern: item.pattern,
+    formality: item.formality,
+  })
   if (gaps.has(item.category)) score += 1
   return score
 }
 
 export function rankForUser(items: CatalogItem[], profile: UserProfile | null, wardrobe: ClothingItem[]): CatalogItem[] {
   const gaps = gapCategories(wardrobe)
-  return [...items].sort((a, b) => personalScore(b, profile, gaps) - personalScore(a, profile, gaps))
+  const learnedStyle = learnStyleFromWardrobe(wardrobe)
+  return [...items].sort((a, b) => personalScore(b, profile, gaps, learnedStyle) - personalScore(a, profile, gaps, learnedStyle))
 }
 
 // ─── Rent ─────────────────────────────────────────────────────────────────────

@@ -9,6 +9,8 @@
  */
 
 import type { ClothingItem, Occasion, StylePreference, Season, UserProfile } from '@/types'
+import { affinityForLearnedTraits } from '@/lib/styleLearning'
+import { learnStyleFromWardrobe } from '@/lib/styleLearning'
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -149,6 +151,7 @@ function scoreItem(
   item: ClothingItem,
   request: StyleRequest,
   profile: UserProfile | null,
+  learnedStyle: ReturnType<typeof learnStyleFromWardrobe>,
   alreadySelected: ClothingItem[],
   attempt: number
 ): number {
@@ -197,6 +200,13 @@ function scoreItem(
   if (profile) {
     if (item.colour.some((c) => profile.favouriteColours.includes(c))) score += 5
     if (item.colour.some((c) => profile.avoidColours.includes(c))) score -= 15
+    score += affinityForLearnedTraits(learnedStyle, {
+      colours: item.colour,
+      subcategory: item.subcategory,
+      material: item.material,
+      pattern: item.pattern,
+      formality: item.formality,
+    })
   }
 
   // Style alignment
@@ -244,10 +254,11 @@ function pickBest(
 ): ClothingItem | null {
   const candidates = items.filter((i) => i.category === category)
   if (candidates.length === 0) return null
+  const learnedStyle = learnStyleFromWardrobe(items)
 
   const scored = candidates.map((item) => ({
     item,
-    score: scoreItem(item, request, profile, selected, attempt),
+    score: scoreItem(item, request, profile, learnedStyle, selected, attempt),
   }))
   scored.sort((a, b) => b.score - a.score)
   return scored[0].score > -100 ? scored[0].item : null

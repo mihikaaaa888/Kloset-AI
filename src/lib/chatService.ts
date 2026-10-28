@@ -77,6 +77,16 @@ function buildWardrobeGapsSummary(items: ClothingItem[]): string {
     .slice(0, 4)
     .map(([c]) => c)
 
+  const repeatedTraits = (values: string[]) => {
+    const counts = new Map<string, number>()
+    for (const value of values) counts.set(value.toLowerCase(), (counts.get(value.toLowerCase()) ?? 0) + 1)
+    return [...counts.entries()].filter(([, count]) => count > 1).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([value]) => value)
+  }
+  const recurringColours = [...colourCounts.entries()].filter(([, count]) => count > 1).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([colour]) => colour)
+  const recurringTypes = repeatedTraits(items.map((item) => item.subcategory ?? '').filter(Boolean))
+  const recurringMaterials = repeatedTraits(items.map((item) => item.material ?? '').filter(Boolean))
+  const recurringPatterns = repeatedTraits(items.map((item) => item.pattern))
+
   const hasFormal = items.some((i) => /formal|business/i.test(i.formality ?? ''))
 
   const favourites = items.filter((i) => i.isFavourite).map((i) => i.name)
@@ -90,6 +100,13 @@ function buildWardrobeGapsSummary(items: ClothingItem[]): string {
   if (missing.length) lines.push(`Owns zero pieces in: ${missing.join(', ')}`)
   if (thin.length) lines.push(`Very thin (1 piece) in: ${thin.join(', ')}`)
   if (dominantColours.length) lines.push(`Dominant colour palette: ${dominantColours.join(', ')}`)
+  const learnedStyle = [
+    recurringColours.length ? `colours ${recurringColours.join(', ')}` : '',
+    recurringTypes.length ? `garment types ${recurringTypes.join(', ')}` : '',
+    recurringMaterials.length ? `materials ${recurringMaterials.join(', ')}` : '',
+    recurringPatterns.length ? `patterns ${recurringPatterns.join(', ')}` : '',
+  ].filter(Boolean)
+  if (learnedStyle.length) lines.push(`Style inferred from garments they chose to keep: ${learnedStyle.join('; ')}`)
   if (!hasFormal) lines.push('No formal/business-formality pieces yet')
   if (favourites.length) lines.push(`Marked as favourites: ${favourites.join(', ')}`)
   if (mostWorn.length) lines.push(`Reaches for most often: ${mostWorn.join(', ')}`)
