@@ -15,6 +15,7 @@ import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useOutfitStore } from '@/store/outfitStore'
 import { styleOptions } from '@/pages/onboarding/onboardingData'
 import { useAuth } from '@/contexts/AuthContext'
+import { useResolvedTheme } from '@/hooks/useTheme'
 
 // ─── Avatar helpers ───────────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ export function ProfilePage() {
   const removeWardrobeItem = useWardrobeStore((s) => s.removeItem)
   const unsaveOutfitAction = useOutfitStore((s) => s.unsaveOutfit)
   const { user, signOut } = useAuth()
+  const theme = useResolvedTheme()
 
   if (!profile) {
     return (
@@ -82,6 +84,8 @@ export function ProfilePage() {
   }
 
   const details = [profile.occupation, profile.ageRange && AGE_LABEL[profile.ageRange]].filter(Boolean)
+  const occasionPhotos = profile.typicalOccasions.map((o) => OCCASION_PHOTO[o]).filter(Boolean).slice(0, 3)
+  const stylePhoto = styleLabels[0]?.imageUrl ?? PHOTO.skirt
   const preferences: { icon: LucideIcon; label: string; value: string }[] = [
     { icon: Bell, label: 'Recommendations', value: FREQUENCY_LABEL[profile.recommendationFrequency] },
     ...(profile.genderStylePreference && profile.genderStylePreference !== 'no-preference'
@@ -125,15 +129,15 @@ export function ProfilePage() {
 
         {/* ── Stats ── */}
         <div className="grid grid-cols-3 gap-3 sm:gap-4">
-          <Stat icon={Shirt} value={wardrobeItems.length} label="Pieces" />
-          <Stat icon={Bookmark} value={savedOutfits.length} label="Outfits" />
-          <Stat icon={Repeat2} value={totalWears} label="Wears" />
+          <Stat icon={Shirt} value={wardrobeItems.length} label="Pieces" photo={PHOTO.rack} />
+          <Stat icon={Bookmark} value={savedOutfits.length} label="Outfits" photo={PHOTO.skirt} />
+          <Stat icon={Repeat2} value={totalWears} label="Wears" photo={PHOTO.shirts} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* ── Colour palette ── */}
           {(profile.favouriteColours.length > 0 || profile.avoidColours.length > 0) && (
-            <Card icon={Palette} title="Palette">
+            <Card icon={Palette} title="Palette" backdrop={<ColourWash colours={profile.favouriteColours} />}>
               <div className="space-y-4">
                 {profile.favouriteColours.length > 0 && (
                   <SwatchRow icon={Heart} label="Loves" colours={profile.favouriteColours} />
@@ -147,7 +151,7 @@ export function ProfilePage() {
 
           {/* ── Occasions ── */}
           {profile.typicalOccasions.length > 0 && (
-            <Card icon={CalendarHeart} title="Occasions">
+            <Card icon={CalendarHeart} title="Occasions" backdrop={<BlurredPhotos srcs={occasionPhotos} />}>
               <div className="flex flex-wrap gap-2">
                 {profile.typicalOccasions.map((o) => {
                   const Icon = OCCASION_ICON[o] ?? Sun
@@ -162,7 +166,7 @@ export function ProfilePage() {
           )}
 
           {/* ── Preferences ── */}
-          <Card icon={SlidersHorizontal} title="Preferences">
+          <Card icon={SlidersHorizontal} title="Preferences" backdrop={<BlurredPhotos srcs={[stylePhoto]} />}>
             <div className="flex flex-wrap gap-2">
               {preferences.map(({ icon, label, value }) => (
                 <Chip key={label} icon={icon} title={label}>{value}</Chip>
@@ -171,7 +175,7 @@ export function ProfilePage() {
           </Card>
 
           {/* ── Appearance ── */}
-          <Card icon={SunMoon} title="Appearance">
+          <Card icon={SunMoon} title="Appearance" backdrop={<BlurredPhotos srcs={[theme === 'dark' ? PHOTO.leather : PHOTO.rack]} />}>
             <ThemePicker />
           </Card>
         </div>
@@ -196,7 +200,7 @@ function IconBadge({ icon: Icon, danger = false }: { icon: LucideIcon; danger?: 
   return (
     <span className={clsx(
       'w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-colors',
-      danger ? 'bg-red-600/10 text-red-700 dark:text-red-400' : 'bg-butter-yellow/15 text-butter-yellow'
+      danger ? 'bg-red-600/10 text-red-700 dark:text-red-400' : 'bg-warm-cream/80 text-butter-yellow ring-1 ring-inset ring-butter-yellow/20 shadow-soft backdrop-blur-sm'
     )}>
       <Icon size={18} strokeWidth={1.8} />
     </span>
@@ -219,9 +223,10 @@ function IconButton({ icon: Icon, label, onClick, className }: { icon: LucideIco
   )
 }
 
-function Stat({ icon, value, label }: { icon: LucideIcon; value: number; label: string }) {
+function Stat({ icon, value, label, photo }: { icon: LucideIcon; value: number; label: string; photo: string }) {
   return (
-    <div className="rounded-3xl bg-warm-cream ring-1 ring-inset ring-text-primary/10 shadow-soft px-3 py-5 sm:py-6 flex flex-col items-center gap-2">
+    <div className="relative isolate overflow-hidden rounded-3xl bg-warm-cream ring-1 ring-inset ring-text-primary/10 shadow-soft px-3 py-5 sm:py-6 flex flex-col items-center gap-2">
+      <BlurredPhotos srcs={[photo]} />
       <IconBadge icon={icon} />
       <p className="font-display text-3xl sm:text-4xl text-text-primary tabular-nums leading-none">{value}</p>
       <p className="text-2xs uppercase tracking-widest text-text-muted">{label}</p>
@@ -229,15 +234,66 @@ function Stat({ icon, value, label }: { icon: LucideIcon; value: number; label: 
   )
 }
 
-function Card({ icon, title, children }: { icon: LucideIcon; title: string; children: React.ReactNode }) {
+function Card({ icon, title, backdrop, children }: { icon: LucideIcon; title: string; backdrop?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="rounded-3xl bg-text-primary/[0.03] ring-1 ring-inset ring-text-primary/10 p-5 sm:p-6">
+    <section className="relative isolate overflow-hidden rounded-3xl bg-warm-cream ring-1 ring-inset ring-text-primary/10 shadow-soft p-5 sm:p-6">
+      {backdrop}
       <h2 className="flex items-center gap-3 mb-5">
         <IconBadge icon={icon} />
         <span className="font-display text-2xl font-medium text-text-primary">{title}</span>
       </h2>
       {children}
     </section>
+  )
+}
+
+// ─── Card backdrops ───────────────────────────────────────────────────────────
+
+/**
+ * Soft-focus photos behind a card. Oversized and blurred so only colour and
+ * mood come through, then washed with the page colour so text stays readable
+ * in light and dark mode.
+ */
+function BlurredPhotos({ srcs }: { srcs: string[] }) {
+  if (!srcs.length) return null
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
+      <div className="absolute -inset-8 flex scale-110 blur-xl saturate-[1.15]">
+        {srcs.map((src) => (
+          <img
+            key={src}
+            src={`${src.split("?")[0]}?w=500&q=50&auto=format&fit=crop`}
+            alt=""
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={(e) => { e.currentTarget.style.display = 'none' }}
+            className="h-full min-w-0 flex-1 object-cover"
+          />
+        ))}
+      </div>
+      <div className="absolute inset-0 bg-warm-cream/65" />
+      <div className="absolute inset-0 bg-gradient-to-br from-warm-cream/40 via-transparent to-warm-cream/10" />
+    </div>
+  )
+}
+
+/** The user's favourite colours as drifting, blurred blobs of paint. */
+function ColourWash({ colours }: { colours: string[] }) {
+  if (!colours.length) return null
+  const spots = [[12, 20], [78, 15], [45, 70], [90, 80], [20, 90], [60, 30], [35, 40], [85, 50]]
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
+      <div className="absolute -inset-10 blur-2xl">
+        {colours.slice(0, spots.length).map((c, i) => (
+          <span
+            key={c}
+            className="absolute h-2/3 w-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-80"
+            style={{ left: `${spots[i][0]}%`, top: `${spots[i][1]}%`, backgroundColor: colourNameToHex(c) }}
+          />
+        ))}
+      </div>
+      <div className="absolute inset-0 bg-warm-cream/45" />
+    </div>
   )
 }
 
@@ -330,6 +386,25 @@ const OCCASION_ICON: Record<string, LucideIcon> = {
   travel: Plane,
   gym: Dumbbell,
   'special-event': PartyPopper,
+}
+
+// Unsplash photos already used elsewhere in the app, picked by subject.
+const PHOTO = {
+  rack: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d',
+  leather: 'https://images.unsplash.com/photo-1521223890158-f9f7c3d5d504',
+  skirt: 'https://images.unsplash.com/photo-1583496661160-fb5886a0aaaa',
+  shirts: 'https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf',
+}
+
+const OCCASION_PHOTO: Record<string, string> = {
+  work: 'https://images.unsplash.com/photo-1580657018950-c7f7d6a6d990',
+  casual: 'https://images.unsplash.com/photo-1620799139507-2a76f79a2f4d',
+  formal: 'https://images.unsplash.com/photo-1566174053879-31528523f8ae',
+  'date-night': 'https://images.unsplash.com/photo-1595777457583-95e059d581b8',
+  weekend: 'https://images.unsplash.com/photo-1496747611176-843222e1e57c',
+  travel: 'https://images.unsplash.com/photo-1577803645773-f96470509666',
+  gym: 'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5',
+  'special-event': 'https://images.unsplash.com/photo-1611923134239-b9be5816e23c',
 }
 
 // Short chip labels ("Work" rather than "Work / Office").
