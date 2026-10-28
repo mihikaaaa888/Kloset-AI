@@ -453,6 +453,9 @@ export function useCinematicChromaHero({
         const clipRight = 1 - (1 - doorRight) * (1 - fullReveal)
         const clipBottom = 1 - (1 - doorBottom) * (1 - fullReveal)
         rackScene.style.clipPath = `inset(${clipTop * 100}% ${(1 - clipRight) * 100}% ${(1 - clipBottom) * 100}% ${clipLeft * 100}%)`
+        // The rack settles from a slight push-in to its resting size as the doorway
+        // widens to full screen, and its controls key off the same value.
+        rackScene.style.setProperty('--rack-reveal', fullReveal.toFixed(4))
       }
       canvas.style.transform = `scale(${currentScale})`
       canvas.style.opacity = String(introOpacity * (1 - smoothedFade))

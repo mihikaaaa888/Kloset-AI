@@ -55,11 +55,12 @@ export function LandingPage() {
 
       {/* Brand bar belongs to the rack page and appears after the door is fully open. */}
       <header className={clsx(
-        'fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between bg-[#355f43] px-5 text-[#fffbd5] shadow-[0_2px_16px_rgba(26,46,33,0.14)] transition-[opacity,visibility] duration-500',
-        doorOpen ? 'visible opacity-100' : 'invisible pointer-events-none opacity-0'
+        'fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between bg-[#355f43] px-5 text-[#fffbd5] shadow-[0_2px_16px_rgba(26,46,33,0.14)] transition-[opacity,transform,visibility] duration-700 ease-out',
+        doorOpen ? 'visible translate-y-0 opacity-100' : 'invisible pointer-events-none -translate-y-3 opacity-0'
       )}>
-        <span className="font-brand text-xl tracking-wide">
-          Kloset<span className="text-[#fffbd5]/65">.</span>ai
+        <span className="flex items-center gap-2.5 font-brand text-xl [word-spacing:-0.2em] tracking-wide">
+          <img src="/images/kloset-hanger-mark.png" alt="" aria-hidden="true" className="h-7 w-auto" />
+          Kloset AI
         </span>
         <button
           onClick={() => setMenuOpen(true)}
