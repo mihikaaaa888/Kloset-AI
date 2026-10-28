@@ -72,7 +72,7 @@ export function LandingPage() {
 
       {/* ── Mobile top bar — no scroll-driven door on phones, so the logo and menu are there from the start ── */}
       <header className="md:hidden fixed top-0 inset-x-0 z-40 h-16 px-4 flex items-center justify-between bg-[#FBF5EC]/95 backdrop-blur-md border-b border-text-primary/10">
-        <span className="font-brand text-xl text-butter-yellow">Kloset AI</span>
+        <span className="font-brand [word-spacing:-0.2em] text-xl text-butter-yellow">Kloset AI</span>
         <button
           onClick={() => setMenuOpen(true)}
           aria-expanded={menuOpen}
@@ -110,7 +110,7 @@ export function LandingPage() {
         <div className="mx-auto max-w-7xl px-6 lg:px-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <span className="font-brand text-lg text-dark-purple/80">Kloset AI</span>
+              <span className="font-brand [word-spacing:-0.2em] text-lg text-dark-purple/80">Kloset AI</span>
             </div>
             <p className="text-dark-purple/60 text-xs">&copy; {new Date().getFullYear()} Kloset AI. All rights reserved.</p>
           </div>
@@ -134,7 +134,7 @@ export function LandingPage() {
           )}
         >
           <div className="flex items-center justify-between px-6 h-20 border-b border-butter-yellow/15">
-            <span className="font-brand text-xl text-butter-yellow">Kloset AI</span>
+            <span className="font-brand [word-spacing:-0.2em] text-xl text-butter-yellow">Kloset AI</span>
             <button
               onClick={() => setMenuOpen(false)}
               className="w-11 h-11 -mr-2 flex items-center justify-center rounded-full text-butter-yellow/70 hover:text-butter-yellow hover:bg-butter-yellow/10 transition-colors"

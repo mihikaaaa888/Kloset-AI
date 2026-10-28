@@ -34,7 +34,7 @@ export function ForgotPasswordPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-10">
           <Link to="/" className="inline-flex items-center gap-2 mb-8">
-            <span className="font-brand text-2xl text-butter-yellow">
+            <span className="font-brand [word-spacing:-0.2em] text-2xl text-butter-yellow">
               Kloset AI
             </span>
           </Link>
