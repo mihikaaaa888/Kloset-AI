@@ -1,7 +1,8 @@
 import { supabase } from './supabase'
 import type { ClothingItem } from '@/types'
-import { getImage, toPortableDataUrl } from './imageStorage'
+import { getImage, replaceImage, toPortableDataUrl } from './imageStorage'
 import { useWardrobeStore } from '@/store/wardrobeStore'
+import { removeImageBackground } from './backgroundRemoval'
 
 type DbItem = {
   id: string
@@ -104,27 +105,27 @@ export async function fetchWardrobe(userId: string): Promise<ClothingItem[] | nu
 // Photos are captured into this browser's IndexedDB. A copy goes to the private
 // wardrobe-images bucket (supabase/wardrobe_photos.sql) so the phone can show
 // pieces added on the laptop and vice versa. If that upload fails (bucket
-// missing, policy error, flaky mobile network) a small JPEG goes on the row
+// missing, policy error, flaky mobile network) a small PNG goes on the row
 // itself as image_url, so the other device never ends up with a blank card.
 
 const PHOTO_BUCKET = 'wardrobe-images'
 
-function photoPath(userId: string, item: ClothingItem): string | null {
-  return item.imageId ? `${userId}/${item.imageId}.jpg` : null
+function photoPath(userId: string, item: ClothingItem, contentType = 'image/jpeg'): string | null {
+  if (!item.imageId) return null
+  return `${userId}/${item.imageId}.${contentType === 'image/png' ? 'png' : 'jpg'}`
 }
 
 /** True when another device can't show this item's photo yet. */
-function needsPhotoSync(userId: string, item: ClothingItem): boolean {
-  return !!item.imageId && item.imageStoragePath !== photoPath(userId, item) && !item.imageUrl
+function needsPhotoSync(item: ClothingItem): boolean {
+  return !!item.imageId && !item.imageStoragePath && !item.imageUrl
 }
 
 /** Uploads the item's local photo if other devices can't see it yet. Returns the item to save. */
 async function withUploadedPhoto(userId: string, item: ClothingItem): Promise<ClothingItem> {
-  if (!needsPhotoSync(userId, item)) return item
-  const path = photoPath(userId, item)!
-
+  if (!needsPhotoSync(item)) return item
   const blob = await getImage(item.imageId!).catch(() => null)
   if (!blob) return item // Photo lives on another device; nothing to upload from here.
+  const path = photoPath(userId, item, blob.type || 'image/jpeg')!
 
   const { error } = await supabase.storage
     .from(PHOTO_BUCKET)
@@ -164,9 +165,86 @@ export function getPhotoUrl(path: string): Promise<string | null> {
   return cached
 }
 
+/**
+ * Convert older user-uploaded photos (JPEGs) to transparent PNGs. PNG paths
+ * mark completed items, so subsequent syncs skip them without database schema changes.
+ */
+export async function removeBackgroundsFromExistingPhotos(
+  userId: string,
+  items: ClothingItem[],
+  onProgress: (done: number, total: number, failed: number) => void,
+): Promise<void> {
+  const candidates = items.filter((item) =>
+    item.imageSource === 'local' &&
+    !!item.imageId &&
+    !(item.imageStoragePath?.toLowerCase().endsWith('.png') ||
+      (!item.imageStoragePath && item.imageUrl?.startsWith('data:image/png')))
+  )
+  let done = 0
+  let failed = 0
+
+  for (const item of candidates) {
+    try {
+      let photo = await getImage(item.imageId!).catch(() => null)
+      const oldPath = item.imageStoragePath
+      if (!photo && oldPath) {
+        const signedUrl = await getPhotoUrl(oldPath)
+        if (signedUrl) {
+          const response = await fetch(signedUrl)
+          if (!response.ok) throw new Error(`Could not download the existing photo (${response.status}).`)
+          photo = await response.blob()
+        }
+      }
+      if (!photo && item.imageUrl?.startsWith('data:image/')) {
+        photo = await fetch(item.imageUrl).then((response) => response.blob())
+      }
+      if (!photo) throw new Error('The existing photo is not available on this device or in storage.')
+
+      // A local PNG may be left from an interrupted prior migration; reuse it.
+      const transparentPng = photo.type === 'image/png' ? photo : await removeImageBackground(photo)
+      await replaceImage(item.imageId!, transparentPng)
+
+      const newPath = photoPath(userId, item, transparentPng.type)!
+      const { error: uploadError } = await supabase.storage
+        .from(PHOTO_BUCKET)
+        .upload(newPath, transparentPng, { contentType: 'image/png', upsert: true })
+
+      let imageUrl: string | null = null
+      let imageStoragePath: string | undefined = newPath
+      if (uploadError) {
+        imageUrl = await toPortableDataUrl(transparentPng)
+        if (!imageUrl) throw new Error(`Photo sync failed: ${uploadError.message}`)
+        imageStoragePath = undefined
+      }
+
+      const { error: rowError } = await supabase
+        .from('wardrobe_items')
+        .update({
+          image_storage_path: imageStoragePath ?? null,
+          image_url: imageUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', item.id)
+        .eq('user_id', userId)
+      if (rowError) throw new Error(`Could not save the updated photo: ${rowError.message}`)
+
+      useWardrobeStore.getState().updateItem(item.id, { imageStoragePath, imageUrl })
+      if (oldPath && oldPath !== imageStoragePath) {
+        signedUrlCache.delete(oldPath)
+        await supabase.storage.from(PHOTO_BUCKET).remove([oldPath])
+      }
+    } catch (error) {
+      failed++
+      console.warn('[wardrobe] existing photo background removal failed', item.id, error)
+    }
+    done++
+    onProgress(done, candidates.length, failed)
+  }
+}
+
 /** Uploads photos this device has that other devices can't see — heals items whose upload failed. */
 export async function backfillPhotos(userId: string, items: ClothingItem[]): Promise<void> {
-  const pending = items.filter((i) => needsPhotoSync(userId, i))
+  const pending = items.filter((i) => needsPhotoSync(i))
   if (pending.length === 0) return
   console.log('[wardrobe] checking', pending.length, 'photos for upload')
   for (const item of pending) {
@@ -208,7 +286,7 @@ export async function updateItem(userId: string, item: ClothingItem): Promise<vo
   console.log('[wardrobe] item updated', item.id)
 }
 
-export async function deleteItem(userId: string, itemId: string): Promise<void> {
+export async function deleteItem(userId: string, itemId: string, imageStoragePath?: string): Promise<void> {
   const { error } = await supabase
     .from('wardrobe_items')
     .delete()
@@ -219,4 +297,9 @@ export async function deleteItem(userId: string, itemId: string): Promise<void> 
     throw new Error(error.message)
   }
   console.log('[wardrobe] item deleted', itemId)
+  if (imageStoragePath) {
+    const { error: photoError } = await supabase.storage.from(PHOTO_BUCKET).remove([imageStoragePath])
+    if (photoError) console.warn('[wardrobe] deleted item photo could not be removed', photoError.message)
+    signedUrlCache.delete(imageStoragePath)
+  }
 }

@@ -17,6 +17,7 @@ import {
 } from '@/lib/imageStorage'
 import { getPhotoUrl } from '@/lib/wardrobeService'
 import { analyzeImage, analyzeImageFromUrl } from '@/lib/analyzeImage'
+import { removeImageBackground } from '@/lib/backgroundRemoval'
 import type { ClothingAnalysis } from '@/lib/analyzeImage'
 import type { ClothingItem, ClothingCategory, Pattern, Season, Occasion } from '@/types'
 
@@ -166,6 +167,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
   // previewUrl: displayed in the modal (blob URL or base64)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [imageProcessing, setImageProcessing] = useState(false)
+  const [imageProcessingStep, setImageProcessingStep] = useState('')
   const [imageError, setImageError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
 
@@ -230,6 +232,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
   // ── Process selected files ───────────────────────────────────────────────────
   const processFiles = useCallback(async (files: File[]) => {
     setImageProcessing(true)
+    setImageProcessingStep('Preparing photo…')
     setImageError(null)
 
     const valid: File[] = []
@@ -249,7 +252,17 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
     try {
       const processed: QueuedImage[] = []
       for (const file of valid) {
-        const blob = await compressImage(file)
+        setImageProcessingStep('Removing background…')
+        const compressed = await compressImage(file)
+        let blob: Blob
+        try {
+          blob = await removeImageBackground(compressed)
+        } catch (error) {
+          console.warn('[AddItemModal] Background removal failed; keeping original photo.', error)
+          blob = compressed
+          setImageError('Background removal couldn’t finish, so the original photo was kept. You can still add the item.')
+        }
+        setImageProcessingStep('Saving photo…')
         const imageId = await saveImage(blob)
         const url = URL.createObjectURL(blob)
         processed.push({ imageId, previewUrl: url, blob })
@@ -293,6 +306,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
       setImageError(e instanceof Error ? e.message : 'Failed to process image.')
     } finally {
       setImageProcessing(false)
+      setImageProcessingStep('')
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }, [activeImageId, editItem?.imageId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -765,7 +779,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
               {imageProcessing ? (
                 <>
                   <div className="w-8 h-8 rounded-full border-2 border-text-primary/40 border-t-dark-purple animate-spin" />
-                  <p className="text-sm text-text-muted">Processing…</p>
+                  <p className="text-sm text-text-muted">{imageProcessingStep || 'Processing…'}</p>
                 </>
               ) : (
                 <>
@@ -785,6 +799,12 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
                 </>
               )}
             </div>
+          )}
+
+          {!displayUrl && photoTab === 'upload' && !imageProcessing && (
+            <p className="text-xs text-text-muted mt-2">
+              Background removal runs on this device. The first upload downloads its AI model (about 45 MB).
+            </p>
           )}
 
           {/* AI auto-fill banner */}

@@ -1,4 +1,4 @@
-import { Heart, Sparkles } from 'lucide-react'
+import { Heart, Sparkles, Trash2 } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { ClothingItem } from '@/types'
 import { colourNameToHex, isLightColour } from '@/lib/colourUtils'
@@ -10,13 +10,14 @@ interface ClothingCardProps {
   onClick: () => void
   onToggleFavourite: (e: React.MouseEvent) => void
   onStyleThis?: (e: React.MouseEvent) => void
+  onDelete?: (e: React.MouseEvent) => void
 }
 
 /**
  * Editorial product tile: a tall photo on a warm neutral stage with the
  * piece's name and details set underneath, like a boutique listing.
  */
-export function ClothingCard({ item, onClick, onToggleFavourite, onStyleThis }: ClothingCardProps) {
+export function ClothingCard({ item, onClick, onToggleFavourite, onStyleThis, onDelete }: ClothingCardProps) {
   const imageUrl = useItemImage(item)
   const primaryColour = item.colour[0]
   const bgHex = primaryColour ? colourNameToHex(primaryColour) : '#EDE9E2'
@@ -69,6 +70,16 @@ export function ClothingCard({ item, onClick, onToggleFavourite, onStyleThis }: 
           </div>
         </div>
       </button>
+
+      {onDelete && (
+        <button
+          onClick={onDelete}
+          aria-label={`Delete ${item.name}`}
+          className="absolute top-2.5 left-2.5 w-9 h-9 rounded-full flex items-center justify-center bg-warm-cream/90 backdrop-blur-sm text-text-primary sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 transition-all hover:bg-red-50 hover:text-red-700"
+        >
+          <Trash2 size={15} strokeWidth={1.5} />
+        </button>
+      )}
 
       {/* Favourite: always visible when set, on hover otherwise */}
       <button

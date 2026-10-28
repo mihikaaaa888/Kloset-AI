@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/Button'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useUserStore } from '@/store/userStore'
 import { useOutfitStore } from '@/store/outfitStore'
+import { usePhotoCleanupStore } from '@/store/photoCleanupStore'
 import { deleteImage } from '@/lib/imageStorage'
 import { SAMPLE_WARDROBE_ITEMS } from '@/lib/sampleData'
 import { useAuth } from '@/contexts/AuthContext'
@@ -43,6 +44,7 @@ export function WardrobePage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
   const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null)
+  const photoCleanup = usePhotoCleanupStore()
 
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {}
@@ -92,14 +94,20 @@ export function WardrobePage() {
     setShowAddModal(true)
   }
 
-  const handleDelete = (id: string) => {
-    if (window.confirm('Remove this item from your Kloset?')) {
-      const item = items.find((i) => i.id === id)
-      if (item?.imageId) deleteImage(item.imageId).catch(() => {})
-      removeItem(id)
-      if (user) dbDeleteItem(user.id, id).catch(() => {})
-      setDetailItem(null)
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Remove this item from your Kloset?')) return
+    const item = items.find((i) => i.id === id)
+    if (user) {
+      try {
+        await dbDeleteItem(user.id, id, item?.imageStoragePath)
+      } catch {
+        window.alert('Could not delete this item right now. Please try again.')
+        return
+      }
     }
+    if (item?.imageId) deleteImage(item.imageId).catch(() => {})
+    removeItem(id)
+    setDetailItem(null)
   }
 
   const handleIncrementWorn = (item: ClothingItem) => {
@@ -185,6 +193,23 @@ export function WardrobePage() {
           ))}
         </div>
 
+        {view === 'pieces' && photoCleanup.total > 0 && (
+          <div className="mb-6 rounded-xl border border-text-primary/10 bg-surface px-4 py-3" aria-live="polite">
+            <p className="text-sm font-medium text-text-primary">
+              {photoCleanup.active
+                ? `Removing backgrounds from existing photos… ${photoCleanup.done} of ${photoCleanup.total}`
+                : photoCleanup.failed > 0
+                ? `Background removal finished with ${photoCleanup.failed} photo${photoCleanup.failed === 1 ? '' : 's'} to retry.`
+                : `Backgrounds removed from ${photoCleanup.done} existing photo${photoCleanup.done === 1 ? '' : 's'}.`}
+            </p>
+            {photoCleanup.active && (
+              <div className="mt-2 h-1 overflow-hidden rounded-full bg-text-primary/10">
+                <div className="h-full bg-dark-purple transition-all" style={{ width: `${photoCleanup.total ? (photoCleanup.done / photoCleanup.total) * 100 : 0}%` }} />
+              </div>
+            )}
+          </div>
+        )}
+
         {view === 'outfits' ? <MyOutfits /> : view === 'build' ? <BuildBoard onSaved={() => setView('outfits')} /> : <>
 
         {/* Search bar */}
@@ -257,6 +282,7 @@ export function WardrobePage() {
                   item={item}
                   onClick={() => setDetailItem(item)}
                   onToggleFavourite={(e) => { e.stopPropagation(); handleToggleFavourite(item) }}
+                  onDelete={(e) => { e.stopPropagation(); void handleDelete(item.id) }}
                   onStyleThis={(e) => { e.stopPropagation(); navigate('/stylist', { state: { mode: 'item', itemId: item.id } }) }}
                 />
               ))}

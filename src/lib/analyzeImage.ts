@@ -41,7 +41,10 @@ async function shrinkForAnalysis(blob: Blob): Promise<Blob> {
     const canvas = document.createElement('canvas')
     canvas.width = Math.round(img.naturalWidth * scale)
     canvas.height = Math.round(img.naturalHeight * scale)
-    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+    const context = canvas.getContext('2d')!
+    context.fillStyle = '#FFFFFF'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(img, 0, 0, canvas.width, canvas.height)
     const out = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85))
     if (!out) throw new Error('canvas.toBlob returned null')
     console.log('[analyzeImage] resized', { from: blob.size, to: out.size, width: canvas.width, height: canvas.height })
