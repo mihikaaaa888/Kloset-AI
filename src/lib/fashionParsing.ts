@@ -68,9 +68,9 @@ function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Could not create garment image.')), 'image/png'))
 }
 
-function maskAt(mask: SegmentationMask['mask'], x: number, y: number): boolean {
-  const mx = Math.min(mask.width - 1, Math.floor(x / 512 * mask.width))
-  const my = Math.min(mask.height - 1, Math.floor(y / 512 * mask.height))
+function maskAt(mask: SegmentationMask['mask'], x: number, y: number, width: number, height: number): boolean {
+  const mx = Math.min(mask.width - 1, Math.floor(x / width * mask.width))
+  const my = Math.min(mask.height - 1, Math.floor(y / height * mask.height))
   return mask.data[(my * mask.width + mx) * mask.channels] > 127
 }
 
@@ -86,8 +86,10 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
   }
 
   const byLabel = new Map(masks.map((mask) => [mask.label.toLowerCase(), mask]))
-  const inputWidth = 512
-  const inputHeight = 512
+  // Keep crop geometry at the uploaded image's resolution. The old fixed
+  // 512x512 canvas made every saved garment look blurry on phone screens.
+  const inputWidth = image.naturalWidth
+  const inputHeight = image.naturalHeight
   const garmentGroups = new Map<string, { masks: SegmentationMask[]; category: ClothingCategory; name: string }>()
   for (const [label, info] of Object.entries(CLOTHING)) {
     const mask = byLabel.get(label)
@@ -102,12 +104,13 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
   for (const group of garmentGroups.values()) {
     let minX = inputWidth, minY = inputHeight, maxX = -1, maxY = -1, pixelCount = 0
     for (let y = 0; y < inputHeight; y++) for (let x = 0; x < inputWidth; x++) {
-      if (group.masks.some(({ mask }) => maskAt(mask, x, y))) {
+      if (group.masks.some(({ mask }) => maskAt(mask, x, y, inputWidth, inputHeight))) {
         minX = Math.min(minX, x); minY = Math.min(minY, y)
         maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); pixelCount++
       }
     }
-    if (maxX < minX || maxY < minY || pixelCount < 180) continue
+    const minGarmentPixels = Math.max(64, Math.round(inputWidth * inputHeight * 0.0003))
+    if (maxX < minX || maxY < minY || pixelCount < minGarmentPixels) continue
     const padX = Math.round((maxX - minX + 1) * 0.04)
     const padY = Math.round((maxY - minY + 1) * 0.04)
     const left = Math.max(0, minX - padX), top = Math.max(0, minY - padY)
@@ -115,14 +118,14 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
     const crop = document.createElement('canvas')
     crop.width = right - left; crop.height = bottom - top
     const context = crop.getContext('2d', { willReadFrequently: true })!
-    context.drawImage(image, left / inputWidth * image.naturalWidth, top / inputHeight * image.naturalHeight,
-      crop.width / inputWidth * image.naturalWidth, crop.height / inputHeight * image.naturalHeight,
-      0, 0, crop.width, crop.height)
+    context.drawImage(image, left, top, crop.width, crop.height, 0, 0, crop.width, crop.height)
     const imagePixels = context.getImageData(0, 0, crop.width, crop.height)
     for (let y = 0; y < crop.height; y++) for (let x = 0; x < crop.width; x++) {
       const modelX = left + Math.min(right - left - 1, Math.floor(x / crop.width * (right - left)))
       const modelY = top + Math.min(bottom - top - 1, Math.floor(y / crop.height * (bottom - top)))
-      if (!group.masks.some(({ mask }) => maskAt(mask, modelX, modelY))) imagePixels.data[(y * crop.width + x) * 4 + 3] = 0
+      if (!group.masks.some(({ mask }) => maskAt(mask, modelX, modelY, inputWidth, inputHeight))) {
+        imagePixels.data[(y * crop.width + x) * 4 + 3] = 0
+      }
     }
     context.putImageData(imagePixels, 0, 0)
     garments.push({ blob: await canvasBlob(crop), category: group.category, name: group.name })
@@ -137,9 +140,9 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
   safeContext.drawImage(image, 0, 0)
   const pixels = safeContext.getImageData(0, 0, safe.width, safe.height)
   for (let y = 0; y < safe.height; y++) for (let x = 0; x < safe.width; x++) {
-    const modelX = Math.floor(x / safe.width * inputWidth)
-    const modelY = Math.floor(y / safe.height * inputHeight)
-    if (faceMasks.some(({ mask }) => maskAt(mask, modelX, modelY))) pixels.data[(y * safe.width + x) * 4 + 3] = 0
+    if (faceMasks.some(({ mask }) => maskAt(mask, x, y, safe.width, safe.height))) {
+      pixels.data[(y * safe.width + x) * 4 + 3] = 0
+    }
   }
   safeContext.putImageData(pixels, 0, 0)
   return { garments, containsPerson: masks.some(({ label }) => HUMAN_LABELS.has(label.toLowerCase())), safeFallback: await canvasBlob(safe) }
