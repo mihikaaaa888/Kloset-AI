@@ -327,7 +327,9 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
       else if (detectedName && !prev.name.trim()) next.name = detectedName
 
       if (detectedCategory) {
-        next.category = detectedCategory
+        next.category = detectedCategory === 'tops' && analysis.category === 'outerwear'
+          ? 'outerwear'
+          : detectedCategory
         next.subcategory = analysis.subcategory || (detectedName && !['Top', 'Pants', 'Shoes'].includes(detectedName) ? detectedName : '')
       } else if (analysis.category && VALID_CATEGORIES.has(analysis.category)) {
         next.category = analysis.category as ClothingCategory
