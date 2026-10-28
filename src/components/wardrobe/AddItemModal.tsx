@@ -17,7 +17,7 @@ import {
 } from '@/lib/imageStorage'
 import { getPhotoUrl } from '@/lib/wardrobeService'
 import { analyzeImage, analyzeImageFromUrl } from '@/lib/analyzeImage'
-import { removeImageBackground } from '@/lib/backgroundRemoval'
+import { refineGarmentImage, removeImageBackground } from '@/lib/backgroundRemoval'
 import { parseOutfitPhoto } from '@/lib/fashionParsing'
 import type { ClothingAnalysis } from '@/lib/analyzeImage'
 import type { ClothingItem, ClothingCategory, Pattern, Season, Occasion } from '@/types'
@@ -268,10 +268,14 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
           pieces = [pieces.find((piece) => piece.category === editItem.category) ?? pieces[0]]
         }
         for (const piece of pieces) {
+          setImageProcessingStep('Refining garment edges…')
+          const refinedBlob = parsed.garments.length > 0
+            ? await refineGarmentImage(piece.blob) ?? piece.blob
+            : piece.blob
           setImageProcessingStep('Saving garment…')
-          const imageId = await saveImage(piece.blob)
-          const url = URL.createObjectURL(piece.blob)
-          processed.push({ imageId, previewUrl: url, blob: piece.blob, detectedCategory: piece.category, detectedName: piece.name })
+          const imageId = await saveImage(refinedBlob)
+          const url = URL.createObjectURL(refinedBlob)
+          processed.push({ imageId, previewUrl: url, blob: refinedBlob, detectedCategory: piece.category, detectedName: piece.name })
           pendingMap.current.set(imageId, url)
         }
       }
@@ -813,7 +817,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
           {!displayUrl && photoTab === 'upload' && !imageProcessing && (
             <p className="text-xs text-text-muted mt-2">
-              Outfit scanning and face removal run on this device. The first upload may download up to about 75 MB of AI models.
+              Outfit scanning runs on this device. When PhotoRoom is configured, only each isolated garment cutout is sent to refine its edges; faces and the full photo are not sent.
             </p>
           )}
 

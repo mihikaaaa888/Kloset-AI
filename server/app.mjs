@@ -29,6 +29,7 @@ app.get('/api/health', (_req, res) => {
     hasGroqKey: !!process.env.GROQ_API_KEY,
     hasClaudeKey: !!process.env.CLAUDE_API_KEY,
     hasExaKey: !!process.env.EXA_API_KEY,
+    hasPhotoRoomKey: !!process.env.PHOTOROOM_API_KEY,
     timestamp: new Date().toISOString(),
   })
 })
@@ -208,6 +209,46 @@ app.post('/api/analyze-image-url', async (req, res) => {
       error: 'AI analysis failed. You can still add the item manually.',
       details: e instanceof Error ? e.message : String(e),
     })
+  }
+})
+
+// Refine the edges of a garment mask through PhotoRoom. The API key stays on
+// the server; callers send a cropped garment image, never the original photo.
+app.post('/api/refine-garment-image', async (req, res) => {
+  const { imageData, mediaType } = req.body ?? {}
+  const apiKey = process.env.PHOTOROOM_API_KEY
+
+  if (!apiKey) return res.status(503).json({ error: 'PhotoRoom is not configured.' })
+  if (!imageData || typeof imageData !== 'string') {
+    return res.status(400).json({ error: 'imageData (base64 string) is required' })
+  }
+  if (!mediaType || !['image/jpeg', 'image/png', 'image/webp'].includes(mediaType)) {
+    return res.status(400).json({ error: 'mediaType must be image/jpeg, image/png, or image/webp' })
+  }
+
+  try {
+    const imageBytes = Buffer.from(imageData, 'base64')
+    if (imageBytes.length > 10 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Image is too large for processing.' })
+    }
+
+    const form = new FormData()
+    form.append('image_file', new Blob([imageBytes], { type: mediaType }), `garment.${mediaType.split('/')[1]}`)
+    const response = await fetch('https://sdk.photoroom.com/v1/segment', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey },
+      body: form,
+    })
+    if (!response.ok) {
+      console.error(`[refine-garment-image] PhotoRoom ${response.status}:`, (await response.text()).slice(0, 500))
+      return res.status(502).json({ error: 'PhotoRoom could not refine this garment.' })
+    }
+
+    const output = Buffer.from(await response.arrayBuffer())
+    return res.json({ imageData: output.toString('base64'), mediaType: response.headers.get('content-type') || 'image/png' })
+  } catch (e) {
+    console.error('[refine-garment-image] PhotoRoom error:', e?.message ?? e)
+    return res.status(502).json({ error: 'PhotoRoom garment refinement failed.' })
   }
 })
 
