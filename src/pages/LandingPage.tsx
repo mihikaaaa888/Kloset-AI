@@ -18,19 +18,6 @@ export function LandingPage() {
   const [doorOpen, setDoorOpen] = useState(false)
   const [hasScrolled, setHasScrolled] = useState(false)
   const showMenuButton = hasScrolled && doorOpen
-  // "Scroll" cue: fades in a beat after load (once the hero has had a moment to
-  // appear), and leaves for good the moment the user starts scrolling.
-  const [cueReady, setCueReady] = useState(false)
-  const showScrollCue = cueReady && !hasScrolled
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setCueReady(true), 1200)
-    return () => window.clearTimeout(timer)
-  }, [])
-
-  useEffect(() => {
-    if (cueReady) console.log('[landing-scroll-cue]', showScrollCue ? 'shown' : 'hidden (user scrolled)')
-  }, [cueReady, showScrollCue])
 
   useEffect(() => {
     const onScroll = () => setHasScrolled(window.scrollY > 40)
@@ -96,28 +83,6 @@ export function LandingPage() {
           <Menu size={22} />
         </button>
       </header>
-
-      {/* ── Scroll cue — tells first-time visitors the desktop hero opens by
-           scrolling. Sits in the bottom-left corner, clear of the closet.
-           Phones skip it: their hero isn't scroll-driven and the CTA is
-           already on screen. ── */}
-      <div
-        aria-hidden={!showScrollCue}
-        className={clsx(
-          'hidden md:flex fixed bottom-10 left-10 z-30 items-end gap-4 pointer-events-none select-none text-butter-yellow',
-          'transition-[opacity,transform] duration-700 ease-editorial',
-          showScrollCue ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
-        )}
-      >
-        <span className="relative block w-px h-16 overflow-hidden">
-          <span className="absolute inset-0 bg-current opacity-20" />
-          <span className="absolute inset-0 bg-current motion-safe:animate-scroll-cue" />
-        </span>
-        <span className="flex flex-col gap-1.5">
-          <span className="font-display italic text-5xl leading-none tracking-tight">Scroll</span>
-          <span className="text-2xs font-medium uppercase tracking-ultra-wide opacity-75">to open your Kloset</span>
-        </span>
-      </div>
 
       {/* ── Menu button — pinned top-left, fades in once the closet door has opened ── */}
       <button
