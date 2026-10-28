@@ -22,7 +22,7 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
           ref={ref}
           id={inputId}
           className={clsx(
-            'w-full rounded-2xl border bg-white px-5 py-4',
+            'w-full rounded-2xl border bg-surface px-5 py-4',
             'text-charcoal-900 text-base placeholder:text-charcoal-400',
             'transition-all duration-200 outline-none',
             'focus:ring-2 focus:ring-charcoal-900 focus:border-charcoal-900',

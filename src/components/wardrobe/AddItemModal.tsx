@@ -684,8 +684,8 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
               {/* AI analysing overlay */}
               {aiAnalyzing && (
-                <div className="absolute inset-0 bg-text-primary/30 backdrop-blur-sm flex items-center justify-center">
-                  <div className="bg-white/95 rounded-2xl px-4 py-3 flex items-center gap-2.5 shadow-soft">
+                <div className="absolute inset-0 bg-scrim/30 backdrop-blur-sm flex items-center justify-center">
+                  <div className="bg-surface/95 rounded-2xl px-4 py-3 flex items-center gap-2.5 shadow-soft">
                     <div className="w-4 h-4 rounded-full border-2 border-butter-yellow/20 border-t-butter-yellow animate-spin" />
                     <span className="text-xs font-medium text-text-primary">Analysing…</span>
                   </div>
@@ -694,7 +694,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
               <button
                 onClick={handleRemoveImage}
-                className="absolute top-3 right-3 w-8 h-8 rounded-full bg-text-primary/70 flex items-center justify-center text-white hover:bg-text-primary transition-colors"
+                className="absolute top-3 right-3 w-8 h-8 rounded-full bg-scrim/70 flex items-center justify-center text-white hover:bg-scrim transition-colors"
                 aria-label="Remove image"
               >
                 <X size={14} />
@@ -702,7 +702,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
               {!isInBatch && (
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="absolute bottom-3 left-3 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/90 backdrop-blur-sm text-text-primary text-xs font-medium hover:bg-white transition-colors"
+                  className="absolute bottom-3 left-3 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface/90 backdrop-blur-sm text-text-primary text-xs font-medium hover:bg-surface transition-colors"
                 >
                   <Upload size={11} />
                   Replace
@@ -728,7 +728,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
                   onChange={(e) => { setUrlInput(e.target.value); setUrlError(null) }}
                   onKeyDown={(e) => e.key === 'Enter' && handleUrlSubmit()}
                   placeholder="Paste an image URL from the web…"
-                  className="flex-1 px-4 py-3 rounded-xl border border-text-primary/20 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-primary/50 bg-white"
+                  className="flex-1 px-4 py-3 rounded-xl border border-text-primary/20 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-primary/50 bg-surface"
                 />
                 <button
                   type="button"
@@ -842,7 +842,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
                   'flex items-center px-4 py-2.5 rounded-full text-sm font-medium border transition-all duration-200',
                   draft.category === cat.value
                     ? 'bg-dark-purple text-butter-yellow border-dark-purple'
-                    : 'bg-white text-text-primary border-text-primary/15 hover:border-text-primary/40'
+                    : 'bg-surface text-text-primary border-text-primary/15 hover:border-text-primary/40'
                 )}
               >
                 {cat.label}
@@ -1093,7 +1093,7 @@ function ImageSearchBrowser({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') search(query, 1) }}
             placeholder="e.g. black blazer, white sneakers…"
-            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-text-primary/20 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-primary/50 bg-white"
+            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-text-primary/20 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-primary/50 bg-surface"
           />
         </div>
         <button

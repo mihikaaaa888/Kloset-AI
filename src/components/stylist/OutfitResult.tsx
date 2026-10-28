@@ -112,8 +112,8 @@ export function OutfitResult({
 
             <div className="relative">
               <div className="flex items-center gap-2 mb-1">
-                <HangerIcon size={14} className="text-gold-light" />
-                <span className="text-gold-light text-xs font-medium uppercase tracking-widest">
+                <HangerIcon size={14} className="text-gold-light dark:text-dark-purple/70" />
+                <span className="text-gold-light dark:text-dark-purple/70 text-xs font-medium uppercase tracking-widest">
                   Styling tips
                 </span>
               </div>
@@ -124,7 +124,7 @@ export function OutfitResult({
               <ol className="divide-y divide-dark-purple/15">
                 {stylingTips.map((tip, i) => (
                   <li key={i} className="flex items-start gap-5 py-4 first:pt-0 last:pb-0">
-                    <span className="font-display italic text-4xl leading-none text-gold-light/90 w-10 flex-shrink-0 tabular-nums">
+                    <span className="font-display italic text-4xl leading-none text-gold-light/90 dark:text-dark-purple/60 w-10 flex-shrink-0 tabular-nums">
                       {String(i + 1).padStart(2, '0')}
                     </span>
                     <p className="text-sm text-dark-purple/90 leading-relaxed pt-1">{tip}</p>
@@ -224,7 +224,7 @@ function OutfitItemTile({
   const isLight = isLightColour(bgHex)
 
   return (
-    <div className="rounded-3xl overflow-hidden bg-white shadow-card">
+    <div className="rounded-3xl overflow-hidden bg-surface shadow-card">
       {/* Image / placeholder */}
       <div className={clsx('relative', featured ? 'aspect-[3/4]' : 'aspect-square')}>
         {imageUrl ? (
@@ -247,7 +247,7 @@ function OutfitItemTile({
 
         {/* Role badge */}
         <div className="absolute top-3 left-3">
-          <span className="text-2xs font-medium uppercase tracking-widest px-2.5 py-1 rounded-full bg-white/90 backdrop-blur-sm text-charcoal-700 capitalize">
+          <span className="text-2xs font-medium uppercase tracking-widest px-2.5 py-1 rounded-full bg-surface/90 backdrop-blur-sm text-charcoal-700 capitalize">
             {role}
           </span>
         </div>

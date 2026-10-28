@@ -817,7 +817,7 @@ function Step10Frequency({
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow',
               value === opt.value
                 ? 'bg-dark-purple text-butter-yellow border-dark-purple'
-                : 'bg-white text-text-primary border-text-primary/15 hover:border-text-primary/40'
+                : 'bg-surface text-text-primary border-text-primary/15 hover:border-text-primary/40'
             )}
           >
             <div>

@@ -174,7 +174,7 @@ export function SavedOutfitDetailModal({
               size="sm"
               onClick={onUnsave}
               fullWidth
-              className="gap-2 !text-red-500 hover:!bg-red-50"
+              className="gap-2 !text-red-500 hover:!bg-red-50 dark:bg-red-950/40"
             >
               <Trash2 size={14} />
               Remove
@@ -213,7 +213,7 @@ function OutfitDetailTile({
   const isLight = isLightColour(bgHex)
 
   return (
-    <div className="rounded-2xl overflow-hidden bg-white shadow-card">
+    <div className="rounded-2xl overflow-hidden bg-surface shadow-card">
       <div
         className={clsx('relative flex items-center justify-center', featured ? 'aspect-[4/3]' : 'aspect-[3/2]')}
         style={imageUrl ? undefined : { backgroundColor: bgHex }}
@@ -226,7 +226,7 @@ function OutfitDetailTile({
             className={clsx('select-none', isLight ? 'text-text-primary opacity-30' : 'text-white opacity-40')}
           />
         )}
-        <span className="absolute top-2 left-2 text-2xs font-medium uppercase tracking-widest px-2 py-0.5 rounded-full bg-white/90 backdrop-blur-sm text-charcoal-700 capitalize">
+        <span className="absolute top-2 left-2 text-2xs font-medium uppercase tracking-widest px-2 py-0.5 rounded-full bg-surface/90 backdrop-blur-sm text-charcoal-700 capitalize">
           {role}
         </span>
       </div>

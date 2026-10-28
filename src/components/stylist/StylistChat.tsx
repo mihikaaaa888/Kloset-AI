@@ -4,14 +4,16 @@ import { Send, RotateCcw, Plus, Check, ExternalLink } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { clsx } from 'clsx'
 import { sendChatMessage, type ChatMessage } from '@/lib/chatService'
-import { searchWebShop, cleanProductTitle } from '@/lib/webShopService'
+import { searchWebShopCached, cleanProductTitle, type Retailer } from '@/lib/webShopService'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useUserStore } from '@/store/userStore'
 import { useChatStore } from '@/store/chatStore'
 import { useAuth } from '@/contexts/AuthContext'
 import { insertItem } from '@/lib/wardrobeService'
+import { useItemImage } from '@/hooks/useItemImage'
+import { CategoryGlyph } from '@/components/wardrobe/categoryVisuals'
 import { CATALOG_ITEMS } from '@/lib/catalogData'
-import type { CatalogItem, ClothingItem, WebShopResult } from '@/types'
+import type { CatalogItem, ClothingCategory, ClothingItem, WebShopResult } from '@/types'
 
 const SUGGESTED_PROMPTS = [
   'What should I wear today?',
@@ -36,12 +38,93 @@ function findMentionedCatalogItems(content: string): CatalogItem[] {
 // query to run a live Exa search, so the recommendation resolves to a real,
 // current product link instead of a name she can't verify. The slot is for
 // the server's outfit check; older messages without one still parse.
-const SHOP_TAG_RE = /\[\[SHOP:\s*(?:[a-z]+\s*\|\s*)?([^\]]+)\]\]/i
+const SHOP_TAG_RE = /\[\[SHOP:\s*(?:([a-z]+)\s*\|\s*)?([^\]]+)\]\]/gi
 
-function extractShopQuery(content: string): { text: string; query: string | null } {
-  const match = content.match(SHOP_TAG_RE)
-  if (!match) return { text: content, query: null }
-  return { text: content.replace(SHOP_TAG_RE, '').trim(), query: match[1].trim() }
+const RETAILERS: Retailer[] = ['zara', 'hm', 'cos', 'uniqlo', 'mango', 'stories', 'everlane']
+
+interface ShopQuery {
+  query: string
+  retailer: Retailer | null
+  slot: string | null
+}
+
+// Kaia writes each outfit as one "- Slot: piece" line per slot (see the server's
+// system prompt and outfitRules.mjs). A list made only of those lines is drawn
+// as an outfit board with photos, instead of a bulleted list of names.
+const SLOT_ALIASES: Record<string, string> = {
+  top: 'top',
+  bottom: 'bottom',
+  bottoms: 'bottom',
+  dress: 'dress',
+  outerwear: 'outerwear',
+  layer: 'outerwear',
+  jacket: 'outerwear',
+  shoes: 'shoes',
+  footwear: 'shoes',
+  accessory: 'accessory',
+  accessories: 'accessory',
+}
+const SLOT_CATEGORY: Record<string, ClothingCategory> = {
+  top: 'tops',
+  bottom: 'bottoms',
+  dress: 'dresses',
+  outerwear: 'outerwear',
+  shoes: 'shoes',
+  accessory: 'accessories',
+}
+const SLOT_LABEL: Record<string, string> = {
+  top: 'Top',
+  bottom: 'Bottom',
+  dress: 'Dress',
+  outerwear: 'Layer',
+  shoes: 'Shoes',
+  accessory: 'Accessory',
+}
+const SLOT_ITEM_RE = /^\**\s*([a-z]+)\s*\**\s*[:–—-]\s*\**\s*(.+)$/i
+const TO_BUY_RE = /\(\s*to buy\s*\)/i
+
+interface OutfitPiece {
+  slot: string
+  name: string
+  toBuy: boolean
+}
+
+function parseOutfitPieces(items: string[]): OutfitPiece[] | null {
+  const pieces: OutfitPiece[] = []
+  for (const item of items) {
+    const m = item.match(SLOT_ITEM_RE)
+    const slot = m && SLOT_ALIASES[m[1].toLowerCase()]
+    if (!m || !slot) return null
+    const raw = m[2].replace(/\*+/g, '').trim()
+    pieces.push({ slot, name: raw.replace(TO_BUY_RE, '').trim(), toBuy: TO_BUY_RE.test(raw) })
+  }
+  return pieces.length >= 2 ? pieces : null
+}
+
+// Longest wardrobe name contained in the line wins, so "Blue jeans" doesn't
+// claim a line about a "Blue jeans jacket".
+function findOwnedItem(piece: string, wardrobe: ClothingItem[]): ClothingItem | null {
+  const lower = piece.toLowerCase()
+  let best: ClothingItem | null = null
+  for (const item of wardrobe) {
+    const name = item.name.toLowerCase()
+    if (name && lower.includes(name) && (!best || name.length > best.name.length)) best = item
+  }
+  return best
+}
+
+// A tag can end with a store the user asked for: [[SHOP: dress | black slip dress | zara]].
+// A list of options carries one tag per piece, so every tag is stripped and searched.
+function extractShopQueries(content: string): { text: string; queries: ShopQuery[] } {
+  const queries: ShopQuery[] = []
+  for (const match of content.matchAll(SHOP_TAG_RE)) {
+    const [query, store] = match[2].split('|').map((part) => part.trim())
+    if (!query || queries.some((q) => q.query === query)) continue
+    const slot = match[1] ? SLOT_ALIASES[match[1].toLowerCase()] ?? null : null
+    queries.push({ query, retailer: RETAILERS.find((r) => r === store?.toLowerCase()) ?? null, slot })
+  }
+  const text = content.replace(SHOP_TAG_RE, '').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim()
+  return { text, queries: queries.slice(0, 4) }
 }
 
 export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
@@ -195,7 +278,7 @@ export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
             placeholder="Ask Kaia anything…"
             rows={1}
             maxLength={4000}
-            className="flex-1 resize-none px-4 py-3 rounded-2xl border border-text-primary/15 bg-white text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-primary/40 transition-colors leading-relaxed"
+            className="flex-1 resize-none px-4 py-3 rounded-2xl border border-text-primary/15 bg-surface text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-primary/40 transition-colors leading-relaxed"
             style={{ maxHeight: 120 }}
           />
           <button
@@ -329,7 +412,7 @@ function parseMessageBlocks(content: string): ContentBlock[] {
   return blocks
 }
 
-function MessageContent({ text }: { text: string }) {
+function MessageContent({ text, shopQueries = [] }: { text: string; shopQueries?: ShopQuery[] }) {
   const blocks = parseMessageBlocks(text)
   return (
     <>
@@ -346,6 +429,8 @@ function MessageContent({ text }: { text: string }) {
           </p>
         ) : block.type === 'hr' ? (
           <hr key={i} className="my-1 border-t border-text-primary/10" />
+        ) : block.type === 'list' && parseOutfitPieces(block.items) ? (
+          <OutfitBoard key={i} pieces={parseOutfitPieces(block.items)!} shopQueries={shopQueries} />
         ) : block.type === 'list' ? (
           block.ordered ? (
             <ol key={i} className="list-decimal pl-5 space-y-1">
@@ -408,9 +493,9 @@ function MessageBubble({
   onAddCatalogItem: (item: CatalogItem) => void
 }) {
   const isUser = message.role === 'user'
-  const { text, query: shopQuery } = isUser
-    ? { text: message.content, query: null as string | null }
-    : extractShopQuery(message.content)
+  const { text, queries: shopQueries } = isUser
+    ? { text: message.content, queries: [] as ShopQuery[] }
+    : extractShopQueries(message.content)
   const mentioned = isUser ? [] : findMentionedCatalogItems(text)
 
   return (
@@ -426,36 +511,48 @@ function MessageBubble({
             'max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed space-y-1',
             isUser
               ? 'bg-dark-purple text-text-primary rounded-br-md'
-              : 'bg-white text-text-primary shadow-card rounded-bl-md'
+              : 'bg-surface text-text-primary shadow-card rounded-bl-md'
           )}
         >
-          <MessageContent text={text} />
+          <MessageContent text={text} shopQueries={shopQueries} />
         </div>
       </div>
 
-      {shopQuery && <ExternalShopSuggestion query={shopQuery} />}
+      {shopQueries.map((q) => (
+        <ExternalShopSuggestion
+          key={q.query}
+          query={q.query}
+          retailer={q.retailer}
+          // One store, one piece → show more of that store's options.
+          limit={shopQueries.length === 1 && q.retailer ? 6 : 3}
+        />
+      ))}
 
       {/* Real catalog pieces Kaia named — add them to the Kloset directly, or shop/rent, without leaving the chat. */}
       {mentioned.length > 0 && (
-        <div className="flex flex-wrap gap-2 mt-2 ml-9 max-w-[80%]">
+        <div className="flex gap-2.5 mt-2 ml-9 max-w-[calc(100%-2.25rem)] md:max-w-[80%] overflow-x-auto scrollbar-hide pb-1">
           {mentioned.map((item) => {
             const added = addedCatalogIds.has(item.id)
             return (
-              <button
-                key={item.id}
-                onClick={() => !added && onAddCatalogItem(item)}
-                disabled={added}
-                className={clsx(
-                  'flex items-center gap-1.5 pl-1.5 pr-3 py-1.5 rounded-full text-xs font-medium border transition-colors',
-                  added
-                    ? 'bg-text-primary/5 border-text-primary/10 text-text-primary/40 cursor-default'
-                    : 'bg-white border-text-primary/15 text-text-primary hover:border-butter-yellow hover:bg-butter-yellow/5'
-                )}
-              >
-                <img src={item.imageUrl} alt="" className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
-                {added ? <Check size={12} /> : <Plus size={12} />}
-                {item.name}
-              </button>
+              <div key={item.id} className="w-32 flex-shrink-0 rounded-2xl bg-surface shadow-card overflow-hidden">
+                <img src={item.imageUrl} alt={item.name} loading="lazy" className="w-full aspect-[3/4] object-cover bg-text-primary/5" />
+                <div className="p-2 space-y-1.5">
+                  <p className="text-xs font-medium text-text-primary leading-snug line-clamp-2">{item.name}</p>
+                  <button
+                    onClick={() => !added && onAddCatalogItem(item)}
+                    disabled={added}
+                    className={clsx(
+                      'w-full flex items-center justify-center gap-1 py-1.5 rounded-full text-2xs font-medium transition-colors',
+                      added
+                        ? 'bg-text-primary/5 text-text-primary/40 cursor-default'
+                        : 'bg-dark-purple text-butter-yellow hover:bg-deep-purple'
+                    )}
+                  >
+                    {added ? <Check size={11} /> : <Plus size={11} />}
+                    {added ? 'In your Kloset' : 'Add to Kloset'}
+                  </button>
+                </div>
+              </div>
             )
           })}
         </div>
@@ -464,66 +561,193 @@ function MessageBubble({
   )
 }
 
-// Resolves a [[SHOP: ...]] tag into real product links via the Exa-backed
-// search (see src/lib/webShopService.ts). Fails silently — no key, no
-// results, or an upstream error all just mean no card renders, rather than
-// cluttering the chat with an error state for what's a bonus, not the reply.
-// Brand names are never shown — just the piece and a link.
-function ExternalShopSuggestion({ query }: { query: string }) {
-  const [status, setStatus] = useState<'loading' | 'done' | 'none'>('loading')
+// Resolves a [[SHOP: ...]] tag into real product pages via the Exa-backed
+// search (see src/lib/webShopService.ts). Concurrent lookups for the same
+// query share one request, so the outfit board's "to buy" tile and the
+// product row below it don't search twice.
+function useShopResults(query: string | null, retailer: Retailer | null) {
+  const [status, setStatus] = useState<'loading' | 'done' | 'none'>(query ? 'loading' : 'none')
   const [results, setResults] = useState<WebShopResult[]>([])
 
   useEffect(() => {
+    if (!query) { setStatus('none'); return }
     let cancelled = false
     setStatus('loading')
-    searchWebShop(query)
+    searchWebShopCached(query, retailer ? [retailer] : undefined)
       .then(({ results: found, noKey, error }) => {
         if (cancelled) return
         if (noKey || error || !found.length) {
+          console.log('[chat-shop] no products for', { query, noKey, error })
           setStatus('none')
           return
         }
-        setResults(found.slice(0, 3))
+        setResults(found)
         setStatus('done')
       })
-      .catch(() => {
+      .catch((e) => {
+        console.error('[chat-shop] search failed', query, e)
         if (!cancelled) setStatus('none')
       })
     return () => {
       cancelled = true
     }
-  }, [query])
+  }, [query, retailer])
+
+  return { status, results }
+}
+
+// Fails silently — no key, no results, or an upstream error all just mean no
+// cards render, rather than cluttering the chat with an error state for
+// what's a bonus, not the reply. Brand names are never shown.
+function ExternalShopSuggestion({ query, retailer, limit }: { query: string; retailer: Retailer | null; limit: number }) {
+  const { status, results } = useShopResults(query, retailer)
 
   if (status === 'none') return null
 
   if (status === 'loading') {
     return (
-      <div className="flex items-center gap-2 mt-2 ml-9 text-2xs text-text-muted">
-        <div className="w-3 h-3 border-2 border-text-primary/15 border-t-dark-purple rounded-full animate-spin" />
-        Finding pieces for &ldquo;{query}&rdquo;…
+      <div className="flex gap-2.5 mt-2 ml-9 max-w-[calc(100%-2.25rem)] md:max-w-[80%] overflow-hidden" aria-label={`Finding pieces for ${query}`}>
+        {Array.from({ length: Math.min(limit, 3) }).map((_, i) => (
+          <div key={i} className="w-32 flex-shrink-0 rounded-2xl bg-surface shadow-card overflow-hidden">
+            <div className="w-full aspect-[3/4] bg-text-primary/5 animate-pulse" />
+            <div className="p-2 space-y-1.5">
+              <div className="h-2.5 rounded bg-text-primary/8 animate-pulse" />
+              <div className="h-2.5 w-2/3 rounded bg-text-primary/8 animate-pulse" />
+            </div>
+          </div>
+        ))}
       </div>
     )
   }
 
   return (
-    <div className="flex gap-2 mt-2 ml-9 max-w-[80%] overflow-x-auto scrollbar-hide">
-      {results.map((r) => (
-        <a
-          key={r.id}
-          href={r.url}
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full text-xs font-medium border border-text-primary/15 bg-white text-text-primary hover:border-butter-yellow hover:bg-butter-yellow/5 transition-colors whitespace-nowrap flex-shrink-0"
-        >
-          {r.imageUrl ? (
-            <img src={r.imageUrl} alt="" className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
-          ) : (
-            <ExternalLink size={12} className="flex-shrink-0" />
-          )}
-          {cleanProductTitle(r.title)}
-        </a>
-      ))}
+    <div className="mt-2 ml-9 max-w-[calc(100%-2.25rem)] md:max-w-[80%]">
+      <p className="text-2xs uppercase tracking-wide text-text-muted mb-1.5">Shop &ldquo;{query}&rdquo;</p>
+      <div className="flex gap-2.5 overflow-x-auto scrollbar-hide pb-1">
+        {results.slice(0, limit).map((r) => (
+          <a
+            key={r.id}
+            href={r.url}
+            target="_blank"
+            rel="noreferrer"
+            className="group w-32 flex-shrink-0 rounded-2xl bg-surface shadow-card overflow-hidden hover:ring-2 hover:ring-butter-yellow transition-shadow"
+          >
+            <ShopImage src={r.imageUrl} alt={cleanProductTitle(r.title)} />
+            <div className="p-2">
+              <p className="text-xs font-medium text-text-primary leading-snug line-clamp-2">{cleanProductTitle(r.title)}</p>
+              <p className="flex items-center gap-1 mt-1 text-2xs text-text-muted group-hover:text-text-primary">
+                View piece <ExternalLink size={10} />
+              </p>
+            </div>
+          </a>
+        ))}
+      </div>
     </div>
+  )
+}
+
+// Product images come from retailer CDNs and sometimes 404 or block
+// hotlinking — fall back to a neutral tile rather than a broken-image icon.
+function ShopImage({ src, alt, className }: { src: string | null; alt: string; className?: string }) {
+  const [failed, setFailed] = useState(false)
+  if (!src || failed) {
+    return (
+      <div className={clsx('w-full aspect-[3/4] bg-text-primary/5 flex items-center justify-center text-text-primary/30', className)}>
+        <ExternalLink size={18} />
+      </div>
+    )
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+      className={clsx('w-full aspect-[3/4] object-cover bg-text-primary/5', className)}
+    />
+  )
+}
+
+// An outfit Kaia wrote as slot lines, drawn as photos: owned pieces come from
+// the wardrobe (same image resolution as the Kloset page), and a "(to buy)"
+// piece shows the top live product for its [[SHOP]] tag.
+function OutfitBoard({ pieces, shopQueries }: { pieces: OutfitPiece[]; shopQueries: ShopQuery[] }) {
+  const wardrobe = useWardrobeStore((s) => s.items)
+
+  useEffect(() => {
+    const matched = pieces.filter((p) => !p.toBuy && findOwnedItem(p.name, wardrobe)).length
+    console.log(`[chat-outfit] board: ${pieces.length} pieces, ${matched} matched to wardrobe`)
+    // Log once per board, not on every wardrobe sync.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return (
+    <div className="my-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
+      {pieces.map((piece, i) => {
+        if (piece.toBuy) {
+          const tag = shopQueries.find((q) => q.slot === piece.slot) ?? null
+          return <ToBuyTile key={i} piece={piece} query={tag} />
+        }
+        return <OwnedTile key={i} piece={piece} item={findOwnedItem(piece.name, wardrobe)} />
+      })}
+    </div>
+  )
+}
+
+function OwnedTile({ piece, item }: { piece: OutfitPiece; item: ClothingItem | null }) {
+  const imageUrl = useItemImage(item)
+  return (
+    <figure className="rounded-xl border border-text-primary/10 overflow-hidden bg-warm-cream">
+      <div className="relative">
+        {imageUrl ? (
+          <img src={imageUrl} alt={piece.name} loading="lazy" className="w-full aspect-square object-cover bg-text-primary/5" />
+        ) : (
+          <div className="w-full aspect-square flex items-center justify-center text-text-primary/35">
+            <CategoryGlyph category={SLOT_CATEGORY[piece.slot]} size={44} />
+          </div>
+        )}
+        <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-surface/90 text-2xs font-medium text-text-primary">
+          {SLOT_LABEL[piece.slot]}
+        </span>
+      </div>
+      <figcaption className="px-2 py-1.5 text-xs leading-snug text-text-primary line-clamp-2">
+        {formatInline(piece.name)}
+      </figcaption>
+    </figure>
+  )
+}
+
+function ToBuyTile({ piece, query }: { piece: OutfitPiece; query: ShopQuery | null }) {
+  const { status, results } = useShopResults(query?.query ?? null, query?.retailer ?? null)
+  const top = results[0]
+  const body = (
+    <>
+      <div className="relative">
+        {status === 'loading' ? (
+          <div className="w-full aspect-square bg-text-primary/5 animate-pulse" />
+        ) : top?.imageUrl ? (
+          <ShopImage src={top.imageUrl} alt={piece.name} className="!aspect-square" />
+        ) : (
+          <div className="w-full aspect-square flex items-center justify-center text-text-primary/35">
+            <CategoryGlyph category={SLOT_CATEGORY[piece.slot]} size={44} />
+          </div>
+        )}
+        <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-butter-yellow text-2xs font-medium text-dark-purple">
+          {SLOT_LABEL[piece.slot]} · to buy
+        </span>
+      </div>
+      <figcaption className="px-2 py-1.5 text-xs leading-snug text-text-primary line-clamp-2">
+        {formatInline(piece.name)}
+      </figcaption>
+    </>
+  )
+  return top ? (
+    <a href={top.url} target="_blank" rel="noreferrer" className="block rounded-xl border border-dashed border-text-primary/25 overflow-hidden bg-warm-cream hover:border-butter-yellow">
+      <figure>{body}</figure>
+    </a>
+  ) : (
+    <figure className="rounded-xl border border-dashed border-text-primary/25 overflow-hidden bg-warm-cream">{body}</figure>
   )
 }
 
@@ -533,7 +757,7 @@ function TypingIndicator() {
       <div className="w-7 h-7 rounded-full bg-dark-purple flex items-center justify-center flex-shrink-0">
         <HangerIcon size={13} className="text-butter-yellow" />
       </div>
-      <div className="bg-white shadow-card px-4 py-3 rounded-2xl rounded-bl-md flex items-center gap-1.5">
+      <div className="bg-surface shadow-card px-4 py-3 rounded-2xl rounded-bl-md flex items-center gap-1.5">
         {[0, 1, 2].map((i) => (
           <div
             key={i}
@@ -561,7 +785,7 @@ function EmptyState({ onPrompt }: { onPrompt: (p: string) => void }) {
           <button
             key={p}
             onClick={() => onPrompt(p)}
-            className="w-full text-left px-4 py-3 rounded-2xl bg-white border border-text-primary/10 text-sm text-text-primary hover:border-text-primary/30 hover:bg-text-primary/3 transition-all duration-200"
+            className="w-full text-left px-4 py-3 rounded-2xl bg-surface border border-text-primary/10 text-sm text-text-primary hover:border-text-primary/30 hover:bg-text-primary/3 transition-all duration-200"
           >
             {p}
           </button>

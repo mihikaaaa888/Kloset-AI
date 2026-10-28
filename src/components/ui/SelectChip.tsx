@@ -20,7 +20,7 @@ export function SelectChip({ label, selected, onClick, disabled }: SelectChipPro
         'disabled:opacity-40 disabled:cursor-not-allowed',
         selected
           ? 'bg-dark-purple text-butter-yellow border-dark-purple shadow-soft'
-          : 'bg-white text-text-primary border-text-primary/15 hover:border-text-primary/40 hover:text-text-primary'
+          : 'bg-surface text-text-primary border-text-primary/15 hover:border-text-primary/40 hover:text-text-primary'
       )}
     >
       {label}

@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { clsx } from 'clsx'
 import { Home, Shirt, User, Menu, X, Compass, Users } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
+import { ThemeToggleButton } from '@/components/ui/ThemeToggle'
 import { useUserStore } from '@/store/userStore'
 import { useAuth } from '@/contexts/AuthContext'
 import { countFriendActivity, FRIENDS_CHANGED_EVENT } from '@/lib/friendService'
@@ -105,6 +106,8 @@ export function Navigation() {
                 )
               })}
 
+              <ThemeToggleButton className="-mx-2" />
+
               {!user && (
                 <NavLink
                   to="/signup"
@@ -115,6 +118,8 @@ export function Navigation() {
               )}
             </div>
 
+            <div className="flex items-center md:hidden">
+            <ThemeToggleButton className={clsx(!hasTabBar && 'mr-1')} />
             {/* Mobile menu button */}
             <button
               onClick={() => setMobileOpen((v) => !v)}
@@ -126,6 +131,7 @@ export function Navigation() {
             >
               {mobileOpen ? <X size={22} /> : <Menu size={22} />}
             </button>
+            </div>
           </div>
         </nav>
       </header>
@@ -133,7 +139,7 @@ export function Navigation() {
       {/* Mobile menu overlay */}
       {mobileOpen && !hasTabBar && (
         <div className="fixed inset-0 z-40 md:hidden">
-          <div className="absolute inset-0 bg-text-primary/40 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
+          <div className="absolute inset-0 bg-scrim/40 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
           <div className="absolute top-16 left-0 right-0 bg-warm-cream border-b border-text-primary/10 shadow-lifted animate-fade-up">
             <div className="px-6 py-6 flex flex-col">
               {(user && profile?.onboardingComplete ? authNavItems : publicNavItems).map((item) => {

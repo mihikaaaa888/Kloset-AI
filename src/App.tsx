@@ -1,20 +1,29 @@
-import { useEffect, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { Navigation } from '@/components/layout/Navigation'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { useDataSync } from '@/hooks/useDataSync'
+import { useApplyTheme } from '@/hooks/useTheme'
 import { LandingPage } from '@/pages/LandingPage'
-import { OnboardingPage } from '@/pages/onboarding/OnboardingPage'
-import { WardrobePage } from '@/pages/WardrobePage'
-import { StylistPage } from '@/pages/StylistPage'
-import { FriendsPage } from '@/pages/FriendsPage'
-import { ProfilePage } from '@/pages/ProfilePage'
-import { DiscoverPage } from '@/pages/DiscoverPage'
-import { HomePage } from '@/pages/HomePage'
-import { LoginPage } from '@/pages/auth/LoginPage'
-import { SignupPage } from '@/pages/auth/SignupPage'
-import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage'
-import { ResetPasswordPage } from '@/pages/auth/ResetPasswordPage'
+
+// Everything past the landing page loads on demand, so a first visit to /
+// doesn't download the whole app before anything shows.
+const OnboardingPage = lazy(() => import('@/pages/onboarding/OnboardingPage').then((m) => ({ default: m.OnboardingPage })))
+const WardrobePage = lazy(() => import('@/pages/WardrobePage').then((m) => ({ default: m.WardrobePage })))
+const StylistPage = lazy(() => import('@/pages/StylistPage').then((m) => ({ default: m.StylistPage })))
+const FriendsPage = lazy(() => import('@/pages/FriendsPage').then((m) => ({ default: m.FriendsPage })))
+const ProfilePage = lazy(() => import('@/pages/ProfilePage').then((m) => ({ default: m.ProfilePage })))
+const DiscoverPage = lazy(() => import('@/pages/DiscoverPage').then((m) => ({ default: m.DiscoverPage })))
+const HomePage = lazy(() => import('@/pages/HomePage').then((m) => ({ default: m.HomePage })))
+const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then((m) => ({ default: m.LoginPage })))
+const SignupPage = lazy(() => import('@/pages/auth/SignupPage').then((m) => ({ default: m.SignupPage })))
+const ForgotPasswordPage = lazy(() => import('@/pages/auth/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })))
+const ResetPasswordPage = lazy(() => import('@/pages/auth/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })))
+
+function ThemeSync() {
+  useApplyTheme()
+  return null
+}
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -25,17 +34,19 @@ function ScrollToTop() {
 }
 
 // Redirects unauthenticated users to /login, preserving the intended destination.
+function PageSpinner() {
+  return (
+    <div className="min-h-screen bg-dark-purple dark:bg-warm-cream flex items-center justify-center">
+      <div className="w-8 h-8 rounded-full border-2 border-butter-yellow/30 border-t-butter-yellow animate-spin" />
+    </div>
+  )
+}
+
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
   const location = useLocation()
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-dark-purple flex items-center justify-center">
-        <div className="w-8 h-8 rounded-full border-2 border-butter-yellow/30 border-t-butter-yellow animate-spin" />
-      </div>
-    )
-  }
+  if (loading) return <PageSpinner />
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />
@@ -59,7 +70,9 @@ function AppRoutes() {
   return (
     <>
       <ScrollToTop />
+      <ThemeSync />
       <Navigation />
+      <Suspense fallback={<PageSpinner />}>
       <Routes>
         {/* Public */}
         <Route path="/" element={<LandingPage />} />
@@ -79,6 +92,7 @@ function AppRoutes() {
         <Route path="/friends" element={<RequireAuth><FriendsPage /></RequireAuth>} />
         <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
       </Routes>
+      </Suspense>
     </>
   )
 }

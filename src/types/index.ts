@@ -99,6 +99,10 @@ export interface ClothingItem {
 export interface CatalogItem {
   id: string
   name: string
+  /** Which section of the shop the piece belongs to. Defaults to women's. */
+  gender?: 'women' | 'men'
+  /** Retailer the reference photo and product link come from, e.g. "Zara". */
+  brand?: string
   category: ClothingCategory
   subcategory?: string
   colours: string[]

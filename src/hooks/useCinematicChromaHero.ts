@@ -25,6 +25,12 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 interface UseCinematicChromaHeroOptions {
   containerRef: RefObject<HTMLElement>
   videoRef: RefObject<HTMLVideoElement>
+  /**
+   * The closet video URL. Downloaded in full before the hero starts, so
+   * scroll-scrubbing seeks within memory instead of waiting on the network
+   * for every frame (which is what left Safari stuck on the spinner).
+   */
+  src: string
   canvasRef: RefObject<HTMLCanvasElement>
   /** Optional hero copy layer — fades/scales in with the door opening. */
   contentRef?: RefObject<HTMLElement>
@@ -61,7 +67,15 @@ interface UseCinematicChromaHeroOptions {
 interface CinematicChromaHeroState {
   isReady: boolean
   hasError: boolean
+  /** Download progress of the closet video, 0-1 (0 until the size is known). */
+  progress: number
 }
+
+// Past this, the hero gives up and the page falls back to the static hero
+// rather than leaving a spinner up forever.
+const LOAD_TIMEOUT_MS = 25_000
+// A single seek should be near-instant once the video is in memory.
+const SEEK_TIMEOUT_MS = 3_000
 
 const VERTEX_SHADER = `
   attribute vec2 a_position;
@@ -150,15 +164,41 @@ function createProgram(gl: WebGLRenderingContext): WebGLProgram | null {
 }
 
 /** Waits for the video to seek to `time` and resolves once that frame is decoded. */
+/** Seeks and waits for the frame. Never hangs: resolves after SEEK_TIMEOUT_MS regardless (Safari can skip `seeked`). */
 function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
   return new Promise((resolve) => {
-    const onSeeked = () => {
-      video.removeEventListener('seeked', onSeeked)
+    const done = () => {
+      clearTimeout(timer)
+      video.removeEventListener('seeked', done)
       resolve()
     }
-    video.addEventListener('seeked', onSeeked)
+    const timer = setTimeout(() => {
+      console.warn('[cinematic-hero] seek timed out', { time })
+      done()
+    }, SEEK_TIMEOUT_MS)
+    video.addEventListener('seeked', done)
     video.currentTime = time
   })
+}
+
+/** Downloads the whole video, reporting progress, and returns an object URL for it. */
+async function loadVideoBlob(src: string, signal: AbortSignal, onProgress: (p: number) => void): Promise<string> {
+  const res = await fetch(src, { signal })
+  if (!res.ok) throw new Error(`video fetch failed: ${res.status}`)
+  const total = Number(res.headers.get('content-length')) || 0
+  if (!res.body || !total) return URL.createObjectURL(await res.blob())
+
+  const reader = res.body.getReader()
+  const chunks: BlobPart[] = []
+  let received = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    received += value.length
+    onProgress(Math.min(received / total, 1))
+  }
+  return URL.createObjectURL(new Blob(chunks, { type: res.headers.get('content-type') || 'video/mp4' }))
 }
 
 /**
@@ -215,6 +255,7 @@ async function detectChromaKeyColor(video: HTMLVideoElement): Promise<[number, n
 export function useCinematicChromaHero({
   containerRef,
   videoRef,
+  src,
   canvasRef,
   contentRef,
   innerVideoRef,
@@ -226,7 +267,7 @@ export function useCinematicChromaHero({
   onOpenChange,
   onOpeningChange,
 }: UseCinematicChromaHeroOptions): CinematicChromaHeroState {
-  const [state, setState] = useState<CinematicChromaHeroState>({ isReady: false, hasError: false })
+  const [state, setState] = useState<CinematicChromaHeroState>({ isReady: false, hasError: false, progress: 0 })
   // Kept in a ref so a new callback identity doesn't tear down the whole WebGL effect.
   const onOpenChangeRef = useRef(onOpenChange)
   onOpenChangeRef.current = onOpenChange
@@ -244,6 +285,8 @@ export function useCinematicChromaHero({
     if (!container || !video || !canvas) return
 
     let cancelled = false
+    const abort = new AbortController()
+    let objectUrl: string | null = null
     let rafId = 0
     let running = false
     let currentScale = 1
@@ -277,13 +320,13 @@ export function useCinematicChromaHero({
       })) as WebGLRenderingContext | null
 
     if (!gl) {
-      setState({ isReady: false, hasError: true })
+      setState({ isReady: false, hasError: true, progress: 0 })
       return
     }
 
     const program = createProgram(gl)
     if (!program) {
-      setState({ isReady: false, hasError: true })
+      setState({ isReady: false, hasError: true, progress: 0 })
       return
     }
 
@@ -436,7 +479,9 @@ export function useCinematicChromaHero({
 
       if (duration && isFinite(duration)) {
         const targetTime = smoothedOpen * duration
-        if (Math.abs(video.currentTime - targetTime) > 0.01) {
+        // Skip while a seek is still decoding — piling new seeks on top of
+        // an unfinished one is what made the door stutter and stall.
+        if (!video.seeking && Math.abs(video.currentTime - targetTime) > 0.01) {
           video.currentTime = targetTime
         }
       }
@@ -507,6 +552,7 @@ export function useCinematicChromaHero({
     video.muted = true
     video.playsInline = true
     video.preload = 'auto'
+    const loadStart = performance.now()
 
     let removeListeners = () => {}
 
@@ -520,8 +566,9 @@ export function useCinematicChromaHero({
     }
 
     const onError = () => {
-      if (cancelled) return
-      setState({ isReady: false, hasError: true })
+      if (cancelled || !objectUrl) return
+      console.error('[cinematic-hero] video failed to decode')
+      setState({ isReady: false, hasError: true, progress: 0 })
     }
 
     video.addEventListener('loadedmetadata', onLoadedMetadata)
@@ -535,6 +582,18 @@ export function useCinematicChromaHero({
     }
 
     const init = async () => {
+      let lastReported = 0
+      objectUrl = await loadVideoBlob(src, abort.signal, (progress) => {
+        // Throttled to whole percents so this doesn't re-render per chunk.
+        if (cancelled || progress - lastReported < 0.01) return
+        lastReported = progress
+        setState((s) => ({ ...s, progress }))
+      })
+      if (cancelled) return
+      console.log('[cinematic-hero] video downloaded', { ms: Math.round(performance.now() - loadStart) })
+      video.src = objectUrl
+      video.load()
+
       if (video.readyState < 1) {
         await new Promise<void>((resolve) => {
           const onMeta = () => {
@@ -569,16 +628,28 @@ export function useCinematicChromaHero({
 
       drawFrame()
       isReadyFlag = true
-      setState({ isReady: true, hasError: false })
+      clearTimeout(loadTimer)
+      console.log('[cinematic-hero] ready', { ms: Math.round(performance.now() - loadStart) })
+      setState({ isReady: true, hasError: false, progress: 1 })
       startLoop()
     }
 
-    init().catch(() => {
-      if (!cancelled) setState({ isReady: false, hasError: true })
-    })
+    const fail = (reason: unknown) => {
+      if (cancelled) return
+      cancelled = true
+      abort.abort()
+      console.error('[cinematic-hero] falling back to static hero', reason)
+      setState({ isReady: false, hasError: true, progress: 0 })
+    }
+
+    const loadTimer = setTimeout(() => fail(`not ready after ${LOAD_TIMEOUT_MS}ms`), LOAD_TIMEOUT_MS)
+    init().catch(fail)
 
     return () => {
       cancelled = true
+      clearTimeout(loadTimer)
+      abort.abort()
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
       stopLoop()
       observer.disconnect()
       window.removeEventListener('resize', handleResize)
@@ -588,7 +659,7 @@ export function useCinematicChromaHero({
       gl.deleteTexture(texture)
       if (innerTexture) gl.deleteTexture(innerTexture)
     }
-  }, [containerRef, videoRef, canvasRef, contentRef, innerVideoRef, innerRect, zoomTo, exitZoom, openFraction, enabled])
+  }, [containerRef, videoRef, src, canvasRef, contentRef, innerVideoRef, innerRect, zoomTo, exitZoom, openFraction, enabled])
 
   return state
 }

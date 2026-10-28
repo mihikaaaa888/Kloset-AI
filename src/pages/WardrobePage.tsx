@@ -301,11 +301,7 @@ function EmptyState({ onAdd, onLoadSamples }: { onAdd: () => void; onLoadSamples
       <div className="w-20 h-20 rounded-3xl bg-text-primary/8 flex items-center justify-center mb-6">
         <Shirt size={32} strokeWidth={1} className="text-text-primary/50" />
       </div>
-      <h2 className="font-display text-2xl font-medium text-text-primary mb-2">Your Kloset is empty</h2>
-      <p className="text-text-muted text-base leading-relaxed max-w-sm mb-8">
-        Start adding your clothes to get outfit recommendations tailored to what you actually own —
-        or skip the uploads and build from our curated inspiration instead.
-      </p>
+      <h2 className="font-display text-2xl font-medium text-text-primary mb-8">Your Kloset is empty</h2>
       <div className="flex flex-col sm:flex-row gap-3">
         <Button size="lg" onClick={onAdd} className="gap-2">
           <Plus size={16} />
@@ -319,9 +315,6 @@ function EmptyState({ onAdd, onLoadSamples }: { onAdd: () => void; onLoadSamples
           Load sample wardrobe
         </Button>
       </div>
-      <p className="text-text-muted/60 text-xs mt-5">
-        Browse inspiration to pick pieces from our curated catalogue — no photos required.
-      </p>
     </div>
   )
 }

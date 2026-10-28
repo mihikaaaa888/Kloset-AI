@@ -8,7 +8,7 @@ import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useUserStore } from '@/store/userStore'
 import { useAuth } from '@/contexts/AuthContext'
 import { insertItem } from '@/lib/wardrobeService'
-import { CATALOG_ITEMS } from '@/lib/catalogData'
+import { ALL_CATALOG_ITEMS } from '@/lib/catalogData'
 import { catalogToItem } from '@/lib/outfitPieces'
 import {
   fitsBuyBudget,
@@ -20,6 +20,7 @@ import {
 import type { CatalogItem, ClothingCategory } from '@/types'
 
 type ShopMode = 'piece' | 'complete' | 'rent'
+type Section = 'women' | 'men'
 
 const MODES: { id: ShopMode; label: string; blurb?: string }[] = [
   { id: 'piece', label: 'New pieces' },
@@ -47,6 +48,7 @@ export function DiscoverPage() {
   const profile = useUserStore((s) => s.profile)
 
   const [mode, setMode] = useState<ShopMode>('piece')
+  const [section, setSection] = useState<Section>(profile?.genderStylePreference === 'masculine' ? 'men' : 'women')
   const [budget, setBudget] = useState<BudgetId>('any')
   const [category, setCategory] = useState<ClothingCategory | 'all'>('all')
   // Items added this session, for instant UI feedback before the store syncs.
@@ -59,12 +61,12 @@ export function DiscoverPage() {
   const isInWardrobe = (id: string) => addedCatalogIds.has(id) || addedThisSession.has(id)
 
   const pieces = useMemo(() => {
-    const pool = CATALOG_ITEMS.filter((item) => {
+    const pool = ALL_CATALOG_ITEMS.filter((item) => (item.gender ?? 'women') === section).filter((item) => {
       if (mode === 'rent') return isRentable(item) && fitsRentBudget(item, budget)
       return fitsBuyBudget(item, budget)
     }).filter((item) => category === 'all' || item.category === category)
     return rankForUser(pool, profile, wardrobeItems)
-  }, [mode, budget, category, profile, wardrobeItems])
+  }, [mode, section, budget, category, profile, wardrobeItems])
 
   const handleAdd = (catalogItem: CatalogItem) => {
     if (isInWardrobe(catalogItem.id)) return
@@ -136,6 +138,22 @@ export function DiscoverPage() {
             <BudgetDropdown value={budget} onChange={setBudget} mode={mode === 'rent' ? 'rent' : 'buy'} />
           </div>
         </div>
+
+        {/* ── Women / Men ── */}
+        {mode !== 'complete' && (
+          <div className="flex gap-6 pt-5" role="group" aria-label="Shop section">
+            {(['women', 'men'] as Section[]).map((sec) => (
+              <button
+                key={sec}
+                onClick={() => { setSection(sec); setCategory('all') }}
+                aria-pressed={section === sec}
+                className={clsx('text-tab flex-shrink-0 capitalize', section === sec && 'text-tab-active')}
+              >
+                {sec}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* ── Category (new pieces + rentals) ── */}
         {mode !== 'complete' && (

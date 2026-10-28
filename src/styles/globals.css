@@ -20,8 +20,71 @@
 }
 
 @layer base {
+  /* Kloset palette as RGB channels (so Tailwind's /opacity modifiers work).
+     Light: cream paper, aubergine ink, forest-green accent.
+     Dark: black page, cream ink and accents, forest for small fills. */
   :root {
     color-scheme: light;
+    --c-warm-cream: 252 250 244;
+    --c-surface: 255 255 255;
+    --c-tile: 243 240 232;
+    --c-text-primary: 36 27 41;
+    --c-text-muted: 118 108 120;
+    --c-dark-purple: 255 253 208;
+    --c-deep-purple: 245 240 184;
+    --c-butter-yellow: 53 94 59;
+    --c-soft-butter: 74 120 86;
+    --c-scrim: 36 27 41;
+    --c-cream-50: 250 250 248;
+    --c-cream-100: 245 244 240;
+    --c-cream-200: 237 233 226;
+    --c-cream-300: 221 216 206;
+    --c-charcoal-900: 17 17 16;
+    --c-charcoal-800: 26 26 25;
+    --c-charcoal-700: 44 44 42;
+    --c-charcoal-600: 61 61 58;
+    --c-charcoal-500: 92 92 88;
+    --c-charcoal-400: 122 122 117;
+    --c-charcoal-300: 160 160 154;
+    --c-gold-muted: 240 230 211;
+    --shadow-soft: 0 2px 20px rgba(0, 0, 0, 0.06);
+    --shadow-medium: 0 4px 40px rgba(0, 0, 0, 0.10);
+    --shadow-lifted: 0 8px 60px rgba(0, 0, 0, 0.14);
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.06);
+  }
+
+  /* Dark mode: black, with the brand cream (#FFFDD0) for text and accents
+     and the brand forest (#355E3B) kept for small filled accents only
+     (selected chips, chat bubbles, badges). Greys are cream mixed into
+     black, so they stay warm rather than blue-grey. */
+  .dark {
+    color-scheme: dark;
+    --c-warm-cream: 10 10 9;        /* page: black */
+    --c-surface: 23 23 20;          /* cards */
+    --c-tile: 31 31 27;
+    --c-text-primary: 255 253 208;    /* brand cream */
+    --c-text-muted: 158 157 129;
+    --c-dark-purple: 53 94 59;      /* brand forest — small filled accents */
+    --c-deep-purple: 18 18 16;      /* page-header bands */
+    --c-butter-yellow: 255 253 208;   /* accent: brand cream */
+    --c-soft-butter: 217 215 177;
+    --c-scrim: 0 0 0;
+    --c-cream-50: 10 10 9;
+    --c-cream-100: 23 23 20;
+    --c-cream-200: 31 31 27;
+    --c-cream-300: 46 46 37;
+    --c-charcoal-900: 255 253 208;
+    --c-charcoal-800: 240 238 196;
+    --c-charcoal-700: 219 218 179;
+    --c-charcoal-600: 199 197 162;
+    --c-charcoal-500: 178 177 146;
+    --c-charcoal-400: 153 152 125;
+    --c-charcoal-300: 107 106 87;
+    --c-gold-muted: 36 35 29;
+    --shadow-soft: 0 2px 20px rgba(0, 0, 0, 0.5);
+    --shadow-medium: 0 4px 40px rgba(0, 0, 0, 0.6);
+    --shadow-lifted: 0 8px 60px rgba(0, 0, 0, 0.7);
+    --shadow-card: 0 0 0 1px rgba(255, 253, 208, 0.07);
   }
 
   html {
@@ -38,6 +101,7 @@
   body {
     @apply bg-warm-cream text-text-primary font-sans;
     overflow-x: hidden;
+    transition: background-color 0.3s ease, color 0.3s ease;
     font-feature-settings: 'cv11', 'ss01';
   }
 
@@ -65,8 +129,8 @@
   }
 
   ::selection {
-    background-color: #355E3B;
-    color: #FFFDD0;
+    background-color: rgb(var(--c-butter-yellow));
+    color: rgb(var(--c-warm-cream));
   }
 
   /* Scrollbar */
@@ -75,14 +139,14 @@
     height: 5px;
   }
   ::-webkit-scrollbar-track {
-    background: #FCFAF4;
+    background: rgb(var(--c-warm-cream));
   }
   ::-webkit-scrollbar-thumb {
-    background: #4A7856;
+    background: rgb(var(--c-soft-butter) / 0.6);
     border-radius: 9999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #355E3B;
+    background: rgb(var(--c-butter-yellow));
   }
 }
 
@@ -142,5 +206,16 @@
   .no-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
+  }
+}
+
+/* Horizontal image rows in the stylist chat scroll by swipe, without a visible bar. */
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
   }
 }

@@ -72,7 +72,7 @@ export function ShareSheet({ target, onClose }: ShareSheetProps) {
 
   return createPortal(
     <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4">
-      <div className="absolute inset-0 bg-text-primary/40 backdrop-blur-sm animate-fade-in" onClick={onClose} />
+      <div className="absolute inset-0 bg-scrim/40 backdrop-blur-sm animate-fade-in" onClick={onClose} />
       <div
         role="dialog"
         aria-modal="true"
@@ -97,7 +97,7 @@ export function ShareSheet({ target, onClose }: ShareSheetProps) {
 
         <div className="flex-1 overflow-y-auto px-6">
           {loadError ? (
-            <p className="text-sm text-red-700 py-6">{loadError}</p>
+            <p className="text-sm text-red-700 dark:text-red-400 py-6">{loadError}</p>
           ) : friends === null ? (
             <p className="text-sm text-text-muted py-6">Loading friends…</p>
           ) : friends.length === 0 ? (
@@ -155,7 +155,7 @@ export function ShareSheet({ target, onClose }: ShareSheetProps) {
               />
             </label>
           )}
-          {sendError && <p className="text-sm text-red-700 mt-2">{sendError}</p>}
+          {sendError && <p className="text-sm text-red-700 dark:text-red-400 mt-2">{sendError}</p>}
         </div>
 
         <footer className="px-6 py-5">

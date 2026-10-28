@@ -28,7 +28,7 @@ export function ClothingCard({ item, onClick, onToggleFavourite, onStyleThis }: 
         aria-label={`View ${item.name}`}
         className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow focus-visible:ring-offset-4 focus-visible:ring-offset-warm-cream"
       >
-        <div className="relative aspect-[3/4] overflow-hidden bg-[#F3F0E8]">
+        <div className="relative aspect-[3/4] overflow-hidden bg-tile">
           {imageUrl ? (
             <img
               src={imageUrl}

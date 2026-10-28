@@ -281,7 +281,7 @@ function PickTile({
     <button onClick={onClick} aria-pressed={selected} className="group text-left focus-visible:outline-none">
       <div
         className={clsx(
-          'relative aspect-[3/4] overflow-hidden bg-[#F3F0E8] transition-shadow',
+          'relative aspect-[3/4] overflow-hidden bg-tile transition-shadow',
           selected ? 'ring-2 ring-text-primary ring-offset-2 ring-offset-warm-cream' : 'group-hover:ring-1 group-hover:ring-text-primary/30 group-focus-visible:ring-2 group-focus-visible:ring-butter-yellow'
         )}
       >

@@ -66,13 +66,13 @@ export function ItemDetailModal({
       <button
         onClick={onClose}
         aria-label="Close"
-        className="absolute top-4 right-4 lg:top-6 lg:right-6 z-10 w-11 h-11 rounded-full bg-white/90 backdrop-blur-sm ring-1 ring-text-primary/10 flex items-center justify-center text-text-primary hover:bg-white hover:ring-text-primary/30 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow"
+        className="absolute top-4 right-4 lg:top-6 lg:right-6 z-10 w-11 h-11 rounded-full bg-surface/90 backdrop-blur-sm ring-1 ring-text-primary/10 flex items-center justify-center text-text-primary hover:bg-surface hover:ring-text-primary/30 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow"
       >
         <X size={20} strokeWidth={1.25} />
       </button>
 
       {/* ── Image stage ── */}
-      <div className="relative flex-shrink-0 h-[55vh] lg:h-auto lg:flex-1 bg-[#F3F0E8] flex items-center justify-center p-6 sm:p-10 lg:p-16 overflow-hidden">
+      <div className="relative flex-shrink-0 h-[55vh] lg:h-auto lg:flex-1 bg-tile flex items-center justify-center p-6 sm:p-10 lg:p-16 overflow-hidden">
         {imageUrl ? (
           <img
             src={imageUrl}

@@ -8,6 +8,27 @@ interface WebShopSearchResponse {
   error?: string
 }
 
+// The chat asks for the same query from more than one place (the outfit board's
+// "to buy" tile and the product row under it) — share one request per query.
+const inflight = new Map<string, Promise<WebShopSearchResponse>>()
+
+/** Same as searchWebShop, but concurrent/repeat calls for one query share a request. */
+export function searchWebShopCached(query: string, retailers?: Retailer[]): Promise<WebShopSearchResponse> {
+  const key = `${query.toLowerCase()}|${(retailers ?? []).join(',')}`
+  const existing = inflight.get(key)
+  if (existing) return existing
+  const request = searchWebShop(query, retailers).then((res) => {
+    // Don't keep failures around — the next render can retry.
+    if (res.error) inflight.delete(key)
+    return res
+  }, (e) => {
+    inflight.delete(key)
+    throw e
+  })
+  inflight.set(key, request)
+  return request
+}
+
 /** Live web search for real product pages on Zara/H&M/etc, via the Exa-backed API route. */
 export async function searchWebShop(
   query: string,
