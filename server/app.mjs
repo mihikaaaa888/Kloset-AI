@@ -221,7 +221,7 @@ app.post('/api/analyze-image-url', async (req, res) => {
 
 // Refine the edges of a garment mask through PhotoRoom. The API key stays on
 // the server; callers send a cropped garment image, never the original photo.
-app.post('/api/refine-garment-image', async (req, res) => {
+async function photoRoomSegment(req, res) {
   const { imageData, mediaType } = req.body ?? {}
   const apiKey = process.env.PHOTOROOM_API_KEY
 
@@ -258,6 +258,7 @@ app.post('/api/refine-garment-image', async (req, res) => {
     return res.status(502).json({ error: 'PhotoRoom garment refinement failed.' })
   }
 }
+// remove-background is the older name; kept so existing clients keep working.
 app.post('/api/refine-garment-image', photoRoomSegment)
 app.post('/api/remove-background', photoRoomSegment)
 
