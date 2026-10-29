@@ -219,10 +219,9 @@ app.post('/api/analyze-image-url', async (req, res) => {
   }
 })
 
-// PhotoRoom segmentation, used both to refine a cropped garment mask and (via
-// /api/remove-background) to cut the background from a whole wardrobe photo.
-// The API key stays on the server; callers send only the image bytes.
-const photoRoomSegment = async (req, res) => {
+// Refine the edges of a garment mask through PhotoRoom. The API key stays on
+// the server; callers send a cropped garment image, never the original photo.
+app.post('/api/refine-garment-image', async (req, res) => {
   const { imageData, mediaType } = req.body ?? {}
   const apiKey = process.env.PHOTOROOM_API_KEY
 
@@ -248,15 +247,15 @@ const photoRoomSegment = async (req, res) => {
       body: form,
     })
     if (!response.ok) {
-      console.error(`[photoroom] PhotoRoom ${response.status}:`, (await response.text()).slice(0, 500))
-      return res.status(502).json({ error: 'PhotoRoom could not process this image.' })
+      console.error(`[refine-garment-image] PhotoRoom ${response.status}:`, (await response.text()).slice(0, 500))
+      return res.status(502).json({ error: 'PhotoRoom could not refine this garment.' })
     }
 
     const output = Buffer.from(await response.arrayBuffer())
     return res.json({ imageData: output.toString('base64'), mediaType: response.headers.get('content-type') || 'image/png' })
   } catch (e) {
-    console.error('[photoroom] PhotoRoom error:', e?.message ?? e)
-    return res.status(502).json({ error: 'PhotoRoom processing failed.' })
+    console.error('[refine-garment-image] PhotoRoom error:', e?.message ?? e)
+    return res.status(502).json({ error: 'PhotoRoom garment refinement failed.' })
   }
 }
 app.post('/api/refine-garment-image', photoRoomSegment)

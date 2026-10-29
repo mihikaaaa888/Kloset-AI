@@ -44,8 +44,6 @@ async function shrinkForAnalysis(blob: Blob): Promise<Blob> {
     canvas.width = Math.round(img.naturalWidth * scale)
     canvas.height = Math.round(img.naturalHeight * scale)
     const context = canvas.getContext('2d')!
-    // Vision analysis expects an ordinary photo. Flatten a transparent cutout
-    // onto white so invisible pixels do not become black around the garment.
     context.fillStyle = '#FFFFFF'
     context.fillRect(0, 0, canvas.width, canvas.height)
     context.drawImage(img, 0, 0, canvas.width, canvas.height)

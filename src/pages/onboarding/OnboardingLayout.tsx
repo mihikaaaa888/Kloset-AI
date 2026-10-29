@@ -45,8 +45,8 @@ export function OnboardingLayout({
           )}
 
           <div className="flex items-center gap-1.5">
-            <span className="font-brand text-base text-charcoal-900">
-              Kloset
+            <span className="font-brand [word-spacing:-0.2em] text-base text-charcoal-900">
+              Kloset AI
             </span>
           </div>
 

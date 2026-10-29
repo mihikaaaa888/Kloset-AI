@@ -194,7 +194,7 @@ export function ProfilePage() {
           <ActionTile icon={Trash2} label="Clear data" hint="Delete everything and start fresh" onClick={handleClearAll} danger />
         </div>
 
-        <p className="text-center text-2xs text-text-muted/70 uppercase tracking-widest py-12">Kloset · V1</p>
+        <p className="text-center text-2xs text-text-muted/60 uppercase tracking-widest py-10">Kloset AI · V1</p>
       </div>
     </div>
   )

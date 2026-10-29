@@ -818,7 +818,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
           {!displayUrl && photoTab === 'upload' && !imageProcessing && (
             <p className="text-xs text-text-muted mt-2">
-              Outfit scanning runs on this device. When PhotoRoom is configured, only each isolated garment cutout is sent to refine its edges; if no garment can be isolated, the safe fallback image is sent instead. Faces and the original photo are not sent.
+              Outfit scanning runs on this device. When PhotoRoom is configured, only each isolated garment cutout is sent to refine its edges; faces and the full photo are not sent.
             </p>
           )}
 

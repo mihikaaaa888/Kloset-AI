@@ -37,8 +37,8 @@ export function LoginPage() {
         {/* Logo */}
         <div className="text-center mb-10">
           <Link to="/" className="inline-flex items-center gap-2 mb-8">
-            <span className="font-brand text-2xl text-butter-yellow">
-              Kloset
+            <span className="font-brand [word-spacing:-0.2em] text-2xl text-butter-yellow">
+              Kloset AI
             </span>
           </Link>
           <h1 className="font-display text-3xl font-medium text-text-primary mb-1">Welcome back</h1>

@@ -112,8 +112,7 @@ const PHOTO_BUCKET = 'wardrobe-images'
 
 function photoPath(userId: string, item: ClothingItem, contentType = 'image/jpeg'): string | null {
   if (!item.imageId) return null
-  const extension = contentType === 'image/png' ? 'png' : 'jpg'
-  return `${userId}/${item.imageId}.${extension}`
+  return `${userId}/${item.imageId}.${contentType === 'image/png' ? 'png' : 'jpg'}`
 }
 
 /** True when another device can't show this item's photo yet. */
