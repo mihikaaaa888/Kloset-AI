@@ -219,7 +219,6 @@ app.post('/api/analyze-image-url', async (req, res) => {
   }
 })
 
-<<<<<<< HEAD
 // Refine the edges of a garment mask through PhotoRoom. The API key stays on
 // the server; callers send a cropped garment image, never the original photo.
 app.post('/api/refine-garment-image', async (req, res) => {
@@ -227,17 +226,6 @@ app.post('/api/refine-garment-image', async (req, res) => {
   const apiKey = process.env.PHOTOROOM_API_KEY
 
   if (!apiKey) return res.status(503).json({ error: 'PhotoRoom is not configured.' })
-=======
-// Remove the background through PhotoRoom when a server-side key is configured.
-// The key never reaches the browser; callers send only the image bytes.
-app.post('/api/remove-background', async (req, res) => {
-  const { imageData, mediaType } = req.body ?? {}
-  const apiKey = process.env.PHOTOROOM_API_KEY
-
-  if (!apiKey) {
-    return res.status(503).json({ error: 'PhotoRoom background removal is not configured.' })
-  }
->>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c
   if (!imageData || typeof imageData !== 'string') {
     return res.status(400).json({ error: 'imageData (base64 string) is required' })
   }
@@ -248,47 +236,26 @@ app.post('/api/remove-background', async (req, res) => {
   try {
     const imageBytes = Buffer.from(imageData, 'base64')
     if (imageBytes.length > 10 * 1024 * 1024) {
-<<<<<<< HEAD
       return res.status(400).json({ error: 'Image is too large for processing.' })
     }
 
     const form = new FormData()
     form.append('image_file', new Blob([imageBytes], { type: mediaType }), `garment.${mediaType.split('/')[1]}`)
-=======
-      return res.status(400).json({ error: 'Image is too large for background removal.' })
-    }
-
-    const form = new FormData()
-    form.append('image_file', new Blob([imageBytes], { type: mediaType }), `upload.${mediaType.split('/')[1]}`)
->>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c
     const response = await fetch('https://sdk.photoroom.com/v1/segment', {
       method: 'POST',
       headers: { 'x-api-key': apiKey },
       body: form,
     })
-<<<<<<< HEAD
     if (!response.ok) {
       console.error(`[refine-garment-image] PhotoRoom ${response.status}:`, (await response.text()).slice(0, 500))
       return res.status(502).json({ error: 'PhotoRoom could not refine this garment.' })
-=======
-
-    if (!response.ok) {
-      const detail = (await response.text()).slice(0, 500)
-      console.error(`[remove-background] PhotoRoom ${response.status}:`, detail)
-      return res.status(502).json({ error: 'PhotoRoom could not process this image.' })
->>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c
     }
 
     const output = Buffer.from(await response.arrayBuffer())
     return res.json({ imageData: output.toString('base64'), mediaType: response.headers.get('content-type') || 'image/png' })
   } catch (e) {
-<<<<<<< HEAD
     console.error('[refine-garment-image] PhotoRoom error:', e?.message ?? e)
     return res.status(502).json({ error: 'PhotoRoom garment refinement failed.' })
-=======
-    console.error('[remove-background] PhotoRoom error:', e?.message ?? e)
-    return res.status(502).json({ error: 'PhotoRoom background removal failed.' })
->>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c
   }
 })
 

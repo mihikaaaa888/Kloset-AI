@@ -79,20 +79,12 @@ export function Navigation() {
           <div className="flex items-center justify-between h-16 lg:h-20">
 
             {/* Logo */}
-<<<<<<< HEAD
             <NavLink to="/" className="flex items-center gap-2" aria-label="Kloset AI home">
-=======
-            <NavLink to="/" className="flex items-center gap-2" aria-label="Kloset home">
->>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c
               <span className={clsx(
                 'font-brand [word-spacing:-0.1em] text-xl tracking-tight transition-colors duration-300',
                 'text-text-primary'
               )}>
-<<<<<<< HEAD
                 Kloset AI
-=======
-                Kloset
->>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c
               </span>
             </NavLink>
 

@@ -188,11 +188,7 @@ export function ProfilePage() {
           <ActionTile icon={Trash2} label="Clear data" hint="Delete everything and start fresh" onClick={handleClearAll} danger />
         </div>
 
-<<<<<<< HEAD
         <p className="text-center text-2xs text-text-muted/60 uppercase tracking-widest py-10">Kloset AI · V1</p>
-=======
-        <p className="text-center text-2xs text-text-muted/60 uppercase tracking-widest py-12">Kloset · V1</p>
->>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c
       </div>
     </div>
   )
@@ -380,7 +376,6 @@ const FREQUENCY_LABEL: Record<string, string> = {
   weekly: 'Weekly',
   'on-demand': 'On demand',
 }
-<<<<<<< HEAD
 
 const OCCASION_ICON: Record<string, LucideIcon> = {
   work: Briefcase,
@@ -423,5 +418,3 @@ const OCCASION_LABEL: Record<string, string> = {
   gym: 'Active',
   'special-event': 'Special events',
 }
-=======
->>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c

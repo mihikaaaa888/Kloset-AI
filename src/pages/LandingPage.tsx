@@ -14,7 +14,6 @@ export function LandingPage() {
   const profile = useUserStore((s) => s.profile)
   const [menuOpen, setMenuOpen] = useState(false)
   const [doorOpen, setDoorOpen] = useState(false)
-<<<<<<< HEAD
   const [hasScrolled, setHasScrolled] = useState(false)
   const showMenuButton = hasScrolled && doorOpen
 
@@ -28,8 +27,6 @@ export function LandingPage() {
   useEffect(() => {
     console.log('[landing-menu-button]', showMenuButton ? 'shown' : 'hidden', { hasScrolled, doorOpen })
   }, [showMenuButton])
-=======
->>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c
 
   // Close the sidebar on Escape, and stop the page behind it from scrolling while open.
   useEffect(() => {
@@ -69,20 +66,9 @@ export function LandingPage() {
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
       <CinematicClosetHero onDoorOpenChange={setDoorOpen} />
 
-<<<<<<< HEAD
       {/* ── Mobile top bar — no scroll-driven door on phones, so the logo and menu are there from the start ── */}
       <header className="md:hidden fixed top-0 inset-x-0 z-40 h-16 px-4 flex items-center justify-between bg-[#FBF5EC]/95 backdrop-blur-md border-b border-text-primary/10">
         <span className="font-brand [word-spacing:-0.2em] text-xl text-butter-yellow">Kloset AI</span>
-=======
-      {/* Brand bar belongs to the rack page and appears after the door is fully open. */}
-      <header className={clsx(
-        'fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between bg-[#355f43] px-5 text-[#fffbd5] shadow-[0_2px_16px_rgba(26,46,33,0.14)] transition-[opacity,visibility] duration-500',
-        doorOpen ? 'visible opacity-100' : 'invisible pointer-events-none opacity-0'
-      )}>
-        <span className="font-brand text-xl tracking-wide">
-          Kloset
-        </span>
->>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c
         <button
           onClick={() => setMenuOpen(true)}
           aria-expanded={menuOpen}
@@ -94,7 +80,6 @@ export function LandingPage() {
         </button>
       </header>
 
-<<<<<<< HEAD
       {/* ── Menu button — pinned top-left, fades in once the closet door has opened ── */}
       <button
         onClick={() => setMenuOpen(true)}
@@ -111,10 +96,6 @@ export function LandingPage() {
 
       {/* ── Page 2: headline + CTA (moved here from the hero, which is video-only once the door opens) ── */}
       <section className="py-16 md:py-28 lg:py-40 bg-butter-yellow">
-=======
-      {/* ── Intro copy and CTA ──────────────────────────────────────────────── */}
-      <section className="py-10 md:py-16 lg:py-20 bg-butter-yellow">
->>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c
         <div className="mx-auto max-w-7xl px-6 lg:px-8">
           <HeroCopy onCTA={handleCTA} animate={false} align="center" tone="green" />
         </div>
@@ -125,15 +106,9 @@ export function LandingPage() {
         <div className="mx-auto max-w-7xl px-6 lg:px-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-<<<<<<< HEAD
               <span className="font-brand [word-spacing:-0.2em] text-lg text-dark-purple/80">Kloset AI</span>
             </div>
             <p className="text-dark-purple/60 text-xs">&copy; {new Date().getFullYear()} Kloset AI. All rights reserved.</p>
-=======
-              <span className="font-brand text-lg text-dark-purple/80">Kloset</span>
-            </div>
-            <p className="text-dark-purple/60 text-xs">&copy; {new Date().getFullYear()} Kloset. All rights reserved.</p>
->>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c
           </div>
         </div>
       </footer>
@@ -155,11 +130,7 @@ export function LandingPage() {
           )}
         >
           <div className="flex items-center justify-between px-6 h-20 border-b border-butter-yellow/15">
-<<<<<<< HEAD
             <span className="font-brand [word-spacing:-0.2em] text-xl text-butter-yellow">Kloset AI</span>
-=======
-            <span className="font-brand text-xl text-butter-yellow">Kloset</span>
->>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c
             <button
               onClick={() => setMenuOpen(false)}
               className="w-11 h-11 -mr-2 flex items-center justify-center rounded-full text-butter-yellow/70 hover:text-butter-yellow hover:bg-butter-yellow/10 transition-colors"

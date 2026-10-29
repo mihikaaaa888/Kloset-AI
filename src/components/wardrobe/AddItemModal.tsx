@@ -18,12 +18,8 @@ import {
 } from '@/lib/imageStorage'
 import { getPhotoUrl } from '@/lib/wardrobeService'
 import { analyzeImage, analyzeImageFromUrl } from '@/lib/analyzeImage'
-<<<<<<< HEAD
 import { refineGarmentImage, removeImageBackground } from '@/lib/backgroundRemoval'
 import { parseOutfitPhoto } from '@/lib/fashionParsing'
-=======
-import { removeImageBackground } from '@/lib/backgroundRemoval'
->>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c
 import type { ClothingAnalysis } from '@/lib/analyzeImage'
 import type { ClothingItem, ClothingCategory, Pattern, Season, Occasion } from '@/types'
 
@@ -260,7 +256,6 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
     try {
       const processed: QueuedImage[] = []
       for (const file of valid) {
-<<<<<<< HEAD
         setImageProcessingStep('Loading the on-device clothing scanner…')
         const compressed = await compressImage(file)
         const parsed = await parseOutfitPhoto(compressed)
@@ -284,23 +279,6 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
           processed.push({ imageId, previewUrl: url, blob: refinedBlob, detectedCategory: piece.category, detectedName: piece.name })
           pendingMap.current.set(imageId, url)
         }
-=======
-        setImageProcessingStep('Removing background…')
-        const compressed = await compressImage(file)
-        let blob: Blob
-        try {
-          blob = await removeImageBackground(compressed)
-        } catch (error) {
-          console.warn('[AddItemModal] Background removal failed; keeping original photo.', error)
-          blob = compressed
-          setImageError('Background removal couldn’t finish, so the original photo was kept. You can still add the item.')
-        }
-        setImageProcessingStep('Saving photo…')
-        const imageId = await saveImage(blob)
-        const url = URL.createObjectURL(blob)
-        processed.push({ imageId, previewUrl: url, blob })
-        pendingMap.current.set(imageId, url)
->>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c
       }
 
       // If there was already a pending (just-uploaded, not from editItem) image, clean it up
@@ -840,11 +818,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
           {!displayUrl && photoTab === 'upload' && !imageProcessing && (
             <p className="text-xs text-text-muted mt-2">
-<<<<<<< HEAD
               Outfit scanning runs on this device. When PhotoRoom is configured, only each isolated garment cutout is sent to refine its edges; faces and the full photo are not sent.
-=======
-              PhotoRoom handles background removal when configured; otherwise it runs on this device. With PhotoRoom, the image is sent to its API for processing.
->>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c
             </p>
           )}
 
