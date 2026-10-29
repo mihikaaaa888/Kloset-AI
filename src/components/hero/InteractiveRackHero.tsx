@@ -467,7 +467,7 @@ export function InteractiveRackHero({ onRackInteract, immersed = false, sceneRef
           <img
             src="/images/landing-antique-gold-rod.svg"
             alt="Muted antique-gold clothes rail with curled ends"
-            className="pointer-events-none absolute left-1/2 top-[9.5%] z-10 h-[6%] w-[92%] -translate-x-1/2 select-none object-fill drop-shadow-[0_2px_3px_rgba(35,31,25,0.14)]"
+            className="pointer-events-none absolute left-1/2 top-[9.5%] z-10 h-[6%] w-[104%] -translate-x-1/2 select-none object-fill drop-shadow-[0_2px_3px_rgba(35,31,25,0.14)]"
             draggable={false}
           />
           {/* Front pass visually seats each metal hook against the rod. */}
@@ -475,7 +475,7 @@ export function InteractiveRackHero({ onRackInteract, immersed = false, sceneRef
             src="/images/landing-antique-gold-rod.svg"
             alt=""
             aria-hidden="true"
-            className="pointer-events-none absolute left-1/2 top-[9.5%] z-50 h-[6%] w-[92%] -translate-x-1/2 select-none object-fill"
+            className="pointer-events-none absolute left-1/2 top-[9.5%] z-50 h-[6%] w-[104%] -translate-x-1/2 select-none object-fill"
             draggable={false}
           />
         </div>
