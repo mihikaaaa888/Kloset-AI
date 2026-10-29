@@ -219,3 +219,9 @@
     display: none;
   }
 }
+
+/* Undo toast: the bar under the message drains over the undo window. */
+@keyframes undo-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}

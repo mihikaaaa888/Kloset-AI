@@ -13,6 +13,7 @@ import { colourNameToHex } from '@/lib/colourUtils'
 import { useUserStore } from '@/store/userStore'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useOutfitStore } from '@/store/outfitStore'
+import { deleteWithUndo } from '@/store/undoStore'
 import { styleOptions } from '@/pages/onboarding/onboardingData'
 import { useAuth } from '@/contexts/AuthContext'
 import { useResolvedTheme } from '@/hooks/useTheme'
@@ -57,20 +58,51 @@ export function ProfilePage() {
 
   const handleEditProfile = () => navigate('/onboarding?edit=true')
 
-  const handleResetOnboarding = () => {
-    if (window.confirm('This will restart your onboarding and clear your profile. Your wardrobe and saved outfits will remain. Continue?')) {
-      clearProfile()
-      navigate('/onboarding')
+  // Both resets keep a copy of what they wipe, so the Undo toast can put it all back.
+  const snapshotProfile = () => {
+    const { profile: savedProfile, loadedForUserId } = useUserStore.getState()
+    return () => {
+      if (savedProfile) useUserStore.getState().setProfile(savedProfile)
+      useUserStore.getState().markLoaded(loadedForUserId)
     }
   }
 
+  const handleResetOnboarding = () => {
+    if (!window.confirm('This will restart your onboarding and clear your profile. Your wardrobe and saved outfits will remain. Continue?')) return
+    const restoreProfile = snapshotProfile()
+    deleteWithUndo({
+      message: 'Profile cleared',
+      remove: () => {
+        clearProfile()
+        navigate('/onboarding')
+      },
+      restore: () => {
+        restoreProfile()
+        navigate('/profile')
+      },
+    })
+  }
+
   const handleClearAll = () => {
-    if (window.confirm('This will permanently delete your profile, wardrobe, and saved outfits. Are you sure?')) {
-      wardrobeItems.forEach((item) => removeWardrobeItem(item.id))
-      allOutfits.forEach((o) => unsaveOutfitAction(o.id))
-      clearProfile()
-      navigate('/')
-    }
+    if (!window.confirm('This will permanently delete your profile, wardrobe, and saved outfits. Are you sure?')) return
+    const restoreProfile = snapshotProfile()
+    const items = useWardrobeStore.getState().items
+    const outfits = useOutfitStore.getState().savedOutfits
+    deleteWithUndo({
+      message: 'Everything cleared',
+      remove: () => {
+        wardrobeItems.forEach((item) => removeWardrobeItem(item.id))
+        allOutfits.forEach((o) => unsaveOutfitAction(o.id))
+        clearProfile()
+        navigate('/')
+      },
+      restore: () => {
+        useWardrobeStore.getState().setItems(items)
+        useOutfitStore.setState({ savedOutfits: outfits })
+        restoreProfile()
+        navigate('/profile')
+      },
+    })
   }
 
   const handleSignOut = async () => {
@@ -91,7 +123,8 @@ export function ProfilePage() {
     ...(profile.genderStylePreference && profile.genderStylePreference !== 'no-preference'
       ? [{ icon: Compass, label: 'Style direction', value: profile.genderStylePreference }]
       : []),
-    ...(profile.lifestyle ? [{ icon: Leaf, label: 'Lifestyle', value: profile.lifestyle }] : []),
+    // Older profiles copied occupation into lifestyle; don't show it twice.
+    ...(profile.lifestyle && profile.lifestyle !== profile.occupation ? [{ icon: Leaf, label: 'Lifestyle', value: profile.lifestyle }] : []),
   ]
 
   return (
@@ -188,7 +221,7 @@ export function ProfilePage() {
           <ActionTile icon={Trash2} label="Clear data" hint="Delete everything and start fresh" onClick={handleClearAll} danger />
         </div>
 
-        <p className="text-center text-2xs text-text-muted/60 uppercase tracking-widest py-10">Kloset AI · V1</p>
+        <p className="text-center text-2xs text-text-muted/60 uppercase tracking-widest py-10">Kloset · V1</p>
       </div>
     </div>
   )
@@ -262,7 +295,8 @@ function BlurredPhotos({ srcs }: { srcs: string[] }) {
         {srcs.map((src) => (
           <img
             key={src}
-            src={`${src.split("?")[0]}?w=500&q=50&auto=format&fit=crop`}
+            // Only Unsplash understands these resize params; retailer photos go as they are.
+            src={src.includes('images.unsplash.com') ? `${src.split("?")[0]}?w=500&q=50&auto=format&fit=crop` : src}
             alt=""
             loading="lazy"
             referrerPolicy="no-referrer"
@@ -363,10 +397,12 @@ function ActionTile({
 // ─── Label maps ───────────────────────────────────────────────────────────────
 
 const AGE_LABEL: Record<string, string> = {
+  'under-18': 'Under 18',
+  '18-24': '18–24',
   'under-25': 'Under 25',
-  '25-34': '25 – 34',
-  '35-44': '35 – 44',
-  '45-54': '45 – 54',
+  '25-34': '25–34',
+  '35-44': '35–44',
+  '45-54': '45–54',
   '55+': '55+',
 }
 
@@ -408,13 +444,14 @@ const OCCASION_PHOTO: Record<string, string> = {
 }
 
 // Short chip labels ("Work" rather than "Work / Office").
+// Same wording as the survey (onboardingData occasionOptions).
 const OCCASION_LABEL: Record<string, string> = {
   work: 'Work',
-  casual: 'Casual',
-  formal: 'Formal',
-  'date-night': 'Date night',
-  weekend: 'Weekend',
+  casual: 'Everyday',
+  formal: 'Weddings & festive',
+  'date-night': 'Dates',
+  weekend: 'Brunch & cafés',
   travel: 'Travel',
-  gym: 'Active',
-  'special-event': 'Special events',
+  gym: 'Gym',
+  'special-event': 'Parties',
 }

@@ -1,5 +1,5 @@
 /**
- * Kloset.ai API — the Express app, shared by both runtimes:
+ * Kloset API — the Express app, shared by both runtimes:
  *   - local dev: server/index.mjs calls app.listen() on port 3001
  *   - Netlify:   netlify/functions/api.mjs wraps it as a serverless function
  *
@@ -107,7 +107,7 @@ Respond with this exact JSON structure:
 async function runVisionAnalysis(imageData, mediaType) {
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) {
-    return { analysis: null, source: 'stub', message: 'Add GROQ_API_KEY to your .env file to enable AI analysis.' }
+    return { analysis: null, source: 'stub', message: 'Add GROQ_API_KEY to your .env file to enable photo analysis.' }
   }
 
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -161,7 +161,7 @@ app.post('/api/analyze-image', async (req, res) => {
   } catch (e) {
     console.error('[analyze-image] Groq error:', e?.message ?? e)
     return res.status(500).json({
-      error: 'AI analysis failed. You can still add the item manually.',
+      error: 'Photo analysis failed. You can still add the item manually.',
       details: e instanceof Error ? e.message : String(e),
     })
   }
@@ -206,7 +206,7 @@ app.post('/api/analyze-image-url', async (req, res) => {
   } catch (e) {
     console.error('[analyze-image-url] error:', e?.message ?? e)
     return res.status(500).json({
-      error: 'AI analysis failed. You can still add the item manually.',
+      error: 'Photo analysis failed. You can still add the item manually.',
       details: e instanceof Error ? e.message : String(e),
     })
   }
@@ -521,12 +521,12 @@ app.post('/api/chat', async (req, res) => {
 
   if (!groqKey && !claudeKey) {
     return res.json({
-      reply: "I'd love to help you style your wardrobe! Add a Groq or Claude API key to enable AI chat.",
+      reply: "I'd love to help you style your wardrobe! Add a Groq or Claude API key to enable chat.",
       source: 'stub',
     })
   }
 
-  const systemPrompt = `You are Kaia, a warm, knowledgeable personal AI stylist and personal shopper. You speak in a conversational, friendly tone — like a stylish friend who really knows fashion AND actually goes shopping with them. Every reply should feel like it's about THIS person specifically, not generic style advice — use the details below to make that true.
+  const systemPrompt = `You are Kaia, a warm, knowledgeable personal stylist and personal shopper. You speak in a conversational, friendly tone — like a stylish friend who really knows fashion AND actually goes shopping with them. Every reply should feel like it's about THIS person specifically, not generic style advice — use the details below to make that true.
 ${profileSummary ? `\nAbout this person: ${profileSummary}` : ''}
 ${wardrobeSummary ? `\nClothes they ACTUALLY OWN, grouped by the outfit slot each one fills (use these for outfit building):\n${wardrobeSummary}` : '\nTheir wardrobe is still being built — encourage them to add items.'}
 ${wardrobeGapsSummary ? `\nWardrobe patterns and gaps (reason with this, don't recite it back verbatim — it's what makes a recommendation actually personal):\n${wardrobeGapsSummary}` : ''}

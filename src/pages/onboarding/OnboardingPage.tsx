@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ArrowRight, Check } from 'lucide-react'
+import { ArrowRight, Check, type LucideIcon } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { clsx } from 'clsx'
 
@@ -8,6 +8,7 @@ import { OnboardingLayout } from './OnboardingLayout'
 import {
   styleOptions,
   occasionOptions,
+  occupationOptions,
   COLOUR_PALETTE,
   ageRangeOptions,
   frequencyOptions,
@@ -141,7 +142,7 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
     switch (step) {
       case 1: return draft.name.trim().length >= 2
       case 2: return draft.ageRange !== ''
-      case 3: return draft.occupation.trim().length >= 2
+      case 3: return draft.occupation !== ''
       case 4: return true // catalogue selection optional
       case 5: return draft.stylePreferences.length >= 1
       case 6: return draft.typicalOccasions.length >= 1
@@ -181,7 +182,8 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
       name: draft.name.trim(),
       ageRange: draft.ageRange as AgeRange,
       occupation: draft.occupation.trim(),
-      lifestyle: draft.lifestyle.trim() || draft.occupation.trim(),
+      // No longer asked; an older profile keeps what it had.
+      lifestyle: draft.lifestyle.trim(),
       styleItemSelections: draft.styleItemSelections,
       stylePreferences: draft.stylePreferences,
       typicalOccasions: draft.typicalOccasions,
@@ -235,12 +237,9 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
         )}
         {step === 3 && (
           <Step3Occupation
-            occupation={draft.occupation}
-            lifestyle={draft.lifestyle}
-            onChangeOccupation={(v) => update('occupation', v)}
-            onChangeLifestyle={(v) => update('lifestyle', v)}
+            value={draft.occupation}
+            onChange={(v) => update('occupation', v)}
             onNext={goNext}
-            canAdvance={canAdvance()}
           />
         )}
         {step === 4 && (
@@ -268,8 +267,8 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
         )}
         {step === 7 && (
           <StepColours
-            title="What colours do you love?"
-            subtitle="Select the tones you gravitate towards."
+            title="Colours you love"
+            subtitle="Pick all that apply."
             selected={draft.favouriteColours}
             onToggle={(v) => toggleArray('favouriteColours', v)}
             onNext={goNext}
@@ -277,12 +276,12 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
         )}
         {step === 8 && (
           <StepColours
-            title="Any colours to avoid?"
-            subtitle="We'll keep these out of your recommendations."
+            title="Colours you avoid"
+            subtitle="Pick all that apply."
             selected={draft.avoidColours}
             onToggle={(v) => toggleArray('avoidColours', v)}
             onNext={goNext}
-            skipLabel="None, I'm open to anything"
+            skipLabel="None"
           />
         )}
         {step === 9 && (
@@ -364,6 +363,49 @@ function StepActions({
   )
 }
 
+// A tap-to-pick tile: icon plus a short label. Used for every single- and multi-choice step.
+function OptionTile({
+  label,
+  icon: Icon,
+  selected,
+  onClick,
+}: {
+  label: string
+  icon?: LucideIcon
+  selected: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={clsx(
+        'relative flex flex-col items-start gap-3 p-4 rounded-2xl border text-left transition-all duration-200',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow',
+        selected
+          ? 'bg-dark-purple text-butter-yellow border-dark-purple shadow-soft'
+          : 'bg-surface text-text-primary border-text-primary/15 hover:border-text-primary/40'
+      )}
+    >
+      {Icon && (
+        <span
+          className={clsx(
+            'w-9 h-9 rounded-full flex items-center justify-center',
+            selected ? 'bg-butter-yellow/15' : 'bg-text-primary/5'
+          )}
+        >
+          <Icon size={18} strokeWidth={1.5} />
+        </span>
+      )}
+      <span className="text-sm font-medium leading-tight">{label}</span>
+      {selected && <Check size={14} className="absolute top-3 right-3" />}
+    </button>
+  )
+}
+
+const TILE_GRID = 'grid grid-cols-2 sm:grid-cols-3 gap-3'
+
 // Step 1 — Name
 function Step1Name({
   value,
@@ -381,7 +423,6 @@ function Step1Name({
       <StepHeading
         eyebrow="Welcome"
         title="What should we call you?"
-        subtitle="This is just for personalisation — no account needed yet."
       />
       <TextInput
         autoFocus
@@ -410,8 +451,7 @@ function Step2Age({
     <div>
       <StepHeading
         eyebrow="About you"
-        title="What's your age range?"
-        subtitle="Helps us tailor trends and style suggestions."
+        title="How old are you?"
       />
       <div className="flex flex-wrap gap-3">
         {ageRangeOptions.map((opt) => (
@@ -430,46 +470,33 @@ function Step2Age({
   )
 }
 
-// Step 3 — Occupation
+// Step 3 — Occupation (pick one; moves on by itself)
 function Step3Occupation({
-  occupation,
-  lifestyle,
-  onChangeOccupation,
-  onChangeLifestyle,
+  value,
+  onChange,
   onNext,
-  canAdvance,
 }: {
-  occupation: string
-  lifestyle: string
-  onChangeOccupation: (v: string) => void
-  onChangeLifestyle: (v: string) => void
+  value: string
+  onChange: (v: string) => void
   onNext: () => void
-  canAdvance: boolean
 }) {
   return (
     <div>
-      <StepHeading
-        eyebrow="Your life"
-        title="What do you do?"
-        subtitle="Knowing your work and lifestyle helps us suggest outfits that fit your actual day."
-      />
-      <div className="flex flex-col gap-4">
-        <TextInput
-          autoFocus
-          placeholder="e.g. Marketing Manager, Freelance Designer…"
-          label="Occupation"
-          value={occupation}
-          onChange={(e) => onChangeOccupation(e.target.value)}
-        />
-        <TextInput
-          placeholder="e.g. Busy with meetings, gym 3x a week, weekends outdoors…"
-          label="Describe your lifestyle (optional)"
-          value={lifestyle}
-          onChange={(e) => onChangeLifestyle(e.target.value)}
-          hint="The more context, the better your outfit suggestions."
-        />
+      <StepHeading eyebrow="Your life" title="What do you do?" />
+      <div className={TILE_GRID}>
+        {occupationOptions.map((opt) => (
+          <OptionTile
+            key={opt.label}
+            label={opt.label}
+            icon={opt.icon}
+            selected={value === opt.label}
+            onClick={() => {
+              onChange(opt.label)
+              setTimeout(onNext, 250)
+            }}
+          />
+        ))}
       </div>
-      <StepActions onNext={onNext} canAdvance={canAdvance} />
     </div>
   )
 }
@@ -494,8 +521,8 @@ function Step4Catalogue({
     <div>
       <StepHeading
         eyebrow="Style inspiration"
-        title="Pick pieces that speak to you"
-        subtitle="Tap anything that catches your eye — this builds your style DNA. You don't own these; you just love them."
+        title="Pick pieces you'd wear"
+        subtitle="Pick as many as you like."
       />
 
       {/* Category tabs */}
@@ -540,7 +567,9 @@ function Step4Catalogue({
               <img
                 src={item.imageUrl}
                 alt={item.label}
-                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+                loading="lazy"
+                className="w-full h-full object-cover object-top"
                 onError={(e) => {
                   const el = e.currentTarget as HTMLImageElement
                   el.style.display = 'none'
@@ -554,6 +583,9 @@ function Step4Catalogue({
               <p className="absolute bottom-0 inset-x-0 px-2 pb-2 text-white text-2xs font-medium leading-tight">
                 {item.label}
               </p>
+              <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-black/40 backdrop-blur-sm text-white/90 text-[9px] tracking-wide">
+                {item.brand}
+              </span>
               {/* checkmark */}
               {isSelected && (
                 <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-dark-purple flex items-center justify-center shadow-soft">
@@ -606,7 +638,7 @@ function Step5Style({
       <StepHeading
         eyebrow="Your aesthetic"
         title="Which styles feel like you?"
-        subtitle="Pick all that resonate — your wardrobe can contain multitudes."
+        subtitle="Pick all that apply."
       />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {styleOptions.map((opt) => {
@@ -626,7 +658,9 @@ function Step5Style({
               <img
                 src={opt.imageUrl}
                 alt={opt.label}
-                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+                loading="lazy"
+                className="w-full h-full object-cover object-top"
                 onError={(e) => {
                   const el = e.currentTarget
                   el.style.display = 'none'
@@ -637,8 +671,11 @@ function Step5Style({
               <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
               <div className="absolute inset-x-0 bottom-0 p-3 text-left">
                 <p className="text-white text-sm font-semibold leading-none">{opt.label}</p>
-                <p className="text-white/60 text-2xs mt-0.5">{opt.description}</p>
+                <p className="text-white/70 text-2xs mt-0.5">{opt.description}</p>
               </div>
+              <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-full bg-black/40 backdrop-blur-sm text-white/90 text-[10px] tracking-wide">
+                {opt.brand}
+              </span>
               {isSelected && (
                 <div className="absolute top-2.5 right-2.5 w-6 h-6 rounded-full bg-dark-purple flex items-center justify-center shadow-soft">
                   <Check size={13} className="text-butter-yellow" />
@@ -653,7 +690,7 @@ function Step5Style({
   )
 }
 
-// Step 6 — Occasions
+// Step 6 — Occasions (pick several)
 function Step6Occasions({
   selected,
   onToggle,
@@ -667,16 +704,13 @@ function Step6Occasions({
 }) {
   return (
     <div>
-      <StepHeading
-        eyebrow="Your occasions"
-        title="What do you typically dress for?"
-        subtitle="Select everything that's part of your regular life."
-      />
-      <div className="flex flex-wrap gap-3">
+      <StepHeading eyebrow="Your week" title="What do you dress for?" subtitle="Pick all that apply." />
+      <div className={TILE_GRID}>
         {occasionOptions.map((opt) => (
-          <SelectChip
+          <OptionTile
             key={opt.value}
             label={opt.label}
+            icon={opt.icon}
             selected={selected.includes(opt.value)}
             onClick={() => onToggle(opt.value)}
           />
@@ -756,8 +790,7 @@ function Step9Gender({
     <div>
       <StepHeading
         eyebrow="Optional"
-        title="Any gender expression preference?"
-        subtitle="This shapes the styling direction of your recommendations. Totally optional."
+        title="Which way do you dress?"
       />
       <div className="flex flex-wrap gap-3">
         {genderStyleOptions.map((opt) => (
@@ -777,14 +810,14 @@ function Step9Gender({
           onClick={onNext}
           className="text-text-muted hover:text-text-primary text-sm underline underline-offset-4 transition-colors"
         >
-          Skip this question
+          Skip
         </button>
       </div>
     </div>
   )
 }
 
-// Step 10 — Frequency
+// Step 10 — Frequency (pick one)
 function Step10Frequency({
   name,
   value,
@@ -802,39 +835,17 @@ function Step10Frequency({
     <div>
       <StepHeading
         eyebrow="Almost done"
-        title={`How often would you like outfit suggestions, ${name.split(' ')[0]}?`}
-        subtitle="You can always change this later in your profile."
+        title={`How often should we suggest outfits, ${name.split(' ')[0]}?`}
       />
-      <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 gap-3">
         {frequencyOptions.map((opt) => (
-          <button
+          <OptionTile
             key={opt.value}
-            type="button"
-            onClick={() => onChange(opt.value as RecommendationFrequency)}
-            className={clsx(
-              'flex items-center justify-between p-4 rounded-2xl border text-left',
-              'transition-all duration-200',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow',
-              value === opt.value
-                ? 'bg-dark-purple text-butter-yellow border-dark-purple'
-                : 'bg-surface text-text-primary border-text-primary/15 hover:border-text-primary/40'
-            )}
-          >
-            <div>
-              <div className="font-medium text-sm">{opt.label}</div>
-              <div
-                className={clsx(
-                  'text-xs mt-0.5',
-                  value === opt.value ? 'text-butter-yellow/70' : 'text-text-muted'
-                )}
-              >
-                {opt.description}
-              </div>
-            </div>
-            {value === opt.value && (
-              <Check size={16} className="text-butter-yellow flex-shrink-0" />
-            )}
-          </button>
+            label={opt.label}
+            icon={opt.icon}
+            selected={value === opt.value}
+            onClick={() => onChange(opt.value)}
+          />
         ))}
       </div>
       <div className="mt-10">

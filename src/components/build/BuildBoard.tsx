@@ -7,6 +7,7 @@ import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useUserStore } from '@/store/userStore'
 import { useOutfitStore } from '@/store/outfitStore'
 import { useBoardStore, type BoardPiece } from '@/store/boardStore'
+import { deleteWithUndo } from '@/store/undoStore'
 import { CATALOG_ITEMS } from '@/lib/catalogData'
 import { formatINR, rankForUser } from '@/lib/shopping'
 import { ROLE_FOR_CATEGORY } from '@/lib/outfitPieces'
@@ -110,6 +111,11 @@ export function BuildBoard({ onSaved }: { onSaved: () => void }) {
     rect: DOMRect
   } | null>(null)
 
+  // Picks up changes made from outside the board, like Undo putting a piece back.
+  useEffect(() => {
+    if (!gesture.current) setPieces(storedPieces)
+  }, [storedPieces])
+
   const commit = useCallback((next: BoardPiece[]) => {
     setPieces(next)
     storePieces(next)
@@ -147,9 +153,25 @@ export function BuildBoard({ onSaved }: { onSaved: () => void }) {
     else setPieces(next)
   }
 
+  // Undo can fire after this screen has closed, so put pieces back through the store.
+  const removeWithUndo = (removed: BoardPiece[], message: string) => {
+    const ids = new Set(removed.map((p) => p.id))
+    deleteWithUndo({
+      message,
+      remove: () => {
+        commit(pieces.filter((p) => !ids.has(p.id)))
+        setSelectedId(null)
+      },
+      restore: () => {
+        const current = useBoardStore.getState().pieces.filter((p) => !ids.has(p.id))
+        useBoardStore.getState().setPieces([...current, ...removed])
+      },
+    })
+  }
+
   const removePiece = (id: string) => {
-    commit(pieces.filter((p) => p.id !== id))
-    setSelectedId(null)
+    const piece = pieces.find((p) => p.id === id)
+    if (piece) removeWithUndo([piece], `Removed ${piece.name} from the board`)
   }
 
   // ── Pointer gestures (mouse + touch) ──
@@ -262,7 +284,7 @@ export function BuildBoard({ onSaved }: { onSaved: () => void }) {
           {pieces.length > 0 && (
             <div className="flex items-center gap-2">
               <button
-                onClick={() => { commit([]); setSelectedId(null) }}
+                onClick={() => removeWithUndo(pieces, 'Board cleared')}
                 className="h-11 px-4 text-2xs uppercase tracking-widest text-text-muted hover:text-text-primary transition-colors"
               >
                 Clear

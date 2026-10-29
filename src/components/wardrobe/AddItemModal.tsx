@@ -19,10 +19,14 @@ import { getPhotoUrl } from '@/lib/wardrobeService'
 import { analyzeImage, analyzeImageFromUrl } from '@/lib/analyzeImage'
 import { refineGarmentImage, removeImageBackground } from '@/lib/backgroundRemoval'
 import { parseOutfitPhoto } from '@/lib/fashionParsing'
+import { deleteWithUndo, finalizeScope } from '@/store/undoStore'
 import type { ClothingAnalysis } from '@/lib/analyzeImage'
 import type { ClothingItem, ClothingCategory, Pattern, Season, Occasion } from '@/types'
 
 // ─── Analysis helpers ─────────────────────────────────────────────────────────
+
+/** Undo toasts from this form are tied to it and finish when it closes or saves. */
+const UNDO_SCOPE = 'add-item'
 
 const VALID_COLOURS = new Set(COLOUR_PALETTE.map((c) => c.name))
 const VALID_CATEGORIES = new Set(['tops', 'bottoms', 'dresses', 'outerwear', 'shoes', 'accessories'])
@@ -418,14 +422,27 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
   }
 
   const handleRemoveImage = () => {
-    // Track original imageId for deletion if user removes image in edit mode
-    if (editItem?.imageId && !priorImageId.current) {
-      priorImageId.current = editItem.imageId
-    }
-    // Note: pendingMap entries stay until modal closes — they'll be cleaned up there
-    setActiveImageId(null)
-    setLegacyImageUrl(null)
-    setPreviewUrl(null)
+    const before = { activeImageId, legacyImageUrl, previewUrl, priorImageId: priorImageId.current }
+    deleteWithUndo({
+      message: 'Photo removed',
+      scope: UNDO_SCOPE,
+      remove: () => {
+        // Track original imageId for deletion if user removes image in edit mode
+        if (editItem?.imageId && !priorImageId.current) {
+          priorImageId.current = editItem.imageId
+        }
+        // Note: pendingMap entries stay until modal closes — they'll be cleaned up there
+        setActiveImageId(null)
+        setLegacyImageUrl(null)
+        setPreviewUrl(null)
+      },
+      restore: () => {
+        priorImageId.current = before.priorImageId
+        setActiveImageId(before.activeImageId)
+        setLegacyImageUrl(before.legacyImageUrl)
+        setPreviewUrl(before.previewUrl)
+      },
+    })
   }
 
   // ── Load image from URL ──────────────────────────────────────────────────────
@@ -457,6 +474,8 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
   // ── Cleanup on close ─────────────────────────────────────────────────────────
   const handleClose = useCallback(() => {
+    // An Undo left over from this form can't apply once it's closed.
+    finalizeScope(UNDO_SCOPE)
     // Delete all uploaded-but-not-saved images from IndexedDB
     for (const [id, url] of pendingMap.current) {
       deleteImage(id).catch(() => {})
@@ -507,6 +526,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
   // ── Save ─────────────────────────────────────────────────────────────────────
   const handleSave = () => {
     if (!validate()) return
+    finalizeScope(UNDO_SCOPE)
     const now = new Date().toISOString()
 
     // Delete replaced image in edit mode
@@ -579,27 +599,47 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
   // ── Skip in batch ────────────────────────────────────────────────────────────
   const handleSkip = () => {
     if (!isInBatch || batchIdx >= uploadBatch.length) return
-    const current = uploadBatch[batchIdx]
-    if (current) {
-      deleteImage(current.imageId).catch(() => {})
-      URL.revokeObjectURL(current.previewUrl)
-      pendingMap.current.delete(current.imageId)
-    }
+    finalizeScope(UNDO_SCOPE)
+    const skippedIdx = batchIdx
+    const current = uploadBatch[skippedIdx]
 
-    const nextIdx = batchIdx + 1
-    if (nextIdx < uploadBatch.length) {
-      const next = uploadBatch[nextIdx]
-      setBatchIdx(nextIdx)
+    const showGarment = (idx: number) => {
+      const next = uploadBatch[idx]
+      setBatchIdx(idx)
       setActiveImageId(next.imageId)
       setPreviewUrl(next.previewUrl)
+      setLegacyImageUrl(null)
       setDraft(blankDraft())
       setErrors({})
       setImageError(null)
       setAiApplied(false)
       runAiAnalysis(next.blob, next.detectedCategory, next.detectedName)
-    } else {
-      handleClose()
     }
+
+    const nextIdx = skippedIdx + 1
+    // Skipping the last photo closes the form, so there's nothing to go back to.
+    if (!current || nextIdx >= uploadBatch.length) {
+      if (current) {
+        deleteImage(current.imageId).catch(() => {})
+        URL.revokeObjectURL(current.previewUrl)
+        pendingMap.current.delete(current.imageId)
+      }
+      handleClose()
+      return
+    }
+
+    // The photo stays in pendingMap until the toast closes, so closing the form still cleans it up.
+    deleteWithUndo({
+      message: `Skipped garment ${skippedIdx + 1}`,
+      scope: UNDO_SCOPE,
+      remove: () => showGarment(nextIdx),
+      restore: () => showGarment(skippedIdx),
+      commit: () => {
+        deleteImage(current.imageId).catch(() => {})
+        URL.revokeObjectURL(current.previewUrl)
+        pendingMap.current.delete(current.imageId)
+      },
+    })
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────

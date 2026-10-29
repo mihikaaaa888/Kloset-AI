@@ -180,7 +180,7 @@ export function StylistPage() {
                       <div className="w-10 h-10 rounded-2xl bg-dark-purple flex items-center justify-center">
                         <HangerIcon size={18} className="text-butter-yellow" />
                       </div>
-                      <p className="text-butter-yellow text-xs font-medium uppercase tracking-ultra-wide">AI Stylist</p>
+                      <p className="text-butter-yellow text-xs font-medium uppercase tracking-ultra-wide">Stylist</p>
                     </div>
                     <h1 className="font-display text-3xl lg:text-4xl font-medium text-text-primary leading-tight">
                       {mode === 'item' ? 'Pick a piece to style.' : 'What are we styling today?'}
@@ -376,7 +376,7 @@ function EmptyWardrobeState({ onGoToWardrobe }: { onGoToWardrobe: () => void }) 
         Your Kloset needs a few pieces first
       </h2>
       <p className="text-text-muted text-base max-w-sm leading-relaxed mb-8">
-        Add at least 2 items to your wardrobe and your AI stylist can start building outfits for you.
+        Add at least 2 items to your wardrobe and your stylist can start building outfits for you.
       </p>
       <Button size="lg" onClick={onGoToWardrobe} className="gap-2">
         <Shirt size={16} />

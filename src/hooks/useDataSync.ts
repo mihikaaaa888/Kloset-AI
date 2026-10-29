@@ -5,6 +5,7 @@ import { useWardrobeStore } from '@/store/wardrobeStore'
 import { fetchProfile, upsertProfile } from '@/lib/profileService'
 import { fetchWardrobe, backfillPhotos, removeBackgroundsFromExistingPhotos, updateItem } from '@/lib/wardrobeService'
 import { usePhotoCleanupStore } from '@/store/photoCleanupStore'
+import { isPendingDelete } from '@/store/undoStore'
 import { SAMPLE_PHOTOS } from '@/lib/sampleData'
 import type { ClothingItem } from '@/types'
 
@@ -60,7 +61,7 @@ export function useDataSync() {
         setProfile(remote)
       }
 
-      if (items) setItems(items)
+      if (items) setItems(items.filter((i) => !isPendingDelete(`wardrobe:${i.id}`)))
       markLoaded(userId)
       addSamplePhotos(userId)
       startExistingPhotoCleanup(userId, items ?? useWardrobeStore.getState().items)
@@ -134,12 +135,15 @@ function startExistingPhotoCleanup(userId: string, wardrobe: ClothingItem[]) {
 
 const REFRESH_GAP_MS = 10_000
 
-/** Server copy wins, but a piece added here in the last minute may still be uploading — keep it. */
+/**
+ * Server copy wins, but a piece added here in the last minute may still be uploading — keep it.
+ * Pieces waiting on an Undo toast are still in the database, so leave them out.
+ */
 function mergeWithUnsaved(remote: ClothingItem[], local: ClothingItem[]): ClothingItem[] {
   const remoteIds = new Set(remote.map((i) => i.id))
   const cutoff = Date.now() - 60_000
   const unsaved = local.filter((i) => !remoteIds.has(i.id) && Date.parse(i.createdAt) > cutoff)
-  return [...remote, ...unsaved]
+  return [...remote, ...unsaved].filter((i) => !isPendingDelete(`wardrobe:${i.id}`))
 }
 
 // Demo pieces from "Load sample wardrobe" used to be saved without photos.

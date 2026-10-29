@@ -8,6 +8,7 @@ import { CreateOutfitModal } from '@/components/saved/CreateOutfitModal'
 import { ShareSheet } from '@/components/friends/ShareSheet'
 import type { ShareTarget } from '@/lib/friendService'
 import { useOutfitStore } from '@/store/outfitStore'
+import { deleteWithUndo } from '@/store/undoStore'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { resolveOutfitItems } from '@/lib/outfitPieces'
 import type { Outfit } from '@/types'
@@ -43,9 +44,19 @@ export function MyOutfits() {
 
   const handleUnsave = (outfit: Outfit, e?: React.MouseEvent) => {
     e?.stopPropagation()
-    unsaveOutfit(outfit.id)
-    console.log('[my-outfits] removed outfit', outfit.id)
-    if (selectedOutfit?.id === outfit.id) setSelectedOutfit(null)
+    deleteWithUndo({
+      message: `Removed ${outfit.name || 'outfit'}`,
+      remove: () => {
+        unsaveOutfit(outfit.id)
+        console.log('[my-outfits] removed outfit', outfit.id)
+        if (selectedOutfit?.id === outfit.id) setSelectedOutfit(null)
+      },
+      // Put back as it was, keeping its original savedAt so it returns to the same spot.
+      restore: () =>
+        useOutfitStore.setState((s) => ({
+          savedOutfits: [...s.savedOutfits.filter((o) => o.id !== outfit.id), outfit],
+        })),
+    })
   }
 
   const handleCreate = (outfit: Outfit) => {

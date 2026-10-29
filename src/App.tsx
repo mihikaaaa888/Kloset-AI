@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { Navigation } from '@/components/layout/Navigation'
+import { UndoToast } from '@/components/ui/UndoToast'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { useDataSync } from '@/hooks/useDataSync'
 import { useApplyTheme } from '@/hooks/useTheme'
@@ -72,6 +73,7 @@ function AppRoutes() {
       <ScrollToTop />
       <ThemeSync />
       <Navigation />
+      <UndoToast />
       <Suspense fallback={<PageSpinner />}>
       <Routes>
         {/* Public */}
