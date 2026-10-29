@@ -58,8 +58,8 @@ export function LandingPage() {
         'fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between bg-[#355f43] px-5 text-[#fffbd5] shadow-[0_2px_16px_rgba(26,46,33,0.14)] transition-[opacity,visibility] duration-500',
         doorOpen ? 'visible opacity-100' : 'invisible pointer-events-none opacity-0'
       )}>
-        <span className="font-brand [word-spacing:-0.2em] text-xl tracking-wide">
-          Kloset AI
+        <span className="font-brand text-xl tracking-wide">
+          Kloset
         </span>
         <button
           onClick={() => setMenuOpen(true)}
@@ -84,9 +84,9 @@ export function LandingPage() {
         <div className="mx-auto max-w-7xl px-6 lg:px-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <span className="font-brand [word-spacing:-0.2em] text-lg text-dark-purple/80">Kloset AI</span>
+              <span className="font-brand text-lg text-dark-purple/80">Kloset</span>
             </div>
-            <p className="text-dark-purple/60 text-xs">&copy; {new Date().getFullYear()} Kloset AI. All rights reserved.</p>
+            <p className="text-dark-purple/60 text-xs">&copy; {new Date().getFullYear()} Kloset. All rights reserved.</p>
           </div>
         </div>
       </footer>
@@ -108,7 +108,7 @@ export function LandingPage() {
           )}
         >
           <div className="flex items-center justify-between px-6 h-20 border-b border-butter-yellow/15">
-            <span className="font-brand [word-spacing:-0.2em] text-xl text-butter-yellow">Kloset AI</span>
+            <span className="font-brand text-xl text-butter-yellow">Kloset</span>
             <button
               onClick={() => setMenuOpen(false)}
               className="w-11 h-11 -mr-2 flex items-center justify-center rounded-full text-butter-yellow/70 hover:text-butter-yellow hover:bg-butter-yellow/10 transition-colors"

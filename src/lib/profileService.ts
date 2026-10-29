@@ -94,3 +94,51 @@ export async function upsertProfile(userId: string, profile: UserProfile): Promi
   console.log('[profile] saved', { onboardingComplete: profile.onboardingComplete })
   return true
 }
+
+// ─── Profile photo ────────────────────────────────────────────────────────────
+// The file lives in the wardrobe-images bucket (private, one folder per user; see
+// supabase/wardrobe_photos.sql). profiles.avatar_path (supabase/profile_photo.sql) names the current one.
+// Kept apart from upsertProfile so a database without the column still saves everything else.
+
+const AVATAR_BUCKET = 'wardrobe-images'
+
+export async function fetchAvatarPath(userId: string): Promise<string | null> {
+  const { data, error } = await supabase.from('profiles').select('avatar_path').eq('id', userId).maybeSingle()
+  if (error) {
+    console.warn('[profile] avatar path unavailable — run supabase/profile_photo.sql', error.message)
+    return null
+  }
+  return (data as { avatar_path: string | null } | null)?.avatar_path ?? null
+}
+
+/** Uploads a new photo and points the profile at it. Returns the path, or null if it didn't reach Supabase. */
+export async function uploadAvatar(userId: string, blob: Blob): Promise<string | null> {
+  // A fresh path per upload, so cached signed URLs for the old photo can never show the wrong picture.
+  const path = `${userId}/avatar-${crypto.randomUUID()}.jpg`
+  const { error: uploadError } = await supabase.storage
+    .from(AVATAR_BUCKET)
+    .upload(path, blob, { contentType: blob.type || 'image/jpeg' })
+  if (uploadError) {
+    console.error('[profile] avatar upload failed — run supabase/wardrobe_photos.sql if the bucket is missing', uploadError.message)
+    return null
+  }
+  if (!(await saveAvatarPath(userId, path))) {
+    await supabase.storage.from(AVATAR_BUCKET).remove([path])
+    return null
+  }
+  return path
+}
+
+export async function saveAvatarPath(userId: string, path: string | null): Promise<boolean> {
+  const { error } = await supabase.from('profiles').update({ avatar_path: path }).eq('id', userId)
+  if (error) {
+    console.error('[profile] saving avatar path failed — run supabase/profile_photo.sql', error.message)
+    return false
+  }
+  return true
+}
+
+export async function removeAvatarFile(path: string): Promise<void> {
+  const { error } = await supabase.storage.from(AVATAR_BUCKET).remove([path])
+  if (error) console.warn('[profile] could not delete old avatar', error.message)
+}

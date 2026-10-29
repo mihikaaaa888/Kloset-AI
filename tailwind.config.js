@@ -69,6 +69,8 @@ export default {
         // every digit for a "PERSONAL USE ONLY" watermark, so never use it on
         // text that can contain numbers.
         brand: ['"Mutalis Fashion"', '"Times New Roman"', 'serif'],
+        // Handwritten answers on the profile card.
+        hand: ['"Reenie Beanie"', 'cursive'],
       },
       fontSize: {
         '2xs': ['0.625rem', { lineHeight: '0.875rem' }],

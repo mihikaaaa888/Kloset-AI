@@ -1,5 +1,5 @@
 /**
- * Kloset AI Stylist Engine
+ * Kloset Stylist Engine
  *
  * Public interface is designed for an easy drop-in AI API swap:
  *   generateOutfit(request, wardrobe, profile, attempt?) → Promise<StylistEngineResult>
