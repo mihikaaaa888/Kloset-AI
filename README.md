@@ -1,4 +1,4 @@
-# Kloset.ai
+# Kloset
 
 An AI-powered personal wardrobe and styling app for web, iOS, and Android.
 

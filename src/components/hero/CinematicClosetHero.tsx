@@ -6,7 +6,7 @@ import { InteractiveRackHero } from '@/components/hero/InteractiveRackHero'
 // re-encode must ship under a new filename. Both are 720p; the closet video has a
 // keyframe every 4 frames so scroll-scrubbing can land on any frame quickly.
 const VIDEO_SRC = '/videos/closet-hero-v2.mp4'
-const HERO_SCROLL_VH = 600 // scroll runway for the pinned closet animation — more room to breathe
+const HERO_SCROLL_VH = 300 // shorter runway lets the next section appear sooner after the closet opens
 // The cabinet's inner opening in the closet video, as
 // [left, top, right, bottom] fractions of the frame — measured from the
 // fully-open frame. The interactive rack is revealed through this area.
@@ -46,7 +46,9 @@ function CinematicHeroDesktop({ onDoorOpenChange }: CinematicClosetHeroProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rackSceneRef = useRef<HTMLDivElement>(null)
+  const [doorOpened, setDoorOpened] = useState(false)
   const handleOpenChange = useCallback((open: boolean) => {
+    setDoorOpened(open)
     onDoorOpenChange?.(open)
   }, [onDoorOpenChange])
 
@@ -72,8 +74,13 @@ function CinematicHeroDesktop({ onDoorOpenChange }: CinematicClosetHeroProps) {
   }
 
   return (
-    <section id="cinematic-hero" ref={containerRef} className="relative" style={{ height: `${HERO_SCROLL_VH}vh` }}>
-      <div className="sticky top-0 h-screen w-full overflow-hidden">
+    <section
+      id="cinematic-hero"
+      ref={containerRef}
+      className="relative transition-colors duration-500"
+      style={{ height: `${HERO_SCROLL_VH}vh`, backgroundColor: doorOpened ? '#355f43' : '#faf8f1' }}
+    >
+      <div className="sticky top-0 isolate h-[86svh] w-full overflow-hidden">
         <HeroBackdrop />
 
         {/* The rack sits under the keyed doors and is clipped to the doorway
@@ -85,7 +92,7 @@ function CinematicHeroDesktop({ onDoorOpenChange }: CinematicClosetHeroProps) {
         <canvas
           ref={canvasRef}
           className="absolute inset-0 z-20 h-full w-full pointer-events-none"
-          style={{ transformOrigin: '50% 50%', opacity: 0 }}
+          style={{ transformOrigin: '50% 50%', opacity: 0, mixBlendMode: 'multiply' }}
           aria-hidden="true"
         />
 

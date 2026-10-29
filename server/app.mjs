@@ -1,5 +1,5 @@
 /**
- * Kloset.ai API — the Express app, shared by both runtimes:
+ * Kloset API — the Express app, shared by both runtimes:
  *   - local dev: server/index.mjs calls app.listen() on port 3001
  *   - Netlify:   netlify/functions/api.mjs wraps it as a serverless function
  *

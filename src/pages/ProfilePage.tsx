@@ -29,9 +29,9 @@ export function ProfilePage() {
   const profile = useUserStore((s) => s.profile)
   const clearProfile = useUserStore((s) => s.clearProfile)
   const wardrobeItems = useWardrobeStore((s) => s.items)
-  const { savedOutfits, savedOutfits: allOutfits } = useOutfitStore()
+  const savedOutfits = useOutfitStore((s) => s.savedOutfits)
   const removeWardrobeItem = useWardrobeStore((s) => s.removeItem)
-  const unsaveOutfitAction = useOutfitStore((s) => s.unsaveOutfit)
+  const clearOutfits = useOutfitStore((s) => s.clearOutfits)
   const { user, signOut } = useAuth()
 
   if (!profile) {
@@ -60,7 +60,7 @@ export function ProfilePage() {
   const handleClearAll = () => {
     if (window.confirm('This will permanently delete your profile, wardrobe, and saved outfits. Are you sure?')) {
       wardrobeItems.forEach((item) => removeWardrobeItem(item.id))
-      allOutfits.forEach((o) => unsaveOutfitAction(o.id))
+      clearOutfits()
       clearProfile()
       navigate('/')
     }
@@ -182,7 +182,7 @@ export function ProfilePage() {
           </div>
         </ProfileSection>
 
-        <p className="text-center text-2xs text-text-muted/60 uppercase tracking-widest py-12">Kloset.ai · V1</p>
+        <p className="text-center text-2xs text-text-muted/60 uppercase tracking-widest py-12">Kloset · V1</p>
       </div>
     </div>
   )
@@ -277,4 +277,3 @@ const FREQUENCY_LABEL: Record<string, string> = {
   weekly: 'Weekly',
   'on-demand': 'On demand',
 }
-

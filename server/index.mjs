@@ -1,5 +1,5 @@
 /**
- * Kloset.ai API Server (local dev)
+ * Kloset API Server (local dev)
  *
  * Runs on port 3001 (proxied from Vite at /api/*).
  * Reads API keys from .env in the project root.

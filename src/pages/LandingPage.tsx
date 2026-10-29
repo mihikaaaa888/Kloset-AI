@@ -59,7 +59,7 @@ export function LandingPage() {
         doorOpen ? 'visible opacity-100' : 'invisible pointer-events-none opacity-0'
       )}>
         <span className="font-brand text-xl tracking-wide">
-          Kloset<span className="text-[#fffbd5]/65">.</span>ai
+          Kloset
         </span>
         <button
           onClick={() => setMenuOpen(true)}
@@ -73,7 +73,7 @@ export function LandingPage() {
       </header>
 
       {/* ── Intro copy and CTA ──────────────────────────────────────────────── */}
-      <section className="py-16 md:py-28 lg:py-40 bg-butter-yellow">
+      <section className="py-10 md:py-16 lg:py-20 bg-butter-yellow">
         <div className="mx-auto max-w-7xl px-6 lg:px-8">
           <HeroCopy onCTA={handleCTA} animate={false} align="center" tone="green" />
         </div>
@@ -84,9 +84,9 @@ export function LandingPage() {
         <div className="mx-auto max-w-7xl px-6 lg:px-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <span className="font-brand text-lg text-dark-purple/80">Kloset<span className="text-dark-purple">.</span>ai</span>
+              <span className="font-brand text-lg text-dark-purple/80">Kloset</span>
             </div>
-            <p className="text-dark-purple/60 text-xs">&copy; {new Date().getFullYear()} Kloset.ai. All rights reserved.</p>
+            <p className="text-dark-purple/60 text-xs">&copy; {new Date().getFullYear()} Kloset. All rights reserved.</p>
           </div>
         </div>
       </footer>
@@ -108,7 +108,7 @@ export function LandingPage() {
           )}
         >
           <div className="flex items-center justify-between px-6 h-20 border-b border-butter-yellow/15">
-            <span className="font-brand text-xl text-butter-yellow">Kloset.ai</span>
+            <span className="font-brand text-xl text-butter-yellow">Kloset</span>
             <button
               onClick={() => setMenuOpen(false)}
               className="w-11 h-11 -mr-2 flex items-center justify-center rounded-full text-butter-yellow/70 hover:text-butter-yellow hover:bg-butter-yellow/10 transition-colors"

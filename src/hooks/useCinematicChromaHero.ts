@@ -82,7 +82,7 @@ const VERTEX_SHADER = `
 `
 
 const FRAGMENT_SHADER = `
-  precision mediump float;
+  precision highp float;
   varying vec2 v_uv;
   uniform sampler2D u_texture;
   uniform vec2 u_uvScale;
@@ -107,7 +107,10 @@ const FRAGMENT_SHADER = `
     float spillAmount = clamp(greenness / (u_similarity + u_smoothness + 0.001), 0.0, 1.0) * u_spill;
     vec3 despilled = vec3(color.r, mix(color.g, max(color.r, color.b), spillAmount), color.b);
 
-    gl_FragColor = vec4(despilled, alpha);
+    // The canvas is composited by the browser as premultiplied alpha. Write
+    // premultiplied color here too; unassociated RGB around keyed edges shows
+    // up as bright blocks/halos in Safari and Chrome.
+    gl_FragColor = vec4(despilled * alpha, alpha);
   }
 `
 
@@ -286,14 +289,18 @@ export function useCinematicChromaHero({
     // Last open/closed state reported via onOpenChange, so it only fires on crossings.
     let reportedOpen = false
     let reportedOpening = false
+    // Once the user has continued past the hero to the landing page below,
+    // keep the opened rack visible while they scroll back through the hero.
+    // Re-arm the door only after they return close to the top of the runway.
+    let hasExitedHero = false
 
     canvas.style.opacity = '0'
     if (content) content.style.opacity = '0'
 
-    const gl = (canvas.getContext('webgl', { alpha: true, premultipliedAlpha: false, antialias: true }) ||
+    const gl = (canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: true }) ||
       canvas.getContext('experimental-webgl', {
         alpha: true,
-        premultipliedAlpha: false,
+        premultipliedAlpha: true,
         antialias: true,
       })) as WebGLRenderingContext | null
 
@@ -356,7 +363,7 @@ export function useCinematicChromaHero({
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2)
       const width = Math.round(container.clientWidth * dpr)
-      const height = Math.round(window.innerHeight * dpr)
+      const height = Math.round((canvas.clientHeight || window.innerHeight) * dpr)
       if (canvas.width !== width || canvas.height !== height) {
         canvas.width = width
         canvas.height = height
@@ -367,7 +374,7 @@ export function useCinematicChromaHero({
 
     const getScrollProgress = () => {
       const rect = container.getBoundingClientRect()
-      const scrollable = rect.height - window.innerHeight
+      const scrollable = rect.height - (canvas.clientHeight || window.innerHeight)
       if (scrollable <= 0) return 0
       const raw = -rect.top / scrollable
       return Math.min(1, Math.max(0, raw))
@@ -394,7 +401,10 @@ export function useCinematicChromaHero({
       const now = performance.now()
       const deltaSeconds = lastTickTime ? Math.min((now - lastTickTime) / 1000, 0.08) : 1 / 60
       lastTickTime = now
-      const rawProgress = getScrollProgress()
+      const scrollProgress = getScrollProgress()
+      if (scrollProgress >= 0.98) hasExitedHero = true
+      else if (hasExitedHero && scrollProgress <= 0.08) hasExitedHero = false
+      const rawProgress = hasExitedHero ? 1 : scrollProgress
       const duration = video.duration
 
       // Stage 1 (0 → openFraction of the runway): door opens, camera zooms
