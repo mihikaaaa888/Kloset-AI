@@ -74,3 +74,22 @@ export async function removeImageBackground(image: Blob): Promise<Blob> {
     return removeImageBackgroundLocally(image)
   }
 }
+
+/** Use PhotoRoom to clean up a garment mask; null means use the original mask. */
+export async function refineGarmentImage(image: Blob): Promise<Blob | null> {
+  try {
+    const response = await fetch(apiUrl('/api/refine-garment-image'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageData: await blobToBase64(image), mediaType: image.type || 'image/png' }),
+    })
+    if (!response.ok) return null
+
+    const result = await response.json() as { imageData?: string; mediaType?: string }
+    if (!result.imageData) return null
+    const bytes = Uint8Array.from(atob(result.imageData), (character) => character.charCodeAt(0))
+    return new Blob([bytes], { type: result.mediaType || 'image/png' })
+  } catch {
+    return null
+  }
+}

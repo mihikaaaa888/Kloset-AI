@@ -53,6 +53,18 @@ export async function getImage(id: string): Promise<Blob | null> {
   })
 }
 
+/** Replace the Blob for an existing image key without changing its wardrobe ID. */
+export async function replaceImage(id: string, blob: Blob): Promise<void> {
+  const db = await openDB()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite')
+    const req = tx.objectStore(STORE_NAME).put(blob, id)
+    req.onerror = () => reject(new Error(`Failed to replace image: ${req.error?.message}`))
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(new Error(`Failed to replace image: ${tx.error?.message}`))
+  }).finally(() => db.close())
+}
+
 /** Delete a stored image by its UUID key. No-ops gracefully if the key doesn't exist. */
 export async function deleteImage(id: string): Promise<void> {
   try {

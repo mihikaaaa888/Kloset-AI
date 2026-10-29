@@ -18,7 +18,8 @@ import {
 } from '@/lib/imageStorage'
 import { getPhotoUrl } from '@/lib/wardrobeService'
 import { analyzeImage, analyzeImageFromUrl } from '@/lib/analyzeImage'
-import { removeImageBackground } from '@/lib/backgroundRemoval'
+import { refineGarmentImage, removeImageBackground } from '@/lib/backgroundRemoval'
+import { parseOutfitPhoto } from '@/lib/fashionParsing'
 import type { ClothingAnalysis } from '@/lib/analyzeImage'
 import type { ClothingItem, ClothingCategory, Pattern, Season, Occasion } from '@/types'
 
@@ -143,6 +144,8 @@ interface QueuedImage {
   imageId: string
   previewUrl: string
   blob: Blob
+  detectedCategory?: ClothingCategory
+  detectedName?: string
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -253,21 +256,29 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
     try {
       const processed: QueuedImage[] = []
       for (const file of valid) {
-        setImageProcessingStep('Removing background…')
+        setImageProcessingStep('Loading the on-device clothing scanner…')
         const compressed = await compressImage(file)
-        let blob: Blob
-        try {
-          blob = await removeImageBackground(compressed)
-        } catch (error) {
-          console.warn('[AddItemModal] Background removal failed; keeping original photo.', error)
-          blob = compressed
-          setImageError('Background removal couldn’t finish, so the original photo was kept. You can still add the item.')
+        const parsed = await parseOutfitPhoto(compressed)
+        if (parsed.containsPerson && parsed.garments.length === 0) {
+          throw new Error('We couldn’t safely isolate clothing from this photo. Try a clearer, full-body image; the original photo was not saved or analyzed.')
         }
-        setImageProcessingStep('Saving photo…')
-        const imageId = await saveImage(blob)
-        const url = URL.createObjectURL(blob)
-        processed.push({ imageId, previewUrl: url, blob })
-        pendingMap.current.set(imageId, url)
+        let pieces: Array<{ blob: Blob; category?: ClothingCategory; name?: string }> = parsed.garments.length > 0
+          ? parsed.garments
+          : [{ blob: await removeImageBackground(parsed.safeFallback).catch(() => parsed.safeFallback), category: undefined, name: undefined }]
+        if (editItem && pieces.length > 1) {
+          pieces = [pieces.find((piece) => piece.category === editItem.category) ?? pieces[0]]
+        }
+        for (const piece of pieces) {
+          setImageProcessingStep('Refining garment edges…')
+          const refinedBlob = parsed.garments.length > 0
+            ? await refineGarmentImage(piece.blob) ?? piece.blob
+            : piece.blob
+          setImageProcessingStep('Saving garment…')
+          const imageId = await saveImage(refinedBlob)
+          const url = URL.createObjectURL(refinedBlob)
+          processed.push({ imageId, previewUrl: url, blob: refinedBlob, detectedCategory: piece.category, detectedName: piece.name })
+          pendingMap.current.set(imageId, url)
+        }
       }
 
       // If there was already a pending (just-uploaded, not from editItem) image, clean it up
@@ -287,13 +298,10 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
       setActiveImageId(first.imageId)
       setPreviewUrl(first.previewUrl)
       setLegacyImageUrl(null)
+      setDraft({ ...blankDraft(), category: first.detectedCategory ?? '', name: first.detectedName ?? '' })
 
-      if (processed.length > 1) {
-        setUploadBatch(processed)
-        setBatchIdx(0)
-      } else {
-        setUploadBatch([])
-      }
+      setUploadBatch(processed.length > 1 ? processed : [])
+      setBatchIdx(0)
 
       if (errs.length > 0) {
         setImageError(`${errs.length} file(s) skipped — unsupported format or too large.`)
@@ -301,7 +309,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
       // Trigger AI analysis on the first image (only for new items, not edits)
       if (!editItem) {
-        runAiAnalysis(first.blob)
+        runAiAnalysis(first.blob, first.detectedCategory, first.detectedName)
       }
     } catch (e) {
       setImageError(e instanceof Error ? e.message : 'Failed to process image.')
@@ -310,19 +318,25 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
       setImageProcessingStep('')
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
-  }, [activeImageId, editItem?.imageId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeImageId, editItem?.imageId, editItem?.category]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── AI analysis ──────────────────────────────────────────────────────────────
-  const applyAnalysis = useCallback((analysis: ClothingAnalysis) => {
+  const applyAnalysis = useCallback((analysis: ClothingAnalysis, detectedCategory?: ClothingCategory, detectedName?: string) => {
     setDraft((prev) => {
       const next = { ...prev }
 
       // Only fill the name if the user hasn't already typed one — everything
       // else is safe to overwrite since analysis runs immediately on upload,
       // before there's normally anything to type over.
-      if (analysis.name && !prev.name.trim()) next.name = analysis.name
+      if (analysis.name && (!prev.name.trim() || (detectedName && prev.name === detectedName))) next.name = analysis.name
+      else if (detectedName && !prev.name.trim()) next.name = detectedName
 
-      if (analysis.category && VALID_CATEGORIES.has(analysis.category)) {
+      if (detectedCategory) {
+        next.category = detectedCategory === 'tops' && analysis.category === 'outerwear'
+          ? 'outerwear'
+          : detectedCategory
+        next.subcategory = analysis.subcategory || (detectedName && !['Top', 'Pants', 'Shoes'].includes(detectedName) ? detectedName : '')
+      } else if (analysis.category && VALID_CATEGORIES.has(analysis.category)) {
         next.category = analysis.category as ClothingCategory
         next.subcategory = ''
       }
@@ -357,13 +371,13 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
     })
   }, [])
 
-  const runAiAnalysis = useCallback(async (blob: Blob) => {
+  const runAiAnalysis = useCallback(async (blob: Blob, detectedCategory?: ClothingCategory, detectedName?: string) => {
     setAiAnalyzing(true)
     setAiApplied(false)
     try {
       const analysis = await analyzeImage(blob)
       if (analysis) {
-        applyAnalysis(analysis)
+        applyAnalysis(analysis, detectedCategory, detectedName)
         setAiApplied(true)
       }
     } catch {
@@ -557,7 +571,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
       setErrors({})
       setImageError(null)
       setAiApplied(false)
-      runAiAnalysis(next.blob)
+      runAiAnalysis(next.blob, next.detectedCategory, next.detectedName)
     } else {
       handleClose()
     }
@@ -583,7 +597,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
       setErrors({})
       setImageError(null)
       setAiApplied(false)
-      runAiAnalysis(next.blob)
+      runAiAnalysis(next.blob, next.detectedCategory, next.detectedName)
     } else {
       handleClose()
     }
@@ -593,7 +607,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
   const subcategoryOptions = draft.category ? SUBCATEGORIES[draft.category as ClothingCategory] : undefined
 
   const batchLabel = isInBatch
-    ? `Photo ${batchIdx + 1} of ${uploadBatch.length}`
+    ? `Garment ${batchIdx + 1} of ${uploadBatch.length}`
     : null
 
   const displayUrl = previewUrl
@@ -804,7 +818,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
           {!displayUrl && photoTab === 'upload' && !imageProcessing && (
             <p className="text-xs text-text-muted mt-2">
-              PhotoRoom handles background removal when configured; otherwise it runs on this device. With PhotoRoom, the image is sent to its API for processing.
+              Outfit scanning runs on this device. When PhotoRoom is configured, only each isolated garment cutout is sent to refine its edges; if no garment can be isolated, the safe fallback image is sent instead. Faces and the original photo are not sent.
             </p>
           )}
 

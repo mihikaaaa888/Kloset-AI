@@ -219,15 +219,14 @@ app.post('/api/analyze-image-url', async (req, res) => {
   }
 })
 
-// Remove the background through PhotoRoom when a server-side key is configured.
-// The key never reaches the browser; callers send only the image bytes.
-app.post('/api/remove-background', async (req, res) => {
+// PhotoRoom segmentation, used both to refine a cropped garment mask and (via
+// /api/remove-background) to cut the background from a whole wardrobe photo.
+// The API key stays on the server; callers send only the image bytes.
+const photoRoomSegment = async (req, res) => {
   const { imageData, mediaType } = req.body ?? {}
   const apiKey = process.env.PHOTOROOM_API_KEY
 
-  if (!apiKey) {
-    return res.status(503).json({ error: 'PhotoRoom background removal is not configured.' })
-  }
+  if (!apiKey) return res.status(503).json({ error: 'PhotoRoom is not configured.' })
   if (!imageData || typeof imageData !== 'string') {
     return res.status(400).json({ error: 'imageData (base64 string) is required' })
   }
@@ -238,30 +237,30 @@ app.post('/api/remove-background', async (req, res) => {
   try {
     const imageBytes = Buffer.from(imageData, 'base64')
     if (imageBytes.length > 10 * 1024 * 1024) {
-      return res.status(400).json({ error: 'Image is too large for background removal.' })
+      return res.status(400).json({ error: 'Image is too large for processing.' })
     }
 
     const form = new FormData()
-    form.append('image_file', new Blob([imageBytes], { type: mediaType }), `upload.${mediaType.split('/')[1]}`)
+    form.append('image_file', new Blob([imageBytes], { type: mediaType }), `garment.${mediaType.split('/')[1]}`)
     const response = await fetch('https://sdk.photoroom.com/v1/segment', {
       method: 'POST',
       headers: { 'x-api-key': apiKey },
       body: form,
     })
-
     if (!response.ok) {
-      const detail = (await response.text()).slice(0, 500)
-      console.error(`[remove-background] PhotoRoom ${response.status}:`, detail)
+      console.error(`[photoroom] PhotoRoom ${response.status}:`, (await response.text()).slice(0, 500))
       return res.status(502).json({ error: 'PhotoRoom could not process this image.' })
     }
 
     const output = Buffer.from(await response.arrayBuffer())
     return res.json({ imageData: output.toString('base64'), mediaType: response.headers.get('content-type') || 'image/png' })
   } catch (e) {
-    console.error('[remove-background] PhotoRoom error:', e?.message ?? e)
-    return res.status(502).json({ error: 'PhotoRoom background removal failed.' })
+    console.error('[photoroom] PhotoRoom error:', e?.message ?? e)
+    return res.status(502).json({ error: 'PhotoRoom processing failed.' })
   }
-})
+}
+app.post('/api/refine-garment-image', photoRoomSegment)
+app.post('/api/remove-background', photoRoomSegment)
 
 // ─── Live web shopping search (Exa) ───────────────────────────────────────────
 

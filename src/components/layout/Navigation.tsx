@@ -81,7 +81,7 @@ export function Navigation() {
             {/* Logo */}
             <NavLink to="/" className="flex items-center gap-2" aria-label="Kloset home">
               <span className={clsx(
-                'font-brand text-xl tracking-tight transition-colors duration-300',
+                'font-brand [word-spacing:-0.1em] text-xl tracking-tight transition-colors duration-300',
                 'text-text-primary'
               )}>
                 Kloset
