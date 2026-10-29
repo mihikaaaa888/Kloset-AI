@@ -10,12 +10,13 @@ type RackPiece = {
   detailImage?: string
   detailAlt?: string
   details?: string[]
+  pairId?: string
   outerwear?: boolean
   warmWeather?: boolean
   left: number
 }
 
-const RACK_POSITIONS = [20.25, 28.75, 37.25, 45.75, 54.25, 62.75, 71.25, 79.75]
+const RACK_POSITIONS = [15, 25, 35, 45, 55, 65, 75, 85]
 const OUTFITS: Omit<RackPiece, 'left'>[] = [
   {
     id: 'butter-satin-look',
@@ -163,12 +164,23 @@ const OUTFITS: Omit<RackPiece, 'left'>[] = [
     details: ['Olive linen button-up shirt', 'Cream drawstring trousers', 'Beige baseball cap', 'Gold-frame sunglasses', 'Brown leather-strap watch', 'Taupe clogs'],
   },
   {
-    id: 'burgundy-shirt-white-trousers',
-    name: 'Burgundy Shirt & White Trousers',
-    image: '/images/burgundy-shirt-white-trousers-on-hanger.png',
-    imageAlt: 'Burgundy button-up shirt with white trousers on one wooden hanger',
+    id: 'burgundy-button-up-shirt',
+    pairId: 'burgundy-shirt-white-trousers',
+    name: 'Burgundy Button-Up Shirt',
+    image: '/images/burgundy-button-up-shirt-on-hanger.png',
+    imageAlt: 'Burgundy button-up shirt hanging on its own wooden hanger',
     detailImage: '/images/burgundy-shirt-look-reference.png',
-    detailAlt: 'Burgundy button-up shirt with white trousers',
+    detailAlt: 'Burgundy button-up shirt styled with white trousers',
+    details: ['Burgundy button-up shirt', 'White trousers'],
+  },
+  {
+    id: 'white-trousers-burgundy-look',
+    pairId: 'burgundy-shirt-white-trousers',
+    name: 'White Trousers',
+    image: '/images/white-trousers-on-hanger.png',
+    imageAlt: 'White trousers hanging on their own wooden clip hanger',
+    detailImage: '/images/burgundy-shirt-look-reference.png',
+    detailAlt: 'Burgundy button-up shirt styled with white trousers',
     details: ['Burgundy button-up shirt', 'White trousers'],
   },
   {
@@ -293,10 +305,11 @@ function createInitialPieces(): RackPiece[] {
   const chosenWarmLooks = shuffle(warmLooks.filter((look) => !chosenOuterwear.some((piece) => piece.id === look.id)))
     .slice(0, minWarmLooks)
   const chosen = [...chosenOuterwear, ...chosenWarmLooks]
+  chosen.push(...OUTFITS.filter((outfit) => outfit.pairId === 'burgundy-shirt-white-trousers'))
   const remaining = shuffle(OUTFITS.filter((outfit) => !chosen.some((piece) => piece.id === outfit.id)))
 
   for (const outfit of remaining) {
-    if (chosen.length === RACK_POSITIONS.length) break
+    if (chosen.length >= RACK_POSITIONS.length) break
     const outerwearCount = chosen.filter((piece) => piece.outerwear).length
     const warmCount = chosen.filter((piece) => piece.warmWeather).length
     if (outfit.outerwear && outerwearCount >= maxOuterwear) continue
@@ -350,7 +363,7 @@ export function InteractiveRackHero({ onRackInteract, immersed = false, sceneRef
       const next = [...current]
       const [piece] = next.splice(from, 1)
       next.splice(to, 0, piece)
-      return next.map((item, index) => ({ ...item, left: 20.25 + index * 8.5 }))
+      return next.map((item, index) => ({ ...item, left: RACK_POSITIONS[index] }))
     })
     setDraggedId(null)
     onRackInteract?.()
