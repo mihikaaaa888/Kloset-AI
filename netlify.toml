@@ -2,6 +2,10 @@
   command = "npm run build"
   publish = "dist"
 
+[build.environment]
+  # @capacitor/cli requires Node 22+; the site default can be older.
+  NODE_VERSION = "22"
+
 [functions]
   node_bundler = "esbuild"
 
