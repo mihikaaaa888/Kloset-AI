@@ -1,5 +1,5 @@
 /**
- * Kloset.ai API — the Express app, shared by both runtimes:
+ * Kloset API — the Express app, shared by both runtimes:
  *   - local dev: server/index.mjs calls app.listen() on port 3001
  *   - Netlify:   netlify/functions/api.mjs wraps it as a serverless function
  *
@@ -18,7 +18,14 @@ import { findOutfitProblems } from './outfitRules.mjs'
 export const app = express()
 
 // Only matters in local dev — in production the site and /api share an origin.
-app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:4173'] }))
+app.use(cors({
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:4173',
+    'capacitor://localhost', // iOS WebView origin
+    'https://localhost', // Android WebView origin
+  ],
+}))
 app.use(express.json({ limit: '15mb' }))
 
 // ─── Health check ─────────────────────────────────────────────────────────────
@@ -334,9 +341,12 @@ app.post('/api/web-shop-search', async (req, res) => {
     return res.status(400).json({ error: 'query is required' })
   }
 
-  const includeDomains = (Array.isArray(retailers) && retailers.length
+  // Only apply a retailer allowlist when the caller explicitly supplied one.
+  // Exa's guidance is to express general source preferences in query text and
+  // reserve includeDomains for an explicitly requested hard allowlist.
+  const includeDomains = Array.isArray(retailers) && retailers.length
     ? retailers.filter((r) => RETAILER_DOMAINS[r]).map((r) => RETAILER_DOMAINS[r])
-    : Object.values(RETAILER_DOMAINS))
+    : null
 
   const apiKey = process.env.EXA_API_KEY
   if (!apiKey) {
@@ -345,7 +355,7 @@ app.post('/api/web-shop-search', async (req, res) => {
   }
 
   const trimmedQuery = query.trim().slice(0, 200)
-  const cacheKey = `${trimmedQuery.toLowerCase()}|${includeDomains.slice().sort().join(',')}`
+  const cacheKey = `${trimmedQuery.toLowerCase()}|${includeDomains?.slice().sort().join(',') ?? ''}`
   const cached = webShopCache.get(cacheKey)
   if (cached && cached.expiresAt > Date.now()) {
     console.log(`[web-shop-search] cache hit for "${trimmedQuery}"`)
@@ -362,14 +372,11 @@ app.post('/api/web-shop-search', async (req, res) => {
       body: JSON.stringify({
         query: trimmedQuery,
         type: 'auto',
-        // Over-fetch: listing pages get filtered out below, and the rest
-        // still needs to fill a row of product cards.
+        // Intentional over-fetch: category/listing pages are filtered out
+        // below, and the remaining results fill up to 12 product cards.
         numResults: 30,
-        includeDomains,
-        contents: {
-          text: { maxCharacters: 280 },
-          highlights: true,
-        },
+        ...(includeDomains?.length ? { includeDomains } : {}),
+        contents: { highlights: true },
       }),
     })
 
@@ -402,7 +409,7 @@ app.post('/api/web-shop-search', async (req, res) => {
 
     webShopCache.set(cacheKey, { results, expiresAt: Date.now() + WEB_SHOP_CACHE_TTL_MS })
     const nonUSCount = results.filter((r) => isLikelyNonUS(r.url)).length
-    console.log(`[web-shop-search] "${trimmedQuery}" (${includeDomains.join(',')}) → ${results.length} product pages (${raw.length - productHits.length} listing pages dropped, ${nonUSCount} non-US deprioritized)`)
+    console.log(`[web-shop-search] "${trimmedQuery}"${includeDomains?.length ? ` (${includeDomains.join(',')})` : ''} → ${results.length} product pages (${raw.length - productHits.length} listing pages dropped, ${nonUSCount} non-US deprioritized)`)
     return res.json({ results })
   } catch (e) {
     console.error('[web-shop-search] Exa error:', e?.message ?? e)

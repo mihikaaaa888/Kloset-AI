@@ -13,8 +13,6 @@ export function LandingPage() {
   const { user, signOut } = useAuth()
   const profile = useUserStore((s) => s.profile)
   const [menuOpen, setMenuOpen] = useState(false)
-  // The menu button stays hidden on first load — it only appears once the
-  // user has scrolled AND (on the cinematic hero) the closet door has opened.
   const [doorOpen, setDoorOpen] = useState(false)
   const [hasScrolled, setHasScrolled] = useState(false)
   const showMenuButton = hasScrolled && doorOpen
@@ -66,9 +64,7 @@ export function LandingPage() {
     <div className="min-h-screen bg-warm-cream">
 
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
-      <CinematicClosetHero
-        onDoorOpenChange={setDoorOpen}
-      />
+      <CinematicClosetHero onDoorOpenChange={setDoorOpen} />
 
       {/* ── Mobile top bar — no scroll-driven door on phones, so the logo and menu are there from the start ── */}
       <header className="md:hidden fixed top-0 inset-x-0 z-40 h-16 px-4 flex items-center justify-between bg-[#FBF5EC]/95 backdrop-blur-md border-b border-text-primary/10">
@@ -78,9 +74,9 @@ export function LandingPage() {
           aria-expanded={menuOpen}
           aria-controls="landing-sidebar"
           aria-label="Open menu"
-          className="w-11 h-11 -mr-1.5 flex items-center justify-center rounded-full text-text-primary active:bg-text-primary/5"
+          className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full text-[#fffbd5] transition-colors hover:bg-[#fffbd5]/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fffbd5]"
         >
-          <Menu size={22} />
+          <Menu size={22} strokeWidth={1.8} />
         </button>
       </header>
 

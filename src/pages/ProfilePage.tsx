@@ -35,9 +35,9 @@ export function ProfilePage() {
   const profile = useUserStore((s) => s.profile)
   const clearProfile = useUserStore((s) => s.clearProfile)
   const wardrobeItems = useWardrobeStore((s) => s.items)
-  const { savedOutfits, savedOutfits: allOutfits } = useOutfitStore()
+  const savedOutfits = useOutfitStore((s) => s.savedOutfits)
   const removeWardrobeItem = useWardrobeStore((s) => s.removeItem)
-  const unsaveOutfitAction = useOutfitStore((s) => s.unsaveOutfit)
+  const clearOutfits = useOutfitStore((s) => s.clearOutfits)
   const { user, signOut } = useAuth()
   const theme = useResolvedTheme()
 
@@ -67,7 +67,7 @@ export function ProfilePage() {
   const handleClearAll = () => {
     if (window.confirm('This will permanently delete your profile, wardrobe, and saved outfits. Are you sure?')) {
       wardrobeItems.forEach((item) => removeWardrobeItem(item.id))
-      allOutfits.forEach((o) => unsaveOutfitAction(o.id))
+      clearOutfits()
       clearProfile()
       navigate('/')
     }

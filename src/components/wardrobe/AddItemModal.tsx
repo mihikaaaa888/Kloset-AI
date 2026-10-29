@@ -8,6 +8,7 @@ import { TextInput } from '@/components/ui/TextInput'
 import { SelectChip } from '@/components/ui/SelectChip'
 import { ColourSwatch } from '@/components/ui/ColourSwatch'
 import { COLOUR_PALETTE } from '@/lib/colourUtils'
+import { apiUrl } from '@/lib/apiUrl'
 import {
   saveImage,
   getImage,
@@ -1074,9 +1075,7 @@ function ImageSearchBrowser({
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(
-        `/api/search-images?q=${encodeURIComponent(q)}&page=${p}`
-      )
+      const res = await fetch(apiUrl(`/api/search-images?q=${encodeURIComponent(q)}&page=${p}`))
       const data = await res.json()
       if (data.noKey) { setNoKey(true); return }
       setPhotos(data.photos ?? [])
