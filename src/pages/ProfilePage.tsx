@@ -35,9 +35,9 @@ export function ProfilePage() {
   const profile = useUserStore((s) => s.profile)
   const clearProfile = useUserStore((s) => s.clearProfile)
   const wardrobeItems = useWardrobeStore((s) => s.items)
-  const { savedOutfits, savedOutfits: allOutfits } = useOutfitStore()
+  const savedOutfits = useOutfitStore((s) => s.savedOutfits)
   const removeWardrobeItem = useWardrobeStore((s) => s.removeItem)
-  const unsaveOutfitAction = useOutfitStore((s) => s.unsaveOutfit)
+  const clearOutfits = useOutfitStore((s) => s.clearOutfits)
   const { user, signOut } = useAuth()
   const theme = useResolvedTheme()
 
@@ -67,7 +67,7 @@ export function ProfilePage() {
   const handleClearAll = () => {
     if (window.confirm('This will permanently delete your profile, wardrobe, and saved outfits. Are you sure?')) {
       wardrobeItems.forEach((item) => removeWardrobeItem(item.id))
-      allOutfits.forEach((o) => unsaveOutfitAction(o.id))
+      clearOutfits()
       clearProfile()
       navigate('/')
     }
@@ -188,7 +188,11 @@ export function ProfilePage() {
           <ActionTile icon={Trash2} label="Clear data" hint="Delete everything and start fresh" onClick={handleClearAll} danger />
         </div>
 
+<<<<<<< HEAD
         <p className="text-center text-2xs text-text-muted/60 uppercase tracking-widest py-10">Kloset AI · V1</p>
+=======
+        <p className="text-center text-2xs text-text-muted/60 uppercase tracking-widest py-12">Kloset · V1</p>
+>>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c
       </div>
     </div>
   )
@@ -376,6 +380,7 @@ const FREQUENCY_LABEL: Record<string, string> = {
   weekly: 'Weekly',
   'on-demand': 'On demand',
 }
+<<<<<<< HEAD
 
 const OCCASION_ICON: Record<string, LucideIcon> = {
   work: Briefcase,
@@ -418,3 +423,5 @@ const OCCASION_LABEL: Record<string, string> = {
   gym: 'Active',
   'special-event': 'Special events',
 }
+=======
+>>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c

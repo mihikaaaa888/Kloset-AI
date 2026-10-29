@@ -1,4 +1,4 @@
--- Kloset.ai — Friends & sharing
+-- Kloset — Friends & sharing
 -- Run this entire file in the Supabase SQL Editor after schema.sql.
 -- Idempotent (safe to re-run).
 

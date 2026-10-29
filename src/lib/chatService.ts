@@ -1,3 +1,4 @@
+import { apiUrl } from '@/lib/apiUrl'
 import type { CatalogItem, ClothingCategory, ClothingItem, UserProfile } from '@/types'
 import { CATALOGUE_ITEMS } from '@/pages/onboarding/catalogueData'
 import { CATALOG_ITEMS } from '@/lib/catalogData'
@@ -188,7 +189,7 @@ export async function sendChatMessage(
 }
 
 function postChat(body: string): Promise<Response> {
-  return fetch('/api/chat', {
+  return fetch(apiUrl('/api/chat'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body,

@@ -14,7 +14,7 @@ interface HeroCopyProps {
 
 /**
  * The headline/CTA block — "Your wardrobe, curated for you" + Build My Kloset.
- * Shown in the second section of the landing page (the hero itself is video only).
+ * Shown below the interactive rack hero on the landing page.
  */
 export function HeroCopy({ onCTA, animate = true, align = 'left', tone = 'light' }: HeroCopyProps) {
   const delay = (ms: number) => (animate ? { animationDelay: `${ms}ms`, opacity: 0 } : undefined)

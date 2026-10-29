@@ -1,4 +1,4 @@
-import { Trash2, Send } from 'lucide-react'
+import { Trash2, Send, RotateCcw } from 'lucide-react'
 import { CategoryGlyph } from '@/components/wardrobe/categoryVisuals'
 import { clsx } from 'clsx'
 import { colourNameToHex, isLightColour } from '@/lib/colourUtils'
@@ -17,6 +17,9 @@ interface SavedOutfitCardProps {
   onClick: () => void
   onUnsave: (e: React.MouseEvent) => void
   onSend: (e: React.MouseEvent) => void
+  trashed?: boolean
+  onRestore?: (e: React.MouseEvent) => void
+  removeLabel?: string
 }
 
 const OCCASION_LABEL: Record<string, string> = {
@@ -24,7 +27,7 @@ const OCCASION_LABEL: Record<string, string> = {
   weekend: 'Weekend', travel: 'Travel', 'special-event': 'Special Event', gym: 'Gym',
 }
 
-export function SavedOutfitCard({ outfit, resolvedItems, onClick, onUnsave, onSend }: SavedOutfitCardProps) {
+export function SavedOutfitCard({ outfit, resolvedItems, onClick, onUnsave, onSend, trashed = false, onRestore, removeLabel }: SavedOutfitCardProps) {
   const mosaicSlots = [...resolvedItems].slice(0, 4)
   while (mosaicSlots.length < 4) mosaicSlots.push({ itemId: '', role: '', item: null })
 
@@ -64,16 +67,23 @@ export function SavedOutfitCard({ outfit, resolvedItems, onClick, onUnsave, onSe
       </button>
 
       <div className="absolute top-2.5 right-2.5 flex gap-1.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300">
-        <button
+        {!trashed && <button
           onClick={onSend}
           aria-label="Send to a friend"
           className="w-9 h-9 rounded-full bg-warm-cream/90 backdrop-blur-sm flex items-center justify-center text-text-primary hover:bg-warm-cream transition-colors"
         >
           <Send size={15} strokeWidth={1.25} />
-        </button>
+        </button>}
+        {trashed && onRestore && <button
+          onClick={onRestore}
+          aria-label="Restore outfit"
+          className="w-9 h-9 rounded-full bg-warm-cream/90 backdrop-blur-sm flex items-center justify-center text-text-primary hover:text-emerald-800 transition-colors"
+        >
+          <RotateCcw size={15} strokeWidth={1.25} />
+        </button>}
         <button
           onClick={onUnsave}
-          aria-label="Remove outfit"
+          aria-label={removeLabel ?? (trashed ? 'Delete outfit permanently' : 'Move outfit to recycle bin')}
           className="w-9 h-9 rounded-full bg-warm-cream/90 backdrop-blur-sm flex items-center justify-center text-text-primary hover:text-red-700 transition-colors"
         >
           <Trash2 size={15} strokeWidth={1.25} />

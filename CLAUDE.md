@@ -1,4 +1,4 @@
-# Kloset.ai
+# Kloset
 
 AI-powered personal wardrobe and styling web app. Vite + React 18 + TypeScript SPA with an Express API, Supabase for auth/data/storage.
 

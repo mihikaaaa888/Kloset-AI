@@ -1,3 +1,5 @@
+import { apiUrl } from '@/lib/apiUrl'
+
 export interface ClothingAnalysis {
   name: string | null
   category: string | null
@@ -42,6 +44,11 @@ async function shrinkForAnalysis(blob: Blob): Promise<Blob> {
     canvas.width = Math.round(img.naturalWidth * scale)
     canvas.height = Math.round(img.naturalHeight * scale)
     const context = canvas.getContext('2d')!
+<<<<<<< HEAD
+=======
+    // Vision analysis expects an ordinary photo. Flatten a transparent cutout
+    // onto white so invisible pixels do not become black around the garment.
+>>>>>>> 7c62c2527df94c605f8ce52db10495139f7ef55c
     context.fillStyle = '#FFFFFF'
     context.fillRect(0, 0, canvas.width, canvas.height)
     context.drawImage(img, 0, 0, canvas.width, canvas.height)
@@ -64,7 +71,7 @@ export async function analyzeImage(original: Blob): Promise<ClothingAnalysis | n
 
   const imageData = await blobToBase64(blob)
 
-  const res = await fetch('/api/analyze-image', {
+  const res = await fetch(apiUrl('/api/analyze-image'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ imageData, mediaType }),
@@ -86,7 +93,7 @@ export async function analyzeImage(original: Blob): Promise<ClothingAnalysis | n
  * restriction that blocks a client-side fetch() of most third-party images.
  */
 export async function analyzeImageFromUrl(url: string): Promise<ClothingAnalysis | null> {
-  const res = await fetch('/api/analyze-image-url', {
+  const res = await fetch(apiUrl('/api/analyze-image-url'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url }),

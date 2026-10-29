@@ -1213,10 +1213,10 @@ function enrichCatalogItem(item: RawCatalogItem, categoryIndex: number): Catalog
   const itemColours = item.colours.map((c) => c.toLowerCase())
 
   // Prefer a photo whose visible colour actually overlaps the item's stated
-  // colour(s) over blindly cycling the pool — that's what put a black tee
-  // under "White Linen Oversized Shirt" and a blue shirt under "Black
-  // Ribbed Turtleneck". Among equally-good matches, cycle by category index
-  // so items don't all collapse onto the single best-matching photo.
+  // colour(s). Do not fall back to an unrelated colour when there is no match:
+  // a colour swatch with a garment glyph is more honest than a misleading photo.
+  // Among equally-good matches, cycle by category index so items don't all
+  // collapse onto the single best-matching photo.
   const scored = pool.map((img) => ({
     img,
     score: img.colours.some((c) => itemColours.includes(c)) ? 1 : 0,
@@ -1225,7 +1225,11 @@ function enrichCatalogItem(item: RawCatalogItem, categoryIndex: number): Catalog
   const candidates = scored.filter((s) => s.score === bestScore)
   const chosen = candidates[categoryIndex % candidates.length].img
   const pick = PRODUCT_PICKS[item.id]
-  const imageUrl = pick?.image ?? `https://images.unsplash.com/${chosen.id}?w=600&q=80&auto=format&fit=crop`
+  // Prefer a curated product-specific image. For generic fallbacks, require a
+  // colour match so the catalog never shows an obviously unrelated garment.
+  const imageUrl = pick?.image ?? (bestScore > 0
+    ? `https://images.unsplash.com/${chosen.id}?w=600&q=80&auto=format&fit=crop`
+    : '')
 
   const hash = hashString(item.id)
   const [lo, hi] = PRICE_BAND[item.priceRange]

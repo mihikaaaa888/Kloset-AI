@@ -1,4 +1,4 @@
--- Kloset.ai database schema
+-- Kloset database schema
 -- Run this entire file in the Supabase SQL Editor.
 -- Each section is idempotent (safe to re-run).
 

@@ -11,13 +11,8 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
  * - The key color itself is detected from the actual video (sampling the frame
  *   where the door is most open) instead of being hard-coded, since the exact
  *   green shade varies between green-screen sources.
- * - Optionally, a second "inner" video shows through the doorway only: keyed
- *   pixels inside `innerRect` sample that video, keyed pixels outside it stay
- *   transparent (so the page backdrop frames the closet). The inner video is
- *   pinned to the viewport, not to the doorway, so the doorway reads as a
- *   window onto a full-screen scene that widens as the doors swing and the
- *   camera zooms — and lines up exactly with the same video shown full-bleed
- *   once the closet fades away.
+ * - A DOM scene sits beneath the keyed video. It is clipped to the doorway and
+ *   expands with the camera zoom, keeping the rack interactive as it appears.
  * - Everything after the initial setup is ref-driven inside a rAF loop; no React
  *   state is touched per scroll/frame, so this never triggers re-renders.
  */
@@ -34,8 +29,8 @@ interface UseCinematicChromaHeroOptions {
   canvasRef: RefObject<HTMLCanvasElement>
   /** Optional hero copy layer — fades/scales in with the door opening. */
   contentRef?: RefObject<HTMLElement>
-  /** Video shown through the doorway (keyed pixels inside `innerRect`), viewport-locked, object-fit: cover. */
-  innerVideoRef?: RefObject<HTMLVideoElement>
+  /** DOM scene revealed through the keyed doorway while the rack remains interactive. */
+  rackSceneRef?: RefObject<HTMLElement>
   /**
    * The doorway in the closet video's frame, as [left, top, right, bottom]
    * fractions (0-1, top-left origin). Pass a stable (module-level) array —
@@ -87,18 +82,13 @@ const VERTEX_SHADER = `
 `
 
 const FRAGMENT_SHADER = `
-  precision mediump float;
+  precision highp float;
   varying vec2 v_uv;
   uniform sampler2D u_texture;
   uniform vec2 u_uvScale;
   uniform float u_similarity;
   uniform float u_smoothness;
   uniform float u_spill;
-  uniform sampler2D u_inner;
-  uniform float u_hasInner;
-  uniform vec4 u_innerRect;
-  uniform vec2 u_innerUvScale;
-  uniform float u_canvasScale;
 
   void main() {
     vec2 uv = (v_uv - 0.5) * u_uvScale + 0.5;
@@ -117,20 +107,10 @@ const FRAGMENT_SHADER = `
     float spillAmount = clamp(greenness / (u_similarity + u_smoothness + 0.001), 0.0, 1.0) * u_spill;
     vec3 despilled = vec3(color.r, mix(color.g, max(color.r, color.b), spillAmount), color.b);
 
-    // Inside the doorway, keyed pixels become the inner video instead of
-    // transparent. v_uv is canvas space; the canvas is CSS-scaled about its
-    // centre, so undo that to get the viewport position the inner video is
-    // locked to.
-    float inRect = u_hasInner
-      * step(u_innerRect.x, uv.x) * step(uv.x, u_innerRect.z)
-      * step(u_innerRect.y, uv.y) * step(uv.y, u_innerRect.w);
-    if (inRect > 0.5) {
-      vec2 screenUv = (v_uv - 0.5) * u_canvasScale + 0.5;
-      vec3 inner = texture2D(u_inner, (screenUv - 0.5) * u_innerUvScale + 0.5).rgb;
-      gl_FragColor = vec4(mix(inner, despilled, alpha), 1.0);
-    } else {
-      gl_FragColor = vec4(despilled, alpha);
-    }
+    // The canvas is composited by the browser as premultiplied alpha. Write
+    // premultiplied color here too; unassociated RGB around keyed edges shows
+    // up as bright blocks/halos in Safari and Chrome.
+    gl_FragColor = vec4(despilled * alpha, alpha);
   }
 `
 
@@ -258,7 +238,7 @@ export function useCinematicChromaHero({
   src,
   canvasRef,
   contentRef,
-  innerVideoRef,
+  rackSceneRef,
   innerRect,
   zoomTo = 2.6,
   exitZoom = 1,
@@ -281,7 +261,7 @@ export function useCinematicChromaHero({
     const video = videoRef.current
     const canvas = canvasRef.current
     const content = contentRef?.current ?? null
-    const innerVideo = innerVideoRef?.current ?? null
+    const rackScene = rackSceneRef?.current ?? null
     if (!container || !video || !canvas) return
 
     let cancelled = false
@@ -290,6 +270,7 @@ export function useCinematicChromaHero({
     let rafId = 0
     let running = false
     let currentScale = 1
+    let lastTickTime = 0
     // Local flag, not the React state — tick() runs every frame inside a
     // closure this effect only creates once, so reading the `state` from
     // useState here would read the stale value captured at effect-setup
@@ -308,14 +289,18 @@ export function useCinematicChromaHero({
     // Last open/closed state reported via onOpenChange, so it only fires on crossings.
     let reportedOpen = false
     let reportedOpening = false
+    // Once the user has continued past the hero to the landing page below,
+    // keep the opened rack visible while they scroll back through the hero.
+    // Re-arm the door only after they return close to the top of the runway.
+    let hasExitedHero = false
 
     canvas.style.opacity = '0'
     if (content) content.style.opacity = '0'
 
-    const gl = (canvas.getContext('webgl', { alpha: true, premultipliedAlpha: false, antialias: true }) ||
+    const gl = (canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: true }) ||
       canvas.getContext('experimental-webgl', {
         alpha: true,
-        premultipliedAlpha: false,
+        premultipliedAlpha: true,
         antialias: true,
       })) as WebGLRenderingContext | null
 
@@ -344,11 +329,6 @@ export function useCinematicChromaHero({
     const similarityLoc = gl.getUniformLocation(program, 'u_similarity')
     const smoothnessLoc = gl.getUniformLocation(program, 'u_smoothness')
     const spillLoc = gl.getUniformLocation(program, 'u_spill')
-    const innerLoc = gl.getUniformLocation(program, 'u_inner')
-    const hasInnerLoc = gl.getUniformLocation(program, 'u_hasInner')
-    const innerRectLoc = gl.getUniformLocation(program, 'u_innerRect')
-    const innerUvScaleLoc = gl.getUniformLocation(program, 'u_innerUvScale')
-    const canvasScaleLoc = gl.getUniformLocation(program, 'u_canvasScale')
 
     const texture = gl.createTexture()
     gl.bindTexture(gl.TEXTURE_2D, texture)
@@ -357,23 +337,6 @@ export function useCinematicChromaHero({
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
-
-    const innerTexture = innerVideo ? gl.createTexture() : null
-    if (innerTexture) {
-      gl.bindTexture(gl.TEXTURE_2D, innerTexture)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    }
-    if (innerRect) {
-      // Textures are uploaded flipped (bottom-left origin), so flip the
-      // top-left-origin rect to match.
-      const [left, top, right, bottom] = innerRect
-      gl.useProgram(program)
-      gl.uniform4f(innerRectLoc, left, 1 - bottom, right, 1 - top)
-    }
-    let loggedInner = false
 
     gl.clearColor(0, 0, 0, 0)
     gl.disable(gl.DEPTH_TEST)
@@ -400,7 +363,7 @@ export function useCinematicChromaHero({
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2)
       const width = Math.round(container.clientWidth * dpr)
-      const height = Math.round(window.innerHeight * dpr)
+      const height = Math.round((canvas.clientHeight || window.innerHeight) * dpr)
       if (canvas.width !== width || canvas.height !== height) {
         canvas.width = width
         canvas.height = height
@@ -411,7 +374,7 @@ export function useCinematicChromaHero({
 
     const getScrollProgress = () => {
       const rect = container.getBoundingClientRect()
-      const scrollable = rect.height - window.innerHeight
+      const scrollable = rect.height - (canvas.clientHeight || window.innerHeight)
       if (scrollable <= 0) return 0
       const raw = -rect.top / scrollable
       return Math.min(1, Math.max(0, raw))
@@ -429,42 +392,28 @@ export function useCinematicChromaHero({
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video)
       gl.uniform1i(textureLoc, 0)
 
-      const innerReady = !!(innerVideo && innerTexture && innerRect && innerVideo.readyState >= 2 && innerVideo.videoWidth)
-      if (innerReady) {
-        if (!loggedInner) {
-          loggedInner = true
-          console.log('[cinematic-hero] doorway video ready', { width: innerVideo.videoWidth, height: innerVideo.videoHeight })
-        }
-        gl.activeTexture(gl.TEXTURE1)
-        gl.bindTexture(gl.TEXTURE_2D, innerTexture)
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, innerVideo)
-        gl.uniform1i(innerLoc, 1)
-        // object-fit: cover against the viewport-sized canvas, same as the
-        // full-bleed <video> this hands off to.
-        const canvasAspect = canvas.width / canvas.height
-        const innerAspect = innerVideo.videoWidth / innerVideo.videoHeight
-        gl.uniform2f(
-          innerUvScaleLoc,
-          canvasAspect > innerAspect ? 1 : canvasAspect / innerAspect,
-          canvasAspect > innerAspect ? innerAspect / canvasAspect : 1
-        )
-        gl.uniform1f(canvasScaleLoc, currentScale)
-      }
-      gl.uniform1f(hasInnerLoc, innerReady ? 1 : 0)
-
       gl.clear(gl.COLOR_BUFFER_BIT)
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
     }
 
     const tick = () => {
       if (cancelled) return
-      const rawProgress = getScrollProgress()
+      const now = performance.now()
+      const deltaSeconds = lastTickTime ? Math.min((now - lastTickTime) / 1000, 0.08) : 1 / 60
+      lastTickTime = now
+      const scrollProgress = getScrollProgress()
+      if (scrollProgress >= 0.98) hasExitedHero = true
+      else if (hasExitedHero && scrollProgress <= 0.08) hasExitedHero = false
+      const rawProgress = hasExitedHero ? 1 : scrollProgress
       const duration = video.duration
 
       // Stage 1 (0 → openFraction of the runway): door opens, camera zooms
       // in. Stage 2 (openFraction → 1): the closet fades out completely,
       // revealing the page underneath — a one-way intro, not a persistent portal.
-      const openTarget = Math.min(1, rawProgress / openFraction)
+      const openProgress = Math.min(1, rawProgress / openFraction)
+      // Ease the scroll input at both ends so the doors start and settle
+      // gently instead of matching the wheel's acceleration one-to-one.
+      const openTarget = openProgress * openProgress * (3 - 2 * openProgress)
       const fadeTarget = Math.max(0, (rawProgress - openFraction) / (1 - openFraction))
 
       // Lerp every target toward its scroll-derived value each frame instead
@@ -473,9 +422,11 @@ export function useCinematicChromaHero({
       // to a video, while still settling back to an exact match (and
       // therefore staying fully reversible) whenever scrolling slows or stops.
       // Small factors = slow, heavy, fluid motion.
-      smoothedOpen += (openTarget - smoothedOpen) * 0.045
-      smoothedFade += (fadeTarget - smoothedFade) * 0.05
-      introOpacity += ((isReadyFlag ? 1 : 0) - introOpacity) * 0.1
+      // Time-based easing stays consistent across 30/60/120 Hz displays and
+      // responds quickly enough that the door feels attached to the scroll.
+      smoothedOpen += (openTarget - smoothedOpen) * (1 - Math.exp(-deltaSeconds / 0.12))
+      smoothedFade += (fadeTarget - smoothedFade) * (1 - Math.exp(-deltaSeconds / 0.14))
+      introOpacity += ((isReadyFlag ? 1 : 0) - introOpacity) * (1 - Math.exp(-deltaSeconds / 0.1))
 
       if (duration && isFinite(duration)) {
         const targetTime = smoothedOpen * duration
@@ -487,7 +438,32 @@ export function useCinematicChromaHero({
       }
 
       const targetScale = (1 + smoothedOpen * (zoomTo - 1)) * (1 + smoothedFade * exitZoom)
-      currentScale += (targetScale - currentScale) * 0.05
+      currentScale += (targetScale - currentScale) * (1 - Math.exp(-deltaSeconds / 0.13))
+      if (rackScene && innerRect) {
+        const [left, top, right, bottom] = innerRect
+        const zoomedLeft = 0.5 + (left - 0.5) * currentScale
+        const zoomedTop = 0.5 + (top - 0.5) * currentScale
+        const zoomedRight = 0.5 + (right - 0.5) * currentScale
+        const zoomedBottom = 0.5 + (bottom - 0.5) * currentScale
+        // Start with the rack fully hidden so keyed pixels in a closed door
+        // can never reveal the scene behind it. Grow the visible aperture as
+        // the doors open, from the centre of the frame.
+        const apertureProgress = Math.max(0, Math.min(1, smoothedOpen / 0.14))
+        const apertureReveal = apertureProgress * apertureProgress * (3 - 2 * apertureProgress)
+        const doorLeft = 0.5 + (zoomedLeft - 0.5) * apertureReveal
+        const doorTop = 0.5 + (zoomedTop - 0.5) * apertureReveal
+        const doorRight = 0.5 + (zoomedRight - 0.5) * apertureReveal
+        const doorBottom = 0.5 + (zoomedBottom - 0.5) * apertureReveal
+        // Ease the doorway-shaped crop into a full-screen rack. Blending the
+        // edges avoids the visible snap that used to happen near the last frame.
+        const reveal = Math.max(0, Math.min(1, (smoothedOpen - 0.78) / 0.22))
+        const fullReveal = reveal * reveal * (3 - 2 * reveal)
+        const clipLeft = doorLeft * (1 - fullReveal)
+        const clipTop = doorTop * (1 - fullReveal)
+        const clipRight = 1 - (1 - doorRight) * (1 - fullReveal)
+        const clipBottom = 1 - (1 - doorBottom) * (1 - fullReveal)
+        rackScene.style.clipPath = `inset(${clipTop * 100}% ${(1 - clipRight) * 100}% ${(1 - clipBottom) * 100}% ${clipLeft * 100}%)`
+      }
       canvas.style.transform = `scale(${currentScale})`
       canvas.style.opacity = String(introOpacity * (1 - smoothedFade))
 
@@ -501,9 +477,9 @@ export function useCinematicChromaHero({
         content.style.transform = `scale(${0.94 + smoothedOpen * 0.06})`
       }
 
-      // Hysteresis (open at 0.97, closed again below 0.9) so hovering right
-      // at the threshold doesn't flicker the callback on and off.
-      const isOpen = reportedOpen ? smoothedOpen > 0.9 : smoothedOpen > 0.97
+      // Keep branding/menu hidden until the video has reached its final open pose.
+      // Hysteresis stops the state flickering if the user scrolls at the threshold.
+      const isOpen = reportedOpen ? smoothedOpen > 0.95 : smoothedOpen > 0.995
       if (isOpen !== reportedOpen) {
         reportedOpen = isOpen
         console.log('[cinematic-hero] door', isOpen ? 'opened' : 'closing')
@@ -657,9 +633,8 @@ export function useCinematicChromaHero({
       gl.deleteProgram(program)
       gl.deleteBuffer(positionBuffer)
       gl.deleteTexture(texture)
-      if (innerTexture) gl.deleteTexture(innerTexture)
     }
-  }, [containerRef, videoRef, src, canvasRef, contentRef, innerVideoRef, innerRect, zoomTo, exitZoom, openFraction, enabled])
+  }, [containerRef, videoRef, src, canvasRef, contentRef, rackSceneRef, innerRect, zoomTo, exitZoom, openFraction, enabled])
 
   return state
 }
