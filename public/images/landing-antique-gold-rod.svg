@@ -8,6 +8,14 @@
       <stop offset=".82" stop-color="#a17e48" />
       <stop offset="1" stop-color="#594326" />
     </linearGradient>
+    <linearGradient id="railGold" gradientUnits="userSpaceOnUse" x1="0" x2="0" y1="53.5" y2="62.5">
+      <stop offset="0" stop-color="#71572f" />
+      <stop offset=".2" stop-color="#d0b276" />
+      <stop offset=".43" stop-color="#987644" />
+      <stop offset=".58" stop-color="#e0cb97" />
+      <stop offset=".82" stop-color="#a17e48" />
+      <stop offset="1" stop-color="#594326" />
+    </linearGradient>
     <linearGradient id="goldHighlight" x1="0" x2="0" y1="0" y2="1">
       <stop stop-color="#f0e1ba" stop-opacity=".82" />
       <stop offset="1" stop-color="#f0e1ba" stop-opacity="0" />
@@ -16,8 +24,8 @@
 
   <!-- Slim metal rail; the narrow highlight keeps it metallic without making it heavy. -->
   <path d="M145 62 H2027" stroke="#49391f" stroke-opacity=".34" stroke-width="13" stroke-linecap="round" />
-  <path d="M145 58 H2027" stroke="url(#antiqueGold)" stroke-width="9" stroke-linecap="round" />
-  <path d="M157 56.5 H2015" stroke="url(#goldHighlight)" stroke-width="1.5" stroke-linecap="round" />
+  <path d="M145 58 H2027" stroke="url(#railGold)" stroke-width="9" stroke-linecap="round" />
+  <path d="M157 56.5 H2015" stroke="#f0e1ba" stroke-opacity=".7" stroke-width="1.5" stroke-linecap="round" />
 
   <!-- Decorative finials echo the curled ends of the supplied reference rod. -->
   <g stroke="url(#antiqueGold)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">

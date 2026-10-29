@@ -69,6 +69,8 @@ interface CinematicChromaHeroState {
 // Past this, the hero gives up and the page falls back to the static hero
 // rather than leaving a spinner up forever.
 const LOAD_TIMEOUT_MS = 25_000
+// How long the page must sit still before an ajar door is finished off.
+const SNAP_IDLE_MS = 140
 // A single seek should be near-instant once the video is in memory.
 const SEEK_TIMEOUT_MS = 3_000
 
@@ -88,29 +90,36 @@ const FRAGMENT_SHADER = `
   uniform vec2 u_uvScale;
   uniform float u_similarity;
   uniform float u_smoothness;
-  uniform float u_spill;
+
+  // The two flat greens in the closet video (measured from its frames): the dark
+  // cloth wall behind the closet and the bright screen inside the open doors.
+  const vec3 WALL = vec3(0.18, 0.33, 0.20);
+  const vec3 INTERIOR = vec3(0.01, 0.55, 0.28);
 
   void main() {
     vec2 uv = (v_uv - 0.5) * u_uvScale + 0.5;
     vec4 color = texture2D(u_texture, uv);
 
-    // "Excess green" keying: a green screen is defined by G dominating both
-    // R and B, regardless of how bright or saturated that green is — unlike
-    // a fixed-color chroma distance, this doesn't get confused by warm
-    // cream/wood tones (R-dominant) sitting unexpectedly close to a dark,
-    // desaturated key green in other color spaces.
+    // "Excess green": the closet's paint stays at or below u_similarity, while the
+    // wall and the screen sit well above u_similarity + u_smoothness.
     float greenness = color.g - max(color.r, color.b);
-    float alpha = 1.0 - smoothstep(u_similarity, u_similarity + u_smoothness, greenness);
+    float mixAmount = 1.0 - clamp((greenness - u_similarity) / u_smoothness, 0.0, 1.0);
 
-    // Spill suppression: pull the green channel down toward max(r,b) near
-    // the threshold, instead of leaving keyed edges rimmed in green.
-    float spillAmount = clamp(greenness / (u_similarity + u_smoothness + 0.001), 0.0, 1.0) * u_spill;
-    vec3 despilled = vec3(color.r, mix(color.g, max(color.r, color.b), spillAmount), color.b);
+    // Edge pixels are part closet, part green: subtract the green they picked up
+    // so the silhouette has no dark rim.
+    vec3 backdrop = greenness > 0.2 ? INTERIOR : WALL;
+    vec3 foreground = mixAmount > 0.05 ? (color.rgb - (1.0 - mixAmount) * backdrop) / mixAmount : color.rgb;
+    foreground = clamp(foreground, 0.0, 1.0);
+    foreground.g = min(foreground.g, max(foreground.r, foreground.b));
 
-    // The canvas is composited by the browser as premultiplied alpha. Write
-    // premultiplied color here too; unassociated RGB around keyed edges shows
-    // up as bright blocks/halos in Safari and Chrome.
-    gl_FragColor = vec4(despilled * alpha, alpha);
+    // The video's 4:2:0 chroma is blocky around the silhouette. Left as a soft
+    // alpha, those blocks show up as pale smudges on the backdrop, so snap the
+    // mask: a pixel is either closet or it is not.
+    float alpha = smoothstep(0.45, 0.85, mixAmount);
+
+    // The canvas is composited as premultiplied alpha, so write premultiplied
+    // colour; unassociated RGB at keyed edges shows up as bright blocks.
+    gl_FragColor = vec4(foreground * alpha, alpha);
   }
 `
 
@@ -179,57 +188,6 @@ async function loadVideoBlob(src: string, signal: AbortSignal, onProgress: (p: n
     onProgress(Math.min(received / total, 1))
   }
   return URL.createObjectURL(new Blob(chunks, { type: res.headers.get('content-type') || 'video/mp4' }))
-}
-
-/**
- * Samples a handful of candidate frames (biased toward the door being open)
- * and picks the dominant green-ish color among them as the chroma key color.
- * Falls back to a standard chroma-green if nothing green-dominant is found.
- */
-async function detectChromaKeyColor(video: HTMLVideoElement): Promise<[number, number, number]> {
-  const FALLBACK: [number, number, number] = [0.0, 1.0, 0.25]
-  const duration = video.duration
-  if (!duration || !isFinite(duration)) return FALLBACK
-
-  const sampleCanvas = document.createElement('canvas')
-  sampleCanvas.width = 160
-  sampleCanvas.height = 90
-  const ctx = sampleCanvas.getContext('2d', { willReadFrequently: true })
-  if (!ctx) return FALLBACK
-
-  const candidateFractions = [0.6, 0.75, 0.85, 0.95]
-  let best = { count: 0, r: 0, g: 0, b: 0 }
-
-  for (const fraction of candidateFractions) {
-    await seekTo(video, duration * fraction)
-    ctx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height)
-    const { data } = ctx.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height)
-
-    let count = 0
-    let r = 0
-    let g = 0
-    let b = 0
-    for (let i = 0; i < data.length; i += 4) {
-      const px = data[i]
-      const py = data[i + 1]
-      const pz = data[i + 2]
-      if (py > 60 && py > px * 1.15 && py > pz * 1.15) {
-        count++
-        r += px
-        g += py
-        b += pz
-      }
-    }
-
-    if (count > best.count) {
-      best = { count, r, g, b }
-    }
-  }
-
-  const totalSamples = sampleCanvas.width * sampleCanvas.height
-  if (best.count < totalSamples * 0.02) return FALLBACK
-
-  return [best.r / best.count / 255, best.g / best.count / 255, best.b / best.count / 255]
 }
 
 export function useCinematicChromaHero({
@@ -328,7 +286,6 @@ export function useCinematicChromaHero({
     const uvScaleLoc = gl.getUniformLocation(program, 'u_uvScale')
     const similarityLoc = gl.getUniformLocation(program, 'u_similarity')
     const smoothnessLoc = gl.getUniformLocation(program, 'u_smoothness')
-    const spillLoc = gl.getUniformLocation(program, 'u_spill')
 
     const texture = gl.createTexture()
     gl.bindTexture(gl.TEXTURE_2D, texture)
@@ -525,6 +482,30 @@ export function useCinematicChromaHero({
     const handleResize = () => resize()
     window.addEventListener('resize', handleResize)
 
+    // One flick of the wheel or swipe should finish the door, not leave it ajar:
+    // once scrolling stops partway through the opening, carry on in the direction
+    // the user was going (all the way open, or all the way shut).
+    let snapTimer = 0
+    let lastScrollY = window.scrollY
+    let scrollDirection = 1
+    const snapDoor = () => {
+      if (cancelled || hasExitedHero) return
+      const rect = container.getBoundingClientRect()
+      const scrollable = rect.height - (canvas.clientHeight || window.innerHeight)
+      if (scrollable <= 0) return
+      const progress = -rect.top / scrollable
+      if (progress <= 0.004 || progress >= openFraction) return
+      const runwayTop = rect.top + window.scrollY
+      window.scrollTo({ top: scrollDirection > 0 ? runwayTop + openFraction * scrollable : runwayTop, behavior: 'smooth' })
+    }
+    const handleScroll = () => {
+      if (window.scrollY !== lastScrollY) scrollDirection = window.scrollY > lastScrollY ? 1 : -1
+      lastScrollY = window.scrollY
+      window.clearTimeout(snapTimer)
+      snapTimer = window.setTimeout(snapDoor, SNAP_IDLE_MS)
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+
     video.muted = true
     video.playsInline = true
     video.preload = 'auto'
@@ -582,21 +563,12 @@ export function useCinematicChromaHero({
       if (cancelled) return
       resize()
 
-      const keyColor = await detectChromaKeyColor(video)
-      if (cancelled) return
-
-      // Derive the keying thresholds from how "green" the detected screen
-      // actually is, rather than a fixed constant — a bright neon screen and
-      // a dark, muted olive screen both need very different cutoffs on the
-      // same 0-1 excess-green scale.
-      const keyGreenness = Math.max(keyColor[1] - Math.max(keyColor[0], keyColor[2]), 0.08)
-      const similarity = keyGreenness * 0.4
-      const smoothness = Math.max(keyGreenness * 0.35, 0.03)
-
+      // Closet pixels measure at most ~0.04 on the excess-green scale; the wall is
+      // 0.12 and the screen 0.27. Fixed values, not detected, so a noisy sample
+      // can never leave the wall half-keyed.
       gl.useProgram(program)
-      gl.uniform1f(similarityLoc, similarity)
-      gl.uniform1f(smoothnessLoc, smoothness)
-      gl.uniform1f(spillLoc, 0.8)
+      gl.uniform1f(similarityLoc, 0.04)
+      gl.uniform1f(smoothnessLoc, 0.06)
 
       video.currentTime = 0
       await seekTo(video, 0)
@@ -629,6 +601,8 @@ export function useCinematicChromaHero({
       stopLoop()
       observer.disconnect()
       window.removeEventListener('resize', handleResize)
+      window.removeEventListener('scroll', handleScroll)
+      window.clearTimeout(snapTimer)
       removeListeners()
       gl.deleteProgram(program)
       gl.deleteBuffer(positionBuffer)
