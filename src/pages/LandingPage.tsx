@@ -14,19 +14,6 @@ export function LandingPage() {
   const profile = useUserStore((s) => s.profile)
   const [menuOpen, setMenuOpen] = useState(false)
   const [doorOpen, setDoorOpen] = useState(false)
-  const [hasScrolled, setHasScrolled] = useState(false)
-  const showMenuButton = hasScrolled && doorOpen
-
-  useEffect(() => {
-    const onScroll = () => setHasScrolled(window.scrollY > 40)
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
-
-  useEffect(() => {
-    console.log('[landing-menu-button]', showMenuButton ? 'shown' : 'hidden', { hasScrolled, doorOpen })
-  }, [showMenuButton])
 
   // Close the sidebar on Escape, and stop the page behind it from scrolling while open.
   useEffect(() => {
@@ -66,9 +53,14 @@ export function LandingPage() {
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
       <CinematicClosetHero onDoorOpenChange={setDoorOpen} />
 
-      {/* ── Mobile top bar — no scroll-driven door on phones, so the logo and menu are there from the start ── */}
-      <header className="md:hidden fixed top-0 inset-x-0 z-40 h-16 px-4 flex items-center justify-between bg-[#FBF5EC]/95 backdrop-blur-md border-b border-text-primary/10">
-        <span className="font-brand [word-spacing:-0.2em] text-xl text-butter-yellow">Kloset AI</span>
+      {/* Brand bar belongs to the rack page and appears after the door is fully open. */}
+      <header className={clsx(
+        'fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between bg-[#355f43] px-5 text-[#fffbd5] shadow-[0_2px_16px_rgba(26,46,33,0.14)] transition-[opacity,visibility] duration-500',
+        doorOpen ? 'visible opacity-100' : 'invisible pointer-events-none opacity-0'
+      )}>
+        <span className="font-brand [word-spacing:-0.2em] text-xl tracking-wide">
+          Kloset AI
+        </span>
         <button
           onClick={() => setMenuOpen(true)}
           aria-expanded={menuOpen}
@@ -80,22 +72,8 @@ export function LandingPage() {
         </button>
       </header>
 
-      {/* ── Menu button — pinned top-left, fades in once the closet door has opened ── */}
-      <button
-        onClick={() => setMenuOpen(true)}
-        aria-expanded={menuOpen}
-        aria-controls="landing-sidebar"
-        className={clsx(
-          'hidden md:flex fixed top-6 left-6 z-40 items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium bg-butter-yellow text-dark-purple ring-1 ring-dark-purple/30 shadow-lifted hover:bg-soft-butter transition-[opacity,visibility,background-color] duration-500',
-          showMenuButton ? 'opacity-100 visible' : 'opacity-0 invisible pointer-events-none'
-        )}
-      >
-        <Menu size={16} />
-        Menu
-      </button>
-
-      {/* ── Page 2: headline + CTA (moved here from the hero, which is video-only once the door opens) ── */}
-      <section className="py-16 md:py-28 lg:py-40 bg-butter-yellow">
+      {/* ── Intro copy and CTA ──────────────────────────────────────────────── */}
+      <section className="py-10 md:py-16 lg:py-20 bg-butter-yellow">
         <div className="mx-auto max-w-7xl px-6 lg:px-8">
           <HeroCopy onCTA={handleCTA} animate={false} align="center" tone="green" />
         </div>

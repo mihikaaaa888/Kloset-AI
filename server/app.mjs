@@ -257,7 +257,9 @@ app.post('/api/refine-garment-image', async (req, res) => {
     console.error('[refine-garment-image] PhotoRoom error:', e?.message ?? e)
     return res.status(502).json({ error: 'PhotoRoom garment refinement failed.' })
   }
-})
+}
+app.post('/api/refine-garment-image', photoRoomSegment)
+app.post('/api/remove-background', photoRoomSegment)
 
 // ─── Live web shopping search (Exa) ───────────────────────────────────────────
 

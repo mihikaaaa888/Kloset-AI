@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { PointerEvent, RefObject } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { KeyboardEvent, PointerEvent, RefObject } from 'react'
 import { createPortal } from 'react-dom'
 
 type RackPiece = {
@@ -13,11 +13,40 @@ type RackPiece = {
   pairId?: string
   outerwear?: boolean
   warmWeather?: boolean
-  left: number
 }
 
-const RACK_POSITIONS = [15, 25, 35, 45, 55, 65, 75, 85]
-const OUTFITS: Omit<RackPiece, 'left'>[] = [
+// Layout is measured in the scene's own units (`cqw`, 1% of its width, or % of its
+// width) so the rack keeps its proportions at every size. Narrow screens show
+// fewer, larger pieces in a taller scene: eight hangers across a phone would be a few pixels wide.
+const RACK_LAYOUTS = {
+  wide: { slots: 6, size: 1, rodY: 24, reach: 46, aspect: '4 / 3', width: 'min(94vw, 115svh)' },
+  compact: { slots: 5, size: 1.2, rodY: 30, reach: 58, aspect: '4 / 5', width: 'min(96vw, 69svh)' },
+}
+// size: multiplier on every piece. rodY: rail height in cqw. reach: how far the longest garment hangs below it.
+
+type GarmentKind = 'top' | 'outerwear' | 'bottom' | 'full'
+const TOPS = new Set(['burgundy-rib-knit-top', 'olive-eyelet-crop-top', 'chartreuse-buckle-wrap-top', 'burgundy-button-up-shirt'])
+const BOTTOMS = new Set(['red-asymmetric-overlay-skirt', 'pale-blue-wrap-skirt', 'olive-gathered-contrast-hem-skirt', 'charcoal-pinstripe-trousers', 'blue-layered-chiffon-skirt', 'white-trousers-burgundy-look'])
+const kindOf = (piece: RackPiece): GarmentKind => (piece.outerwear ? 'outerwear' : TOPS.has(piece.id) ? 'top' : BOTTOMS.has(piece.id) ? 'bottom' : 'full') // everything else is a dress or a head-to-toe look on one hanger
+
+// Garments of one kind share one size, so every top matches every other top regardless of how its
+// photo was framed. A piece is sized by the square root of its garment's width x height (in cqw);
+// that stays steady across wide-sleeved and long, narrow cuts. Full looks run larger: they are
+// a top and a bottom on one hanger.
+const RACK_SIZE: Record<GarmentKind, number> = { top: 17, outerwear: 19, bottom: 17, full: 22 }
+
+function getRackLayout() {
+  const compact = window.matchMedia('(max-width: 640px)').matches
+  const layout = RACK_LAYOUTS[compact ? 'compact' : 'wide']
+  const spacing = 75 / (layout.slots - 1) // % of scene width between hangers
+  return { ...layout, spacing, positions: Array.from({ length: layout.slots }, (_, index) => 12.5 + index * spacing) }
+}
+
+type RackLayout = ReturnType<typeof getRackLayout>
+
+const ROD_VIEWBOX = { width: 2172, height: 120, railY: 58 } // landing-antique-gold-rod.svg
+const ROD_WIDTH = 104 // % of scene width; the finials sit just outside the end hangers
+const OUTFITS: RackPiece[] = [
   {
     id: 'butter-satin-look',
     name: 'White Tee & Butter Satin Skirt',
@@ -244,42 +273,78 @@ function shuffle<T>(items: T[]): T[] {
   return shuffled
 }
 
-/** Crop transparent padding so a photo's original canvas dimensions don't set how large it looks on the rack. */
-function normalizeTransparentImageBounds(image: HTMLImageElement) {
-  if (image.dataset.boundsNormalized === 'true' || !image.naturalWidth || !image.naturalHeight) return
-  image.dataset.boundsNormalized = 'true'
+type HangerAnchor = {
+  width: number
+  height: number
+  /** Where the hook's arch sits horizontally, in source pixels. */
+  hookX: number
+  /** Distance from the top of the picture down to the point that rests on the rod. */
+  restY: number
+  /** √(garment width × height) in source pixels: how big the piece is in its own photo. */
+  size: number
+}
+
+/** Find the hook's arch in a hanger photo so it can be placed exactly on the rod. */
+function measureHanger(image: HTMLImageElement): HangerAnchor | null {
+  const { naturalWidth: width, naturalHeight: height } = image
+  if (!width || !height) return null
 
   try {
-    const source = document.createElement('canvas')
-    source.width = image.naturalWidth
-    source.height = image.naturalHeight
-    const context = source.getContext('2d', { willReadFrequently: true })
-    if (!context) return
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    if (!context) return null
     context.drawImage(image, 0, 0)
-    const pixels = context.getImageData(0, 0, source.width, source.height).data
-    let left = source.width
-    let top = source.height
-    let right = -1
-    let bottom = -1
-
-    for (let y = 0; y < source.height; y += 1) {
-      for (let x = 0; x < source.width; x += 1) {
-        if (pixels[(y * source.width + x) * 4 + 3] <= 20) continue
+    const { data } = context.getImageData(0, 0, width, height)
+    const rowSpan = (y: number) => {
+      let left = width
+      let right = -1
+      for (let x = 0; x < width; x += 1) {
+        if (data[(y * width + x) * 4 + 3] <= 20) continue
         left = Math.min(left, x)
-        top = Math.min(top, y)
-        right = Math.max(right, x)
-        bottom = Math.max(bottom, y)
+        right = x
       }
+      return right < 0 ? null : { left, right }
     }
 
-    if (right < left || (left === 0 && top === 0 && right === source.width - 1 && bottom === source.height - 1)) return
-    const cropped = document.createElement('canvas')
-    cropped.width = right - left + 1
-    cropped.height = bottom - top + 1
-    cropped.getContext('2d')?.drawImage(source, left, top, cropped.width, cropped.height, 0, 0, cropped.width, cropped.height)
-    image.src = cropped.toDataURL('image/png')
+    let apex = 0
+    while (apex < height && !rowSpan(apex)) apex += 1
+    if (apex >= height) return null
+
+    // The hook ends where the hanger's shoulders begin (the row turns wide).
+    let hookEnd = apex
+    while (hookEnd < height * 0.2) {
+      const span = rowSpan(hookEnd)
+      if (span && span.right - span.left > width * 0.12) break
+      hookEnd += 1
+    }
+
+    let boxLeft = width
+    let boxRight = 0
+    let boxBottom = apex
+    for (let y = apex; y < height; y += 1) {
+      const span = rowSpan(y)
+      if (!span) continue
+      boxLeft = Math.min(boxLeft, span.left)
+      boxRight = Math.max(boxRight, span.right)
+      boxBottom = y
+    }
+
+    let left = width
+    let right = 0
+    const archRows = Math.max(3, Math.floor((hookEnd - apex) / 2))
+    for (let y = apex; y < apex + archRows; y += 1) {
+      const span = rowSpan(y)
+      if (!span) continue
+      left = Math.min(left, span.left)
+      right = Math.max(right, span.right)
+    }
+    // The rod rests just under the top of the arch, about a third of its width down.
+    return { width, height, hookX: (left + right) / 2, restY: apex + (right - left) * 0.32, size: Math.sqrt((boxRight - boxLeft + 1) * (boxBottom - apex + 1)) }
   } catch {
-    // If the browser cannot read the asset canvas, the fixed image slot still prevents it from exceeding rack bounds.
+    // Unreadable canvas: the piece simply stays hidden rather than hanging in the wrong place.
+    return null
   }
 }
 
@@ -294,30 +359,28 @@ function getSeason(): 'cold' | 'warm' | 'transition' {
   return 'transition'
 }
 
-function createInitialPieces(): RackPiece[] {
-  const outerwear = OUTFITS.filter((outfit) => outfit.outerwear)
-  const warmLooks = OUTFITS.filter((outfit) => outfit.warmWeather)
+/** A fresh draw from the whole wardrobe on every load. The season only tilts the odds; it never fixes the set. */
+function createInitialPieces({ positions }: RackLayout): RackPiece[] {
   const season = getSeason()
-  const maxOuterwear = season === 'cold' ? 4 : 2
-  const minWarmLooks = season === 'warm' ? 4 : 0
-  const maxWarmLooks = season === 'warm' ? 6 : 2
-  const chosenOuterwear = shuffle(outerwear).slice(0, season === 'cold' ? 4 : 1 + Math.floor(Math.random() * maxOuterwear))
-  const chosenWarmLooks = shuffle(warmLooks.filter((look) => !chosenOuterwear.some((piece) => piece.id === look.id)))
-    .slice(0, minWarmLooks)
-  const chosen = [...chosenOuterwear, ...chosenWarmLooks]
-  chosen.push(...OUTFITS.filter((outfit) => outfit.pairId === 'burgundy-shirt-white-trousers'))
-  const remaining = shuffle(OUTFITS.filter((outfit) => !chosen.some((piece) => piece.id === outfit.id)))
-
-  for (const outfit of remaining) {
-    if (chosen.length >= RACK_POSITIONS.length) break
-    const outerwearCount = chosen.filter((piece) => piece.outerwear).length
-    const warmCount = chosen.filter((piece) => piece.warmWeather).length
-    if (outfit.outerwear && outerwearCount >= maxOuterwear) continue
-    if (outfit.warmWeather && warmCount >= maxWarmLooks) continue
-    chosen.push(outfit)
+  const lean = (outfit: RackPiece) => {
+    if (season === 'cold') return outfit.outerwear ? 0.4 : 0
+    if (season === 'warm') return (outfit.warmWeather ? 0.4 : 0) - (outfit.outerwear ? 0.4 : 0)
+    return 0
   }
+  const ranked = OUTFITS.map((outfit) => ({ outfit, score: Math.random() + lean(outfit) }))
+    .sort((a, b) => b.score - a.score)
+    .map(({ outfit }) => outfit)
 
-  return shuffle(chosen).map((piece, index) => ({ ...piece, left: RACK_POSITIONS[index] }))
+  const chosen = ranked.slice(0, positions.length)
+  // Pieces from one look (a shirt and its trousers) hang together: if only one was drawn, bring its partner in.
+  for (const piece of [...chosen]) {
+    if (!piece.pairId) continue
+    const partner = ranked.find((other) => other.pairId === piece.pairId && other.id !== piece.id)
+    if (!partner || chosen.includes(partner)) continue
+    const swapOut = [...chosen].reverse().find((other) => !other.pairId)
+    if (swapOut) chosen[chosen.indexOf(swapOut)] = partner
+  }
+  return shuffle(chosen)
 }
 
 interface InteractiveRackHeroProps {
@@ -326,27 +389,71 @@ interface InteractiveRackHeroProps {
   sceneRef?: RefObject<HTMLDivElement>
 }
 
+/** A hanger being carried along the rail. */
+type Carried = {
+  id: string
+  /** Horizontal position as % of scene width, following the pointer. */
+  x: number
+  /** How far it has been lifted off the rail, in cqw. */
+  lift: number
+  /** Sway in degrees, from how fast it is being moved. */
+  tilt: number
+}
+
+const DRAG_THRESHOLD_PX = 6
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+
 /** A lightweight, interactive landing hero built around the user's real rack. */
 export function InteractiveRackHero({ onRackInteract, immersed = false, sceneRef }: InteractiveRackHeroProps) {
-  const [pieces, setPieces] = useState(createInitialPieces)
+  const [layout] = useState(getRackLayout)
+  // `pieces` never reorders: moving a DOM node mid-drag makes Safari drop the pointer capture.
+  // Only `order` (the slot each piece hangs in) changes.
+  const [pieces] = useState(() => createInitialPieces(layout))
+  const [order, setOrder] = useState(() => pieces.map((piece) => piece.id))
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [draggedId, setDraggedId] = useState<string | null>(null)
+  const [carried, setCarried] = useState<Carried | null>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [anchors, setAnchors] = useState<Record<string, HangerAnchor>>({})
   const selectedPiece = pieces.find((piece) => piece.id === selectedId && piece.image)
 
+  const trackRef = useRef<HTMLDivElement>(null)
+  const gesture = useRef<{ id: string; pointerId: number; startX: number; startY: number; lastX: number; grab: number; moved: boolean } | null>(null)
+  const carriedRef = useRef<Carried | null>(null)
+  const settleTilt = useRef<number>()
+  const suppressClick = useRef(false)
+  useEffect(() => () => window.clearTimeout(settleTilt.current), [])
+
+  const registerAnchor = (id: string, image: HTMLImageElement) => {
+    const anchor = measureHanger(image)
+    if (anchor) setAnchors((current) => (current[id] ? current : { ...current, [id]: anchor }))
+  }
+
+  const slotAt = (x: number) => clamp(Math.round((x - layout.positions[0]) / layout.spacing), 0, order.length - 1)
+  const sceneX = (clientX: number) => {
+    const bounds = trackRef.current!.getBoundingClientRect()
+    return ((clientX - bounds.left) / bounds.width) * 100
+  }
+
+  // While a hanger is carried, the others keep their order and slide aside to leave a gap where it would land.
+  const displayed = (() => {
+    if (!carried || !order.includes(carried.id)) return order
+    const rest = order.filter((id) => id !== carried.id)
+    rest.splice(slotAt(carried.x), 0, carried.id)
+    return rest
+  })()
+  const slotOf = new Map(displayed.map((id, index) => [id, index]))
+
   const trackPointer = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === 'touch') return
+    if (event.pointerType === 'touch' || gesture.current?.moved) return
     const bounds = event.currentTarget.getBoundingClientRect()
     const x = ((event.clientX - bounds.left) / bounds.width) * 100
-    const y = (event.clientY - bounds.top) / bounds.height
-    if (y < 0.14 || y > 0.9) {
+    const y = ((event.clientY - bounds.top) / bounds.width) * 100
+    if (y < layout.rodY - 5 || y > layout.rodY + layout.reach) {
       setHoveredId(null)
       return
     }
-    const nearestPiece = pieces.reduce((nearest, piece) =>
-      Math.abs(piece.left - x) < Math.abs(nearest.left - x) ? piece : nearest,
-    )
-    setHoveredId(Math.abs(nearestPiece.left - x) < 6.2 ? nearestPiece.id : null)
+    const nearest = slotAt(x)
+    setHoveredId(Math.abs(layout.positions[nearest] - x) < layout.spacing * 0.6 ? displayed[nearest] : null)
   }
 
   const selectPiece = (id: string) => {
@@ -354,19 +461,88 @@ export function InteractiveRackHero({ onRackInteract, immersed = false, sceneRef
     onRackInteract?.()
   }
 
-  const movePiece = (targetId: string) => {
-    if (!draggedId || draggedId === targetId) return
-    setPieces((current) => {
-      const from = current.findIndex((piece) => piece.id === draggedId)
-      const to = current.findIndex((piece) => piece.id === targetId)
-      if (from < 0 || to < 0) return current
+  const moveBy = (id: string, step: number) => {
+    setOrder((current) => {
+      const from = current.indexOf(id)
+      const to = clamp(from + step, 0, current.length - 1)
+      if (from < 0 || from === to) return current
       const next = [...current]
-      const [piece] = next.splice(from, 1)
-      next.splice(to, 0, piece)
-      return next.map((item, index) => ({ ...item, left: RACK_POSITIONS[index] }))
+      next.splice(from, 1)
+      next.splice(to, 0, id)
+      return next
     })
-    setDraggedId(null)
     onRackInteract?.()
+  }
+
+  const startGesture = (event: PointerEvent<HTMLButtonElement>, id: string) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    const index = order.indexOf(id)
+    gesture.current = {
+      id,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastX: event.clientX,
+      grab: sceneX(event.clientX) - layout.positions[index],
+      moved: false,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const moveGesture = (event: PointerEvent<HTMLButtonElement>, id: string) => {
+    const active = gesture.current
+    if (!active || active.id !== id || active.pointerId !== event.pointerId) return
+    if (!active.moved && Math.hypot(event.clientX - active.startX, event.clientY - active.startY) < DRAG_THRESHOLD_PX) return
+    if (!active.moved) {
+      active.moved = true
+      setHoveredId(null)
+      onRackInteract?.()
+    }
+    const bounds = trackRef.current!.getBoundingClientRect()
+    const first = layout.positions[0]
+    const last = layout.positions[layout.positions.length - 1]
+    const next: Carried = {
+      id,
+      x: clamp(sceneX(event.clientX) - active.grab, first - layout.spacing * 0.5, last + layout.spacing * 0.5),
+      lift: clamp(((event.clientY - active.startY) / bounds.width) * 100 * 0.3, -1.5, 5),
+      tilt: clamp((event.clientX - active.lastX) * 0.9, -9, 9),
+    }
+    active.lastX = event.clientX
+    carriedRef.current = next
+    setCarried(next)
+    // The sway eases back to upright once the pointer stops.
+    window.clearTimeout(settleTilt.current)
+    settleTilt.current = window.setTimeout(() => {
+      if (carriedRef.current) setCarried((current) => (current ? { ...current, tilt: 0 } : current))
+    }, 90)
+  }
+
+  const endGesture = (event: PointerEvent<HTMLButtonElement>, id: string) => {
+    const active = gesture.current
+    if (!active || active.id !== id || active.pointerId !== event.pointerId) return
+    gesture.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    if (!active.moved) return // a plain click: onClick opens the piece
+
+    window.clearTimeout(settleTilt.current)
+    suppressClick.current = true
+    window.setTimeout(() => { suppressClick.current = false }, 0)
+    const drop = carriedRef.current ? slotAt(carriedRef.current.x) : null
+    carriedRef.current = null
+    if (drop !== null) {
+      setOrder((current) => {
+        const rest = current.filter((entry) => entry !== id)
+        rest.splice(drop, 0, id)
+        return rest
+      })
+    }
+    setCarried(null) // the hanger now glides from where it was let go into its slot
+  }
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>, id: string) => {
+    if (!event.shiftKey || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return
+    event.preventDefault()
+    moveBy(id, event.key === 'ArrowLeft' ? -1 : 1)
   }
 
   return (
@@ -388,76 +564,89 @@ export function InteractiveRackHero({ onRackInteract, immersed = false, sceneRef
       </>}
 
       <div className={`relative z-10 mx-auto flex w-full items-center justify-center ${immersed ? 'h-full px-2 sm:px-4' : 'min-h-[80svh] md:min-h-[90svh]'}`}>
-        <div className="relative aspect-[2/1] w-[min(96vw,172svh)]" style={{ transform: 'translateY(clamp(14px, 2.5svh, 32px))' }}>
+        <div
+          className="relative"
+          style={{
+            aspectRatio: layout.aspect,
+            width: layout.width,
+            containerType: 'inline-size',
+            transform: 'translateY(clamp(14px, 2.5svh, 32px))',
+          }}
+        >
           {/* Keep the rack behind the hanger and outfit; the transparent hanger hook wraps over the rod. */}
-          <div className="absolute inset-0" onPointerMove={trackPointer} onPointerLeave={() => setHoveredId(null)}>
-            {pieces.map((piece, index) => {
-              const selected = selectedId === piece.id
-              const facing = hoveredId === piece.id
+          <div ref={trackRef} className="absolute inset-0" onPointerMove={trackPointer} onPointerLeave={() => setHoveredId(null)}>
+            {pieces.map((piece) => {
+              const index = slotOf.get(piece.id) ?? 0
+              const held = carried?.id === piece.id
+              const facing = held || hoveredId === piece.id
+              const anchor = anchors[piece.id]
+              const scale = anchor ? (RACK_SIZE[kindOf(piece)] * layout.size) / anchor.size : 0
               return (
                 <button
                   key={piece.id}
                   type="button"
-                  draggable
-                  aria-label={piece.name ? `Select ${piece.name}` : 'Empty wooden hanger'}
-                  onClick={() => piece.image && selectPiece(piece.id)}
+                  aria-label={piece.name ? `Select ${piece.name}. Shift and arrow keys move it along the rail.` : 'Empty wooden hanger'}
+                  onClick={() => {
+                    if (!suppressClick.current && piece.image) selectPiece(piece.id)
+                  }}
+                  onPointerDown={(event) => piece.image && startGesture(event, piece.id)}
+                  onPointerMove={(event) => moveGesture(event, piece.id)}
+                  onPointerUp={(event) => endGesture(event, piece.id)}
+                  onPointerCancel={(event) => endGesture(event, piece.id)}
                   onPointerEnter={(event) => {
-                    if (event.pointerType !== 'touch') setHoveredId(piece.id)
+                    if (event.pointerType !== 'touch' && !gesture.current?.moved) setHoveredId(piece.id)
                   }}
                   onPointerLeave={(event) => {
                     if (event.pointerType !== 'touch') setHoveredId((current) => current === piece.id ? null : current)
                   }}
                   onFocus={() => setHoveredId(piece.id)}
                   onBlur={() => setHoveredId((current) => current === piece.id ? null : current)}
-                  onDragStart={(event) => {
-                    if (!piece.image) {
-                      event.preventDefault()
-                      return
-                    }
-                    setDraggedId(piece.id)
-                    event.dataTransfer.effectAllowed = 'move'
-                    event.dataTransfer.setData('text/plain', piece.id)
-                  }}
-                  onDragEnd={() => setDraggedId(null)}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={(event) => {
-                    event.preventDefault()
-                    movePiece(piece.id)
-                  }}
-                  className={`group absolute top-[10.4%] block ${piece.image ? 'h-[90%] w-[clamp(100px,13vw,160px)]' : 'aspect-square w-[clamp(42px,7.8vw,118px)]'} rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-text-primary/50 ${piece.image ? 'z-40' : hoveredId === piece.id || selected ? 'z-30' : 'z-20'} ${draggedId === piece.id ? 'opacity-50' : 'opacity-100'}`}
+                  onKeyDown={(event) => handleKeyDown(event, piece.id)}
+                  // The button's top edge sits 3cqw above the rod, so its pivot (below) is the point where the hook rests.
+                  className={`group absolute block min-w-[44px] select-none rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-text-primary/50 ${held ? 'z-[60] cursor-grabbing' : facing ? 'z-[45] cursor-grab' : 'z-40 cursor-grab'}`}
                   style={{
-                    left: `${piece.left}%`,
+                    left: `${held ? carried.x : layout.positions[index]}%`,
+                    top: `${layout.rodY - 3}cqw`,
+                    width: `${layout.spacing}%`,
+                    height: `${layout.reach + 3}cqw`,
                     transform: 'translateX(-50%)',
                     perspective: '1100px',
-                    animationDelay: `${index * 120}ms`,
+                    // Neighbours glide aside; the carried one tracks the pointer with no lag, then glides home on release.
+                    transition: held ? 'none' : 'left 560ms cubic-bezier(0.22, 1, 0.36, 1)',
+                    touchAction: 'pan-y',
                   }}
                 >
+                  {/* Zero-size pivot on the rod: the hanger turns about the hook, as it would on a real rail. */}
                   <div
-                    className="pointer-events-none relative h-full w-full"
+                    className="pointer-events-none absolute left-1/2 top-[3cqw] h-0 w-0"
                     style={{
-                      transform: `rotateY(${facing ? 0 : 54}deg) rotateZ(${facing ? '-1.5deg' : '0deg'}) translateZ(${facing ? '12px' : '0px'})`,
-                      // The top of the rack image has a little transparent
-                      // padding: this pivot lines up with the rod's centre,
-                      // keeping the hanger hooked on the bar as it rotates.
-                      // Pivot at the rod's actual vertical center so the embedded hook
-                      // turns around the bar instead of swinging from a point above it.
-                      transformOrigin: '50% 4.7%',
+                      transform: held
+                        ? `translateY(${carried.lift}cqw) rotateY(0deg) rotateZ(${carried.tilt}deg) translateZ(14px)`
+                        : `rotateY(${facing ? 0 : 54}deg) rotateZ(${facing ? '-1.5deg' : '0deg'}) translateZ(${facing ? '12px' : '0px'})`,
                       transformStyle: 'preserve-3d',
-                      transition: 'transform 760ms cubic-bezier(0.2, 0.75, 0.2, 1)',
+                      transition: held ? 'transform 200ms ease-out' : 'transform 760ms cubic-bezier(0.2, 0.75, 0.2, 1)',
                       willChange: 'transform',
                     }}
                   >
                     {piece.image && (
                       <img
+                        ref={(element) => {
+                          if (element?.complete && element.naturalWidth && !anchors[piece.id]) registerAnchor(piece.id, element)
+                        }}
                         src={piece.image}
                         alt={piece.imageAlt ?? `${piece.name} on a wooden hanger`}
                         draggable={false}
-                        onLoad={(event) => normalizeTransparentImageBounds(event.currentTarget)}
-                        className="pointer-events-none absolute left-1/2 top-0 h-[82%] w-full -translate-x-1/2 select-none object-contain object-top"
+                        onLoad={(event) => registerAnchor(piece.id, event.currentTarget)}
+                        className="pointer-events-none absolute max-w-none select-none"
                         style={{
-                          transform: 'translateX(-50%) translateZ(1px)',
-                          transformOrigin: 'top center',
-                          filter: 'drop-shadow(0 10px 14px rgba(42,34,24,0.22))',
+                          opacity: anchor ? 1 : 0,
+                          left: anchor ? `${-anchor.hookX * scale}cqw` : 0,
+                          top: anchor ? `${-anchor.restY * scale}cqw` : 0,
+                          width: anchor ? `${anchor.width * scale}cqw` : undefined,
+                          height: anchor ? `${anchor.height * scale}cqw` : undefined,
+                          transform: 'translateZ(1px)',
+                          filter: held ? 'drop-shadow(0 22px 22px rgba(42,34,24,0.26))' : 'drop-shadow(0 10px 14px rgba(42,34,24,0.22))',
+                          transition: 'opacity 300ms, filter 200ms',
                           backfaceVisibility: 'hidden',
                         }}
                       />
@@ -468,7 +657,7 @@ export function InteractiveRackHero({ onRackInteract, immersed = false, sceneRef
                         alt=""
                         aria-hidden="true"
                         draggable={false}
-                        className="pointer-events-none absolute left-0 top-0 z-0 w-full select-none object-contain drop-shadow-[0_5px_5px_rgba(48,36,24,0.18)]"
+                        className="pointer-events-none absolute -left-[5.5cqw] -top-[1.5cqw] w-[11cqw] max-w-none select-none object-contain drop-shadow-[0_5px_5px_rgba(48,36,24,0.18)]"
                       />
                     )}
                   </div>
@@ -477,20 +666,27 @@ export function InteractiveRackHero({ onRackInteract, immersed = false, sceneRef
             })}
           </div>
 
-          <img
-            src="/images/landing-antique-gold-rod.svg"
-            alt="Muted antique-gold clothes rail with curled ends"
-            className="pointer-events-none absolute left-1/2 top-[9.5%] z-10 h-[6%] w-[104%] -translate-x-1/2 select-none object-fill drop-shadow-[0_2px_3px_rgba(35,31,25,0.14)]"
-            draggable={false}
-          />
-          {/* Front pass visually seats each metal hook against the rod. */}
-          <img
-            src="/images/landing-antique-gold-rod.svg"
-            alt=""
-            aria-hidden="true"
-            className="pointer-events-none absolute left-1/2 top-[9.5%] z-50 h-[6%] w-[104%] -translate-x-1/2 select-none object-fill"
-            draggable={false}
-          />
+          {/* The rail keeps the artwork's proportions (a stretched rod squashes its finials), centred on the rod line. */}
+          {[{ label: 'Muted antique-gold clothes rail with curled ends', z: 'z-10' }, { label: '', z: 'z-50' }].map(({ label, z }) => (
+            <div
+              key={z}
+              className={`pointer-events-none absolute ${z}`}
+              style={{ left: `${(100 - ROD_WIDTH) / 2}%`, top: `${layout.rodY}cqw`, width: `${ROD_WIDTH}%`, height: 0 }}
+            >
+              <img
+                src="/images/landing-antique-gold-rod.svg"
+                alt={label}
+                aria-hidden={label ? undefined : true}
+                draggable={false}
+                className="absolute left-0 top-0 w-full max-w-none select-none"
+                style={{
+                  aspectRatio: `${ROD_VIEWBOX.width} / ${ROD_VIEWBOX.height}`,
+                  transform: `translateY(-${(ROD_VIEWBOX.railY / ROD_VIEWBOX.height) * 100}%)`,
+                  ...(label ? { filter: 'drop-shadow(0 2px 3px rgba(35,31,25,0.14))' } : {}),
+                }}
+              />
+            </div>
+          ))}
         </div>
       </div>
       {selectedPiece && createPortal(
