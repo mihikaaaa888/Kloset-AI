@@ -1,4 +1,4 @@
-import { Trash2, ChevronRight, Shirt, Send } from 'lucide-react'
+import { Trash2, ChevronRight, Shirt, Send, RotateCcw } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { clsx } from 'clsx'
 import { Modal } from '@/components/ui/Modal'
@@ -22,6 +22,8 @@ interface SavedOutfitDetailModalProps {
   onUnsave: () => void
   onStyleSimilar: () => void
   onSend: () => void
+  removeLabel?: string
+  onRestore?: () => void
 }
 
 const OCCASION_LABEL: Record<string, string> = {
@@ -40,6 +42,8 @@ export function SavedOutfitDetailModal({
   onUnsave,
   onStyleSimilar,
   onSend,
+  removeLabel = 'Move to Recycle Bin',
+  onRestore,
 }: SavedOutfitDetailModalProps) {
   if (!outfit) return null
 
@@ -148,8 +152,18 @@ export function SavedOutfitDetailModal({
           )}
 
           {/* Actions */}
-          <div className="flex gap-3 pt-2">
-            <Button
+          <div className={`grid gap-3 pt-2 ${onRestore ? 'grid-cols-2' : 'grid-cols-3'}`}>
+            {onRestore && <Button
+              variant="ghost"
+              size="sm"
+              onClick={onRestore}
+              fullWidth
+              className="gap-2"
+            >
+              <RotateCcw size={14} />
+              Restore
+            </Button>}
+            {!onRestore && <Button
               variant="ghost"
               size="sm"
               onClick={onStyleSimilar}
@@ -158,8 +172,8 @@ export function SavedOutfitDetailModal({
             >
               <HangerIcon size={14} />
               Style Similar
-            </Button>
-            <Button
+            </Button>}
+            {!onRestore && <Button
               variant="ghost"
               size="sm"
               onClick={onSend}
@@ -168,7 +182,7 @@ export function SavedOutfitDetailModal({
             >
               <Send size={14} strokeWidth={1.5} />
               Send
-            </Button>
+            </Button>}
             <Button
               variant="ghost"
               size="sm"
@@ -177,7 +191,7 @@ export function SavedOutfitDetailModal({
               className="gap-2 !text-red-500 hover:!bg-red-50 dark:bg-red-950/40"
             >
               <Trash2 size={14} />
-              Remove
+              {removeLabel}
             </Button>
           </div>
         </div>

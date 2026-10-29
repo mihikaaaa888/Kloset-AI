@@ -1,3 +1,5 @@
+import { apiUrl } from './apiUrl'
+
 let removerPromise: Promise<(image: string) => Promise<Blob>> | null = null
 
 function blobToBase64(blob: Blob): Promise<string> {
@@ -17,7 +19,7 @@ function blobToBase64(blob: Blob): Promise<string> {
 /** Use PhotoRoom to clean up a garment mask; null means use the original mask. */
 export async function refineGarmentImage(image: Blob): Promise<Blob | null> {
   try {
-    const response = await fetch('/api/refine-garment-image', {
+    const response = await fetch(apiUrl('/api/refine-garment-image'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageData: await blobToBase64(image), mediaType: image.type || 'image/png' }),

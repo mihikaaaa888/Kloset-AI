@@ -1,4 +1,5 @@
 import type { WebShopResult } from '@/types'
+import { apiUrl } from '@/lib/apiUrl'
 
 export type Retailer = 'zara' | 'hm' | 'cos' | 'uniqlo' | 'mango' | 'stories' | 'everlane'
 
@@ -36,7 +37,7 @@ export async function searchWebShop(
 ): Promise<WebShopSearchResponse> {
   console.log('[webShopService] searching', { query, retailers })
 
-  const response = await fetch('/api/web-shop-search', {
+  const response = await fetch(apiUrl('/api/web-shop-search'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, retailers }),

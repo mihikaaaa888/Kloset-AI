@@ -16,7 +16,6 @@ import { useOutfitStore } from '@/store/outfitStore'
 import { deleteWithUndo } from '@/store/undoStore'
 import { styleOptions } from '@/pages/onboarding/onboardingData'
 import { useAuth } from '@/contexts/AuthContext'
-import { useResolvedTheme } from '@/hooks/useTheme'
 
 // ─── Avatar helpers ───────────────────────────────────────────────────────────
 
@@ -36,11 +35,10 @@ export function ProfilePage() {
   const profile = useUserStore((s) => s.profile)
   const clearProfile = useUserStore((s) => s.clearProfile)
   const wardrobeItems = useWardrobeStore((s) => s.items)
-  const { savedOutfits, savedOutfits: allOutfits } = useOutfitStore()
+  const savedOutfits = useOutfitStore((s) => s.savedOutfits)
   const removeWardrobeItem = useWardrobeStore((s) => s.removeItem)
-  const unsaveOutfitAction = useOutfitStore((s) => s.unsaveOutfit)
+  const clearOutfits = useOutfitStore((s) => s.clearOutfits)
   const { user, signOut } = useAuth()
-  const theme = useResolvedTheme()
 
   if (!profile) {
     return (
@@ -87,18 +85,18 @@ export function ProfilePage() {
     if (!window.confirm('This will permanently delete your profile, wardrobe, and saved outfits. Are you sure?')) return
     const restoreProfile = snapshotProfile()
     const items = useWardrobeStore.getState().items
-    const outfits = useOutfitStore.getState().savedOutfits
+    const { savedOutfits: outfits, trashedOutfits } = useOutfitStore.getState()
     deleteWithUndo({
       message: 'Everything cleared',
       remove: () => {
         wardrobeItems.forEach((item) => removeWardrobeItem(item.id))
-        allOutfits.forEach((o) => unsaveOutfitAction(o.id))
+        clearOutfits()
         clearProfile()
         navigate('/')
       },
       restore: () => {
         useWardrobeStore.getState().setItems(items)
-        useOutfitStore.setState({ savedOutfits: outfits })
+        useOutfitStore.setState({ savedOutfits: outfits, trashedOutfits })
         restoreProfile()
         navigate('/profile')
       },
@@ -116,8 +114,6 @@ export function ProfilePage() {
   }
 
   const details = [profile.occupation, profile.ageRange && AGE_LABEL[profile.ageRange]].filter(Boolean)
-  const occasionPhotos = profile.typicalOccasions.map((o) => OCCASION_PHOTO[o]).filter(Boolean).slice(0, 3)
-  const stylePhoto = styleLabels[0]?.imageUrl ?? PHOTO.skirt
   const preferences: { icon: LucideIcon; label: string; value: string }[] = [
     { icon: Bell, label: 'Recommendations', value: FREQUENCY_LABEL[profile.recommendationFrequency] },
     ...(profile.genderStylePreference && profile.genderStylePreference !== 'no-preference'
@@ -129,24 +125,28 @@ export function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-warm-cream pb-28 md:pb-12">
-      {/* ── Header band ── */}
-      <header className="bg-deep-purple pt-28 pb-12 lg:pt-32">
+      {/* ── Header band: brand forest in light mode, near-black in dark; cream type on both ── */}
+      <header className="bg-butter-yellow dark:bg-deep-purple pt-28 pb-14 lg:pt-32">
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 flex items-center gap-5 sm:gap-7">
-          <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-butter-yellow flex items-center justify-center flex-shrink-0 shadow-soft">
-            <span className="font-display text-3xl sm:text-4xl text-dark-purple">{getInitials(profile.name)}</span>
+          <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-[#fffdd0] flex items-center justify-center flex-shrink-0 shadow-medium">
+            <span className="font-display text-3xl sm:text-4xl text-[#355e3b]">{getInitials(profile.name)}</span>
           </div>
 
           <div className="flex-1 min-w-0">
-            <h1 className="font-display text-4xl lg:text-5xl font-medium text-text-primary leading-none capitalize truncate">
+            <h1 className="font-display text-4xl lg:text-5xl font-medium text-[#fffdd0] leading-none capitalize truncate">
               {profile.name}
             </h1>
             {details.length > 0 && (
-              <p className="text-2xs uppercase tracking-widest text-text-muted mt-3">{details.join(' · ')}</p>
+              <p className="text-2xs uppercase tracking-widest text-[#fffdd0]/75 mt-3 flex flex-wrap gap-x-2">
+                {details.map((detail, index) => (
+                  <span key={index} className="whitespace-nowrap">{detail}{index < details.length - 1 && ' ·'}</span>
+                ))}
+              </p>
             )}
             {styleLabels.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-4">
                 {styleLabels.map((s) => (
-                  <span key={s.value} className="px-3 py-1 rounded-full text-2xs uppercase tracking-widest font-medium bg-butter-yellow/15 text-butter-yellow ring-1 ring-inset ring-butter-yellow/25">
+                  <span key={s.value} className="px-3 py-1 rounded-full text-2xs uppercase tracking-widest font-medium bg-[#fffdd0]/12 text-[#fffdd0] ring-1 ring-inset ring-[#fffdd0]/30">
                     {s.label}
                   </span>
                 ))}
@@ -158,25 +158,25 @@ export function ProfilePage() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 -mt-6 space-y-4">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 -mt-7 space-y-4">
 
         {/* ── Stats ── */}
         <div className="grid grid-cols-3 gap-3 sm:gap-4">
-          <Stat icon={Shirt} value={wardrobeItems.length} label="Pieces" photo={PHOTO.rack} />
-          <Stat icon={Bookmark} value={savedOutfits.length} label="Outfits" photo={PHOTO.skirt} />
-          <Stat icon={Repeat2} value={totalWears} label="Wears" photo={PHOTO.shirts} />
+          <Stat icon={Shirt} value={wardrobeItems.length} label="Pieces" />
+          <Stat icon={Bookmark} value={savedOutfits.length} label="Outfits" />
+          <Stat icon={Repeat2} value={totalWears} label="Wears" />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="md:columns-2 md:gap-4">
           {/* ── Colour palette ── */}
           {(profile.favouriteColours.length > 0 || profile.avoidColours.length > 0) && (
-            <Card icon={Palette} title="Palette" backdrop={<ColourWash colours={profile.favouriteColours} />}>
-              <div className="space-y-4">
+            <Card icon={Palette} title="Palette">
+              <div className="space-y-5">
                 {profile.favouriteColours.length > 0 && (
-                  <SwatchRow icon={Heart} label="Loves" colours={profile.favouriteColours} />
+                  <ColourGroup icon={Heart} label="Loves" colours={profile.favouriteColours} />
                 )}
                 {profile.avoidColours.length > 0 && (
-                  <SwatchRow icon={Ban} label="Avoids" colours={profile.avoidColours} avoided />
+                  <ColourGroup icon={Ban} label="Avoids" colours={profile.avoidColours} avoided />
                 )}
               </div>
             </Card>
@@ -184,7 +184,7 @@ export function ProfilePage() {
 
           {/* ── Occasions ── */}
           {profile.typicalOccasions.length > 0 && (
-            <Card icon={CalendarHeart} title="Occasions" backdrop={<BlurredPhotos srcs={occasionPhotos} />}>
+            <Card icon={CalendarHeart} title="Occasions">
               <div className="flex flex-wrap gap-2">
                 {profile.typicalOccasions.map((o) => {
                   const Icon = OCCASION_ICON[o] ?? Sun
@@ -199,16 +199,22 @@ export function ProfilePage() {
           )}
 
           {/* ── Preferences ── */}
-          <Card icon={SlidersHorizontal} title="Preferences" backdrop={<BlurredPhotos srcs={[stylePhoto]} />}>
-            <div className="flex flex-wrap gap-2">
-              {preferences.map(({ icon, label, value }) => (
-                <Chip key={label} icon={icon} title={label}>{value}</Chip>
+          <Card icon={SlidersHorizontal} title="Preferences">
+            <dl className="space-y-4">
+              {preferences.map(({ icon: Icon, label, value }) => (
+                <div key={label} className="flex items-center gap-3.5">
+                  <IconBadge icon={Icon} size="sm" />
+                  <div className="min-w-0">
+                    <dt className="text-2xs uppercase tracking-widest text-text-muted">{label}</dt>
+                    <dd className="text-sm text-text-primary first-letter:uppercase mt-0.5">{value}</dd>
+                  </div>
+                </div>
               ))}
-            </div>
+            </dl>
           </Card>
 
           {/* ── Appearance ── */}
-          <Card icon={SunMoon} title="Appearance" backdrop={<BlurredPhotos srcs={[theme === 'dark' ? PHOTO.leather : PHOTO.rack]} />}>
+          <Card icon={SunMoon} title="Appearance">
             <ThemePicker />
           </Card>
         </div>
@@ -229,13 +235,20 @@ export function ProfilePage() {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function IconBadge({ icon: Icon, danger = false }: { icon: LucideIcon; danger?: boolean }) {
+// Cards are plain white surfaces with one hairline and a soft shadow. Colour lives in the header band,
+// the icon badges, the numbers and the user's own swatches, so it always means something.
+const CARD = 'rounded-3xl bg-surface ring-1 ring-inset ring-text-primary/10 shadow-card'
+
+/** A round icon in brand green on a faint green tint (cream on cream-tint in dark mode). */
+function IconBadge({ icon: Icon, danger = false, size = 'md', className }: { icon: LucideIcon; danger?: boolean; size?: 'sm' | 'md'; className?: string }) {
   return (
     <span className={clsx(
-      'w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-colors',
-      danger ? 'bg-red-600/10 text-red-700 dark:text-red-400' : 'bg-warm-cream/80 text-butter-yellow ring-1 ring-inset ring-butter-yellow/20 shadow-soft backdrop-blur-sm'
+      'rounded-full flex items-center justify-center flex-shrink-0 transition-colors',
+      size === 'md' ? 'w-10 h-10' : 'w-9 h-9',
+      danger ? 'bg-red-600/10 text-red-700 dark:text-red-400' : 'bg-butter-yellow/10 text-butter-yellow',
+      className
     )}>
-      <Icon size={18} strokeWidth={1.8} />
+      <Icon size={size === 'md' ? 18 : 16} strokeWidth={1.8} />
     </span>
   )
 }
@@ -247,7 +260,7 @@ function IconButton({ icon: Icon, label, onClick, className }: { icon: LucideIco
       aria-label={label}
       title={label}
       className={clsx(
-        'w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 bg-butter-yellow/15 text-butter-yellow ring-1 ring-inset ring-butter-yellow/25 transition-all hover:bg-butter-yellow hover:text-dark-purple hover:scale-105',
+        'w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 bg-[#fffdd0]/12 text-[#fffdd0] ring-1 ring-inset ring-[#fffdd0]/30 transition-all hover:bg-[#fffdd0] hover:text-[#355e3b] hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fffdd0]',
         className
       )}
     >
@@ -256,21 +269,19 @@ function IconButton({ icon: Icon, label, onClick, className }: { icon: LucideIco
   )
 }
 
-function Stat({ icon, value, label, photo }: { icon: LucideIcon; value: number; label: string; photo: string }) {
+function Stat({ icon, value, label }: { icon: LucideIcon; value: number; label: string }) {
   return (
-    <div className="relative isolate overflow-hidden rounded-3xl bg-warm-cream ring-1 ring-inset ring-text-primary/10 shadow-soft px-3 py-5 sm:py-6 flex flex-col items-center gap-2">
-      <BlurredPhotos srcs={[photo]} />
+    <div className={clsx(CARD, 'px-3 py-5 sm:py-6 flex flex-col items-center gap-2')}>
       <IconBadge icon={icon} />
-      <p className="font-display text-3xl sm:text-4xl text-text-primary tabular-nums leading-none">{value}</p>
+      <p className="font-display text-4xl sm:text-5xl text-butter-yellow tabular-nums leading-none mt-1">{value}</p>
       <p className="text-2xs uppercase tracking-widest text-text-muted">{label}</p>
     </div>
   )
 }
 
-function Card({ icon, title, backdrop, children }: { icon: LucideIcon; title: string; backdrop?: React.ReactNode; children: React.ReactNode }) {
+function Card({ icon, title, children }: { icon: LucideIcon; title: string; children: React.ReactNode }) {
   return (
-    <section className="relative isolate overflow-hidden rounded-3xl bg-warm-cream ring-1 ring-inset ring-text-primary/10 shadow-soft p-5 sm:p-6">
-      {backdrop}
+    <section className={clsx(CARD, 'p-5 sm:p-6 mb-4 break-inside-avoid')}>
       <h2 className="flex items-center gap-3 mb-5">
         <IconBadge icon={icon} />
         <span className="font-display text-2xl font-medium text-text-primary">{title}</span>
@@ -280,81 +291,28 @@ function Card({ icon, title, backdrop, children }: { icon: LucideIcon; title: st
   )
 }
 
-// ─── Card backdrops ───────────────────────────────────────────────────────────
-
-/**
- * Soft-focus photos behind a card. Oversized and blurred so only colour and
- * mood come through, then washed with the page colour so text stays readable
- * in light and dark mode.
- */
-function BlurredPhotos({ srcs }: { srcs: string[] }) {
-  if (!srcs.length) return null
+function Chip({ icon: Icon, children }: { icon: LucideIcon; children: React.ReactNode }) {
   return (
-    <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
-      <div className="absolute -inset-8 flex scale-110 blur-xl saturate-[1.15]">
-        {srcs.map((src) => (
-          <img
-            key={src}
-            // Only Unsplash understands these resize params; retailer photos go as they are.
-            src={src.includes('images.unsplash.com') ? `${src.split("?")[0]}?w=500&q=50&auto=format&fit=crop` : src}
-            alt=""
-            loading="lazy"
-            referrerPolicy="no-referrer"
-            onError={(e) => { e.currentTarget.style.display = 'none' }}
-            className="h-full min-w-0 flex-1 object-cover"
-          />
-        ))}
-      </div>
-      <div className="absolute inset-0 bg-warm-cream/65" />
-      <div className="absolute inset-0 bg-gradient-to-br from-warm-cream/40 via-transparent to-warm-cream/10" />
-    </div>
-  )
-}
-
-/** The user's favourite colours as drifting, blurred blobs of paint. */
-function ColourWash({ colours }: { colours: string[] }) {
-  if (!colours.length) return null
-  const spots = [[12, 20], [78, 15], [45, 70], [90, 80], [20, 90], [60, 30], [35, 40], [85, 50]]
-  return (
-    <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
-      <div className="absolute -inset-10 blur-2xl">
-        {colours.slice(0, spots.length).map((c, i) => (
-          <span
-            key={c}
-            className="absolute h-2/3 w-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-80"
-            style={{ left: `${spots[i][0]}%`, top: `${spots[i][1]}%`, backgroundColor: colourNameToHex(c) }}
-          />
-        ))}
-      </div>
-      <div className="absolute inset-0 bg-warm-cream/45" />
-    </div>
-  )
-}
-
-function Chip({ icon: Icon, title, children }: { icon: LucideIcon; title?: string; children: React.ReactNode }) {
-  return (
-    <span title={title} className="inline-flex items-center gap-2 h-9 pl-3 pr-4 rounded-full bg-warm-cream ring-1 ring-inset ring-text-primary/10 text-sm text-text-primary capitalize">
+    <span className="inline-flex items-center gap-2 h-9 pl-3 pr-4 rounded-full bg-butter-yellow/10 ring-1 ring-inset ring-butter-yellow/15 text-sm text-text-primary capitalize">
       <Icon size={15} strokeWidth={1.8} className="text-butter-yellow" />
       {children}
     </span>
   )
 }
 
-/** A row of round colour chips. Names show on hover; avoided colours are faded and crossed out. */
-function SwatchRow({ icon: Icon, label, colours, avoided = false }: { icon: LucideIcon; label: string; colours: string[]; avoided?: boolean }) {
+/** Colours as named pills: a dot of the real colour plus its name, so nothing relies on hover or on telling swatches apart. */
+function ColourGroup({ icon: Icon, label, colours, avoided = false }: { icon: LucideIcon; label: string; colours: string[]; avoided?: boolean }) {
   return (
-    <div className="flex items-center gap-4">
-      <span title={label} aria-label={label} className="text-text-muted flex-shrink-0">
-        <Icon size={16} strokeWidth={1.8} />
-      </span>
-      <ul className="flex flex-wrap gap-2.5">
+    <div>
+      <p className="flex items-center gap-2 text-2xs uppercase tracking-widest text-text-muted mb-2.5">
+        <Icon size={13} strokeWidth={1.8} />
+        {label}
+      </p>
+      <ul className="flex flex-wrap gap-2">
         {colours.map((c) => (
-          <li key={c} title={c} aria-label={c} className="relative">
-            <span
-              className={clsx('block w-9 h-9 rounded-full ring-1 ring-inset ring-black/10 shadow-soft', avoided && 'opacity-40')}
-              style={{ backgroundColor: colourNameToHex(c) }}
-            />
-            {avoided && <span className="absolute left-1/2 top-1/2 w-10 h-px -translate-x-1/2 -translate-y-1/2 -rotate-45 bg-text-primary/60" />}
+          <li key={c} className={clsx('inline-flex items-center gap-2.5 h-9 pl-2 pr-3.5 rounded-full ring-1 ring-inset', avoided ? 'ring-text-primary/10 text-text-muted' : 'bg-butter-yellow/10 ring-butter-yellow/15 text-text-primary')}>
+            <span className={clsx('block w-5 h-5 rounded-full ring-1 ring-inset ring-black/15', avoided && 'opacity-50')} style={{ backgroundColor: colourNameToHex(c) }} />
+            <span className={clsx('text-sm capitalize', avoided && 'line-through decoration-text-muted/60')}>{c}</span>
           </li>
         ))}
       </ul>
@@ -380,14 +338,15 @@ function ActionTile({
       onClick={onClick}
       title={hint ?? label}
       className={clsx(
-        'group flex flex-col items-center justify-center gap-3 rounded-3xl py-5 px-3 ring-1 ring-inset transition-all duration-300 hover:-translate-y-0.5 hover:shadow-soft',
+        CARD,
+        'group flex flex-col items-center justify-center gap-3 py-5 px-3 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2',
         danger
-          ? 'ring-red-700/20 hover:bg-red-600/5'
-          : 'ring-text-primary/10 bg-text-primary/3 hover:bg-butter-yellow/10 hover:ring-butter-yellow/30'
+          ? 'hover:bg-red-600/5 hover:ring-red-700/30 focus-visible:outline-red-700'
+          : 'hover:bg-butter-yellow hover:ring-butter-yellow focus-visible:outline-butter-yellow'
       )}
     >
-      <IconBadge icon={icon} danger={danger} />
-      <span className={clsx('text-2xs uppercase tracking-widest font-semibold', danger ? 'text-red-700 dark:text-red-400' : 'text-text-primary')}>
+      <IconBadge icon={icon} danger={danger} className={danger ? undefined : 'group-hover:bg-dark-purple/15 group-hover:text-dark-purple'} />
+      <span className={clsx('text-2xs uppercase tracking-widest font-semibold transition-colors', danger ? 'text-red-700 dark:text-red-400' : 'text-text-primary group-hover:text-dark-purple')}>
         {label}
       </span>
     </button>
@@ -424,26 +383,6 @@ const OCCASION_ICON: Record<string, LucideIcon> = {
   'special-event': PartyPopper,
 }
 
-// Unsplash photos already used elsewhere in the app, picked by subject.
-const PHOTO = {
-  rack: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d',
-  leather: 'https://images.unsplash.com/photo-1521223890158-f9f7c3d5d504',
-  skirt: 'https://images.unsplash.com/photo-1583496661160-fb5886a0aaaa',
-  shirts: 'https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf',
-}
-
-const OCCASION_PHOTO: Record<string, string> = {
-  work: 'https://images.unsplash.com/photo-1580657018950-c7f7d6a6d990',
-  casual: 'https://images.unsplash.com/photo-1620799139507-2a76f79a2f4d',
-  formal: 'https://images.unsplash.com/photo-1566174053879-31528523f8ae',
-  'date-night': 'https://images.unsplash.com/photo-1595777457583-95e059d581b8',
-  weekend: 'https://images.unsplash.com/photo-1496747611176-843222e1e57c',
-  travel: 'https://images.unsplash.com/photo-1577803645773-f96470509666',
-  gym: 'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5',
-  'special-event': 'https://images.unsplash.com/photo-1611923134239-b9be5816e23c',
-}
-
-// Short chip labels ("Work" rather than "Work / Office").
 // Same wording as the survey (onboardingData occasionOptions).
 const OCCASION_LABEL: Record<string, string> = {
   work: 'Work',

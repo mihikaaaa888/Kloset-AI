@@ -22,7 +22,7 @@ export function useResolvedTheme(): 'light' | 'dark' {
 
 /**
  * Puts the .dark class on <html> to match the resolved theme. The landing page
- * always stays light — its hero video is keyed onto a cream backdrop.
+ * always stays light — its hero is designed for a cream backdrop.
  */
 export function useApplyTheme() {
   const resolved = useResolvedTheme()

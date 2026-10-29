@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2172 120" fill="none">
+  <defs>
+    <linearGradient id="antiqueGold" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#71572f" />
+      <stop offset=".2" stop-color="#d0b276" />
+      <stop offset=".43" stop-color="#987644" />
+      <stop offset=".58" stop-color="#e0cb97" />
+      <stop offset=".82" stop-color="#a17e48" />
+      <stop offset="1" stop-color="#594326" />
+    </linearGradient>
+    <linearGradient id="railGold" gradientUnits="userSpaceOnUse" x1="0" x2="0" y1="53.5" y2="62.5">
+      <stop offset="0" stop-color="#71572f" />
+      <stop offset=".2" stop-color="#d0b276" />
+      <stop offset=".43" stop-color="#987644" />
+      <stop offset=".58" stop-color="#e0cb97" />
+      <stop offset=".82" stop-color="#a17e48" />
+      <stop offset="1" stop-color="#594326" />
+    </linearGradient>
+    <linearGradient id="goldHighlight" x1="0" x2="0" y1="0" y2="1">
+      <stop stop-color="#f0e1ba" stop-opacity=".82" />
+      <stop offset="1" stop-color="#f0e1ba" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+
+  <!-- Slim metal rail; the narrow highlight keeps it metallic without making it heavy. -->
+  <path d="M145 62 H2027" stroke="#49391f" stroke-opacity=".34" stroke-width="13" stroke-linecap="round" />
+  <path d="M145 58 H2027" stroke="url(#railGold)" stroke-width="9" stroke-linecap="round" />
+  <path d="M157 56.5 H2015" stroke="#f0e1ba" stroke-opacity=".7" stroke-width="1.5" stroke-linecap="round" />
+
+  <!-- Decorative finials echo the curled ends of the supplied reference rod. -->
+  <g stroke="url(#antiqueGold)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M157 59 H137 C126 59 123 48 112 40 C96 28 77 29 67 41 C54 57 63 76 80 77 C94 78 101 65 93 57 C87 51 78 54 77 61" />
+    <path d="M151 62 C137 63 135 77 121 84 C108 90 95 84 96 74 C97 65 107 62 113 68 C119 74 113 80 108 77" />
+    <path d="M157 55 C148 49 148 39 155 34 C162 30 170 34 169 41 C168 46 162 47 160 43" />
+  </g>
+  <g transform="translate(2172 0) scale(-1 1)" stroke="url(#antiqueGold)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M157 59 H137 C126 59 123 48 112 40 C96 28 77 29 67 41 C54 57 63 76 80 77 C94 78 101 65 93 57 C87 51 78 54 77 61" />
+    <path d="M151 62 C137 63 135 77 121 84 C108 90 95 84 96 74 C97 65 107 62 113 68 C119 74 113 80 108 77" />
+    <path d="M157 55 C148 49 148 39 155 34 C162 30 170 34 169 41 C168 46 162 47 160 43" />
+  </g>
+  <g fill="url(#antiqueGold)" stroke="#644b29" stroke-opacity=".7" stroke-width="2">
+    <circle cx="157" cy="59" r="7" />
+    <circle cx="2015" cy="59" r="7" />
+  </g>
+</svg>
