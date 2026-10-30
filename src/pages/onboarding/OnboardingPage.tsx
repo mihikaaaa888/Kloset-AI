@@ -398,7 +398,7 @@ function Step1Name({
 // Step 2 — Age: pick an exact age on a ruler; it's saved as its age group.
 const MIN_AGE = 10
 const MAX_AGE = 80
-const DEFAULT_AGE = 21
+const DEFAULT_AGE = 25
 
 function ageToRange(age: number): AgeRange {
   if (age < 18) return 'under-18'
