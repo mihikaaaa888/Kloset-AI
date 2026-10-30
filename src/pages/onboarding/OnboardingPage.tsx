@@ -486,7 +486,7 @@ function Step2Age({
   )
 }
 
-// Step 3 — Occupation (pick one; moves on by itself)
+// Step 3 — Occupation (pick a tile, which moves on by itself, or type your own)
 function Step3Occupation({
   value,
   onChange,
@@ -496,6 +496,10 @@ function Step3Occupation({
   onChange: (v: string) => void
   onNext: () => void
 }) {
+  const isPreset = occupationOptions.some((opt) => opt.label === value)
+  const [custom, setCustom] = useState(isPreset ? '' : value)
+  const canAdvance = custom.trim() !== '' || isPreset
+
   return (
     <div>
       <StepHeading eyebrow="Your life" title="What do you do?" />
@@ -507,12 +511,25 @@ function Step3Occupation({
             icon={opt.icon}
             selected={value === opt.label}
             onClick={() => {
+              setCustom('')
               onChange(opt.label)
               setTimeout(onNext, 250)
             }}
           />
         ))}
       </div>
+      <div className="mt-6">
+        <TextInput
+          placeholder="Something else? Type it here"
+          value={custom}
+          onChange={(e) => {
+            setCustom(e.target.value)
+            onChange(e.target.value)
+          }}
+          onKeyDown={(e) => e.key === 'Enter' && canAdvance && onNext()}
+        />
+      </div>
+      <StepActions onNext={onNext} canAdvance={canAdvance} />
     </div>
   )
 }
