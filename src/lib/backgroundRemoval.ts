@@ -1,7 +1,5 @@
 import { apiUrl } from './apiUrl'
 
-let removerPromise: Promise<(image: string) => Promise<Blob>> | null = null
-
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -16,55 +14,32 @@ function blobToBase64(blob: Blob): Promise<string> {
   })
 }
 
-/** Use PhotoRoom to clean up a garment mask; null means use the original mask. */
-export async function refineGarmentImage(image: Blob): Promise<Blob | null> {
+// Set once the server says PhotoRoom has no key, so later photos skip the doomed request.
+let photoRoomUnconfigured = false
+
+/** Send an image to the server's PhotoRoom endpoint; throws with a reason a person can read. */
+async function callPhotoRoom(image: Blob): Promise<Blob> {
+  if (photoRoomUnconfigured) throw new Error('PhotoRoom isn’t set up on the server.')
+  let response: Response
   try {
-    const response = await fetch(apiUrl('/api/refine-garment-image'), {
+    response = await fetch(apiUrl('/api/remove-background'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageData: await blobToBase64(image), mediaType: image.type || 'image/png' }),
     })
-    if (!response.ok) return null
-
-    const result = await response.json() as { imageData?: string; mediaType?: string }
-    if (!result.imageData) return null
-    const bytes = Uint8Array.from(atob(result.imageData), (character) => character.charCodeAt(0))
-    return new Blob([bytes], { type: result.mediaType || 'image/png' })
   } catch {
-    return null
+    throw new Error('couldn’t reach the server')
   }
+  if (response.status === 503) {
+    photoRoomUnconfigured = true
+    throw new Error('PhotoRoom isn’t set up on the server.')
+  }
+  const result = await response.json().catch(() => ({})) as { imageData?: string; mediaType?: string; error?: string }
+  if (!response.ok || !result.imageData) throw new Error(result.error ?? 'PhotoRoom returned no image.')
+
+  const bytes = Uint8Array.from(atob(result.imageData), (character) => character.charCodeAt(0))
+  return new Blob([bytes], { type: result.mediaType || 'image/png' })
 }
 
-/** Remove a photo's background locally in the browser. */
-export async function removeImageBackground(image: Blob): Promise<Blob> {
-  if (!removerPromise) {
-    removerPromise = (async () => {
-      const { pipeline } = await import('@huggingface/transformers')
-      const removeBackground = await pipeline(
-        'background-removal',
-        'onnx-community/ormbg-ONNX',
-        { dtype: 'q8' },
-      )
-
-      return async (imageUrl: string) => {
-        const result = await removeBackground(imageUrl)
-        const transparentPng = await result.toBlob('image/png')
-        if (!transparentPng || transparentPng.type !== 'image/png') {
-          throw new Error('Background removal did not return a transparent PNG.')
-        }
-        return transparentPng
-      }
-    })().catch((error) => {
-      removerPromise = null
-      throw error
-    })
-  }
-
-  const removeBackground = await removerPromise
-  const imageUrl = URL.createObjectURL(image)
-  try {
-    return await removeBackground(imageUrl)
-  } finally {
-    URL.revokeObjectURL(imageUrl)
-  }
-}
+/** Remove a photo's background through PhotoRoom (the server holds the key). Throws if it can't. */
+export const removeImageBackground = callPhotoRoom

@@ -219,8 +219,8 @@ app.post('/api/analyze-image-url', async (req, res) => {
   }
 })
 
-// Refine the edges of a garment mask through PhotoRoom. The API key stays on
-// the server; callers send a cropped garment image, never the original photo.
+// Remove an image's background through PhotoRoom. The API key stays on the server;
+// callers send only the image bytes.
 async function photoRoomSegment(req, res) {
   const { imageData, mediaType } = req.body ?? {}
   const apiKey = process.env.PHOTOROOM_API_KEY
@@ -247,15 +247,17 @@ async function photoRoomSegment(req, res) {
       body: form,
     })
     if (!response.ok) {
-      console.error(`[refine-garment-image] PhotoRoom ${response.status}:`, (await response.text()).slice(0, 500))
-      return res.status(502).json({ error: 'PhotoRoom could not refine this garment.' })
+      console.error(`[photoroom] ${response.status}:`, (await response.text()).slice(0, 500))
+      // 402 = the plan's image quota is used up; say so instead of a generic failure.
+      if (response.status === 402) return res.status(402).json({ error: 'PhotoRoom has run out of image credits.' })
+      return res.status(502).json({ error: 'PhotoRoom could not process this image.' })
     }
 
     const output = Buffer.from(await response.arrayBuffer())
     return res.json({ imageData: output.toString('base64'), mediaType: response.headers.get('content-type') || 'image/png' })
   } catch (e) {
-    console.error('[refine-garment-image] PhotoRoom error:', e?.message ?? e)
-    return res.status(502).json({ error: 'PhotoRoom garment refinement failed.' })
+    console.error('[photoroom] error:', e?.message ?? e)
+    return res.status(502).json({ error: 'PhotoRoom could not be reached.' })
   }
 }
 // remove-background is the older name; kept so existing clients keep working.

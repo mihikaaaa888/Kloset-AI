@@ -12,6 +12,7 @@ import { BuildBoard } from '@/components/build/BuildBoard'
 import { ShareSheet } from '@/components/friends/ShareSheet'
 import type { ShareTarget } from '@/lib/friendService'
 import { Button } from '@/components/ui/Button'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useUserStore } from '@/store/userStore'
 import { useOutfitStore } from '@/store/outfitStore'
@@ -94,20 +95,32 @@ export function WardrobePage() {
     setShowAddModal(true)
   }
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Remove this item from your Kloset?')) return
-    const item = items.find((i) => i.id === id)
+  // Delete is two steps: handleDelete asks (ConfirmDialog), confirmDelete does it.
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const deleteTarget = items.find((i) => i.id === deleteId)
+
+  const handleDelete = (id: string) => { setDeleteError(null); setDeleteId(id) }
+
+  const confirmDelete = async () => {
+    if (!deleteId) return
+    const item = items.find((i) => i.id === deleteId)
+    setDeleting(true)
     if (user) {
       try {
-        await dbDeleteItem(user.id, id, item?.imageStoragePath)
+        await dbDeleteItem(user.id, deleteId, item?.imageStoragePath)
       } catch {
-        window.alert('Could not delete this item right now. Please try again.')
+        setDeleteError('Could not remove this item right now. Please try again.')
+        setDeleting(false)
         return
       }
     }
     if (item?.imageId) deleteImage(item.imageId).catch(() => {})
-    removeItem(id)
+    removeItem(deleteId)
     setDetailItem(null)
+    setDeleting(false)
+    setDeleteId(null)
   }
 
   const handleIncrementWorn = (item: ClothingItem) => {
@@ -292,6 +305,16 @@ export function WardrobePage() {
         )}
         </>}
       </div>
+
+      <ConfirmDialog
+        open={!!deleteId}
+        title={deleteTarget ? `Remove “${deleteTarget.name}”?` : 'Remove this piece?'}
+        message="It will be taken out of your Kloset, along with its photo. This can’t be undone."
+        error={deleteError}
+        busy={deleting}
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setDeleteId(null)}
+      />
 
       <AddItemModal
         open={showAddModal}

@@ -18,8 +18,7 @@ import {
 } from '@/lib/imageStorage'
 import { getPhotoUrl } from '@/lib/wardrobeService'
 import { analyzeImage, analyzeImageFromUrl } from '@/lib/analyzeImage'
-import { refineGarmentImage, removeImageBackground } from '@/lib/backgroundRemoval'
-import { parseOutfitPhoto } from '@/lib/fashionParsing'
+import { removeImageBackground } from '@/lib/backgroundRemoval'
 import type { ClothingAnalysis } from '@/lib/analyzeImage'
 import type { ClothingItem, ClothingCategory, Pattern, Season, Occasion } from '@/types'
 
@@ -186,6 +185,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
   const [urlLoading, setUrlLoading] = useState(false)
 
   // Multi-upload batch (new items only)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const [uploadBatch, setUploadBatch] = useState<QueuedImage[]>([])
   const [batchIdx, setBatchIdx] = useState(0)
   const isInBatch = uploadBatch.length > 1
@@ -255,30 +255,22 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
     try {
       const processed: QueuedImage[] = []
+      let backgroundFailure: string | null = null
       for (const file of valid) {
-        setImageProcessingStep('Loading the on-device clothing scanner…')
+        setImageProcessingStep('Removing background…')
         const compressed = await compressImage(file)
-        const parsed = await parseOutfitPhoto(compressed)
-        if (parsed.containsPerson && parsed.garments.length === 0) {
-          throw new Error('We couldn’t safely isolate clothing from this photo. Try a clearer, full-body image; the original photo was not saved or analyzed.')
+        let blob = compressed
+        try {
+          blob = await removeImageBackground(compressed)
+        } catch (error) {
+          console.warn('[AddItemModal] PhotoRoom background removal failed; keeping the original photo.', error)
+          backgroundFailure = error instanceof Error ? error.message : 'unknown error'
         }
-        let pieces: Array<{ blob: Blob; category?: ClothingCategory; name?: string }> = parsed.garments.length > 0
-          ? parsed.garments
-          : [{ blob: await removeImageBackground(parsed.safeFallback).catch(() => parsed.safeFallback), category: undefined, name: undefined }]
-        if (editItem && pieces.length > 1) {
-          pieces = [pieces.find((piece) => piece.category === editItem.category) ?? pieces[0]]
-        }
-        for (const piece of pieces) {
-          setImageProcessingStep('Refining garment edges…')
-          const refinedBlob = parsed.garments.length > 0
-            ? await refineGarmentImage(piece.blob) ?? piece.blob
-            : piece.blob
-          setImageProcessingStep('Saving garment…')
-          const imageId = await saveImage(refinedBlob)
-          const url = URL.createObjectURL(refinedBlob)
-          processed.push({ imageId, previewUrl: url, blob: refinedBlob, detectedCategory: piece.category, detectedName: piece.name })
-          pendingMap.current.set(imageId, url)
-        }
+        setImageProcessingStep('Saving photo…')
+        const imageId = await saveImage(blob)
+        const url = URL.createObjectURL(blob)
+        processed.push({ imageId, previewUrl: url, blob })
+        pendingMap.current.set(imageId, url)
       }
 
       // If there was already a pending (just-uploaded, not from editItem) image, clean it up
@@ -305,6 +297,8 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
       if (errs.length > 0) {
         setImageError(`${errs.length} file(s) skipped — unsupported format or too large.`)
+      } else if (backgroundFailure) {
+        setImageError(`Background removal couldn’t finish (${backgroundFailure.replace(/\.$/, '')}), so the original photo was kept. You can still add the item.`)
       }
 
       // Trigger AI analysis on the first image (only for new items, not edits)
@@ -505,6 +499,23 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
     return Object.keys(newErrors).length === 0
   }
 
+  // ── Move to another piece in a multi-photo batch ─────────────────────────────
+  // Every piece gets a fresh form, scrolled back to the top so its photo, name and category
+  // are the first things seen, and keeps the category and name detected for it.
+  const showPiece = (idx: number) => {
+    const next = uploadBatch[idx]
+    setBatchIdx(idx)
+    setActiveImageId(next.imageId)
+    setPreviewUrl(next.previewUrl)
+    setLegacyImageUrl(null)
+    setDraft({ ...blankDraft(), category: next.detectedCategory ?? '', name: next.detectedName ?? '' })
+    setErrors({})
+    setImageError(null)
+    setAiApplied(false)
+    scrollRef.current?.scrollTo({ top: 0 })
+    runAiAnalysis(next.blob, next.detectedCategory, next.detectedName)
+  }
+
   // ── Save ─────────────────────────────────────────────────────────────────────
   const handleSave = () => {
     if (!validate()) return
@@ -561,17 +572,8 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
     // Advance through batch or close
     const nextIdx = batchIdx + 1
     if (isInBatch && nextIdx < uploadBatch.length) {
-      const next = uploadBatch[nextIdx]
-      setBatchIdx(nextIdx)
-      setActiveImageId(next.imageId)
-      setPreviewUrl(next.previewUrl)
-      setLegacyImageUrl(null)
       priorImageId.current = null
-      setDraft(blankDraft())
-      setErrors({})
-      setImageError(null)
-      setAiApplied(false)
-      runAiAnalysis(next.blob, next.detectedCategory, next.detectedName)
+      showPiece(nextIdx)
     } else {
       handleClose()
     }
@@ -589,15 +591,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
     const nextIdx = batchIdx + 1
     if (nextIdx < uploadBatch.length) {
-      const next = uploadBatch[nextIdx]
-      setBatchIdx(nextIdx)
-      setActiveImageId(next.imageId)
-      setPreviewUrl(next.previewUrl)
-      setDraft(blankDraft())
-      setErrors({})
-      setImageError(null)
-      setAiApplied(false)
-      runAiAnalysis(next.blob, next.detectedCategory, next.detectedName)
+      showPiece(nextIdx)
     } else {
       handleClose()
     }
@@ -644,6 +638,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
           : 'Add to My Kloset'
       }
       variant="sheet"
+      scrollRef={scrollRef}
       footer={actionFooter}
     >
       <div className="px-6 py-4 pb-10 space-y-7">
@@ -818,7 +813,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
           {!displayUrl && photoTab === 'upload' && !imageProcessing && (
             <p className="text-xs text-text-muted mt-2">
-              Outfit scanning runs on this device. When PhotoRoom is configured, only each isolated garment cutout is sent to refine its edges; faces and the full photo are not sent.
+              The background is removed by PhotoRoom, so the photo is sent to their service for processing. Use a photo of just the garment if you’d rather not share a photo of yourself.
             </p>
           )}
 
