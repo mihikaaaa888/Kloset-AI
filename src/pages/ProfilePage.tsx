@@ -14,7 +14,7 @@ import { useUserStore } from '@/store/userStore'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useOutfitStore } from '@/store/outfitStore'
 import { deleteWithUndo } from '@/store/undoStore'
-import { styleOptions } from '@/pages/onboarding/onboardingData'
+import { styleOptions, genderStyleOptions } from '@/pages/onboarding/onboardingData'
 import { useAuth } from '@/contexts/AuthContext'
 
 // ─── Avatar helpers ───────────────────────────────────────────────────────────
@@ -117,7 +117,11 @@ export function ProfilePage() {
   const preferences: { icon: LucideIcon; label: string; value: string }[] = [
     { icon: Bell, label: 'Recommendations', value: FREQUENCY_LABEL[profile.recommendationFrequency] },
     ...(profile.genderStylePreference && profile.genderStylePreference !== 'no-preference'
-      ? [{ icon: Compass, label: 'Style direction', value: profile.genderStylePreference }]
+      ? [{
+          icon: Compass,
+          label: 'Style direction',
+          value: genderStyleOptions.find((o) => o.value === profile.genderStylePreference)?.label ?? profile.genderStylePreference,
+        }]
       : []),
     // Older profiles copied occupation into lifestyle; don't show it twice.
     ...(profile.lifestyle && profile.lifestyle !== profile.occupation ? [{ icon: Leaf, label: 'Lifestyle', value: profile.lifestyle }] : []),

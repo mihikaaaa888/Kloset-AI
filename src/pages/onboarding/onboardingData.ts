@@ -124,6 +124,6 @@ export const frequencyOptions: { value: RecommendationFrequency; label: string; 
 export const genderStyleOptions: { value: NonNullable<UserProfile['genderStylePreference']>; label: string }[] = [
   { value: 'feminine', label: 'Feminine' },
   { value: 'masculine', label: 'Masculine' },
-  { value: 'androgynous', label: 'Androgynous' },
+  { value: 'androgynous', label: 'Both' },
   { value: 'no-preference', label: 'No preference' },
 ]

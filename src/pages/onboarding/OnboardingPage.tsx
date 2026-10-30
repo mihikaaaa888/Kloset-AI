@@ -6,16 +6,13 @@ import { clsx } from 'clsx'
 
 import { OnboardingLayout } from './OnboardingLayout'
 import {
-  occasionOptions,
   occupationOptions,
-  COLOUR_PALETTE,
   frequencyOptions,
   genderStyleOptions,
 } from './onboardingData'
 import { CATALOGUE_ITEMS, CATALOGUE_CATEGORIES } from './catalogueData'
 import { SelectChip } from '@/components/ui/SelectChip'
 import { AgeRuler } from '@/components/ui/AgeRuler'
-import { ColourSwatch } from '@/components/ui/ColourSwatch'
 import { TextInput } from '@/components/ui/TextInput'
 import { Button } from '@/components/ui/Button'
 import { useUserStore } from '@/store/userStore'
@@ -53,7 +50,7 @@ const INITIAL_DRAFT: OnboardingDraft = {
   recommendationFrequency: '',
 }
 
-const TOTAL_STEPS = 9
+const TOTAL_STEPS = 6
 
 function profileToDraft(profile: UserProfile): OnboardingDraft {
   return {
@@ -143,11 +140,8 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
       case 2: return draft.ageRange !== ''
       case 3: return draft.occupation !== ''
       case 4: return true // catalogue selection optional
-      case 5: return draft.typicalOccasions.length >= 1
-      case 6: return true // colours optional
-      case 7: return true // avoid colours optional
-      case 8: return true // gender optional
-      case 9: return draft.recommendationFrequency !== ''
+      case 5: return true // gender optional
+      case 6: return draft.recommendationFrequency !== ''
       default: return false
     }
   }
@@ -249,40 +243,13 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
           />
         )}
         {step === 5 && (
-          <Step6Occasions
-            selected={draft.typicalOccasions}
-            onToggle={(v) => toggleArray('typicalOccasions', v)}
-            onNext={goNext}
-            canAdvance={canAdvance()}
-          />
-        )}
-        {step === 6 && (
-          <StepColours
-            title="Colours you love"
-            subtitle="Pick all that apply."
-            selected={draft.favouriteColours}
-            onToggle={(v) => toggleArray('favouriteColours', v)}
-            onNext={goNext}
-          />
-        )}
-        {step === 7 && (
-          <StepColours
-            title="Colours you avoid"
-            subtitle="Pick all that apply."
-            selected={draft.avoidColours}
-            onToggle={(v) => toggleArray('avoidColours', v)}
-            onNext={goNext}
-            skipLabel="None"
-          />
-        )}
-        {step === 8 && (
           <Step9Gender
             value={draft.genderStylePreference ?? ''}
             onChange={(v) => update('genderStylePreference', v)}
             onNext={goNext}
           />
         )}
-        {step === 9 && (
+        {step === 6 && (
           <Step10Frequency
             name={draft.name}
             value={draft.recommendationFrequency}
@@ -638,92 +605,6 @@ function Step4Catalogue({
             className="text-text-muted hover:text-text-primary text-sm underline underline-offset-4 transition-colors"
           >
             Skip for now
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// Step 6 — Occasions (pick several)
-function Step6Occasions({
-  selected,
-  onToggle,
-  onNext,
-  canAdvance,
-}: {
-  selected: Occasion[]
-  onToggle: (v: Occasion) => void
-  onNext: () => void
-  canAdvance: boolean
-}) {
-  return (
-    <div>
-      <StepHeading eyebrow="Your week" title="What do you dress for?" subtitle="Pick all that apply." />
-      <div className={TILE_GRID}>
-        {occasionOptions.map((opt) => (
-          <OptionTile
-            key={opt.value}
-            label={opt.label}
-            icon={opt.icon}
-            selected={selected.includes(opt.value)}
-            onClick={() => onToggle(opt.value)}
-          />
-        ))}
-      </div>
-      <StepActions onNext={onNext} canAdvance={canAdvance} />
-    </div>
-  )
-}
-
-// Steps 7 & 8 — Colours (reused for both)
-function StepColours({
-  title,
-  subtitle,
-  selected,
-  onToggle,
-  onNext,
-  skipLabel,
-}: {
-  title: string
-  subtitle: string
-  selected: string[]
-  onToggle: (v: string) => void
-  onNext: () => void
-  skipLabel?: string
-}) {
-  return (
-    <div>
-      <StepHeading eyebrow="Your palette" title={title} subtitle={subtitle} />
-      <div className="flex flex-wrap gap-3">
-        {COLOUR_PALETTE.map((colour) => (
-          <div key={colour.name} className="flex flex-col items-center gap-1.5">
-            <ColourSwatch
-              name={colour.name}
-              hex={colour.hex}
-              selected={selected.includes(colour.name)}
-              onClick={() => onToggle(colour.name)}
-            />
-            <span className="text-2xs text-text-muted text-center max-w-[48px] leading-tight">
-              {colour.name}
-            </span>
-          </div>
-        ))}
-      </div>
-      <div className="mt-10 flex flex-col sm:flex-row items-start gap-4">
-        <Button size="lg" onClick={onNext} className="group">
-          {selected.length > 0 ? `Continue with ${selected.length} selected` : 'Continue'}
-          <ArrowRight
-            size={16}
-            className="transition-transform duration-200 group-hover:translate-x-1"
-          />
-        </Button>
-        {skipLabel && (
-          <button
-            onClick={onNext}
-            className="text-text-muted hover:text-text-primary text-sm underline underline-offset-4 transition-colors"
-          >
-            {skipLabel}
           </button>
         )}
       </div>
