@@ -10,12 +10,12 @@ import {
   occasionOptions,
   occupationOptions,
   COLOUR_PALETTE,
-  ageRangeOptions,
   frequencyOptions,
   genderStyleOptions,
 } from './onboardingData'
 import { CATALOGUE_ITEMS, CATALOGUE_CATEGORIES } from './catalogueData'
 import { SelectChip } from '@/components/ui/SelectChip'
+import { AgeRuler } from '@/components/ui/AgeRuler'
 import { ColourSwatch } from '@/components/ui/ColourSwatch'
 import { TextInput } from '@/components/ui/TextInput'
 import { Button } from '@/components/ui/Button'
@@ -437,35 +437,51 @@ function Step1Name({
   )
 }
 
-// Step 2 — Age Range
+// Step 2 — Age: pick an exact age on a ruler; it's saved as its age group.
+const MIN_AGE = 10
+const MAX_AGE = 80
+const DEFAULT_AGE = 21
+
+function ageToRange(age: number): AgeRange {
+  if (age < 18) return 'under-18'
+  if (age <= 24) return '18-24'
+  if (age <= 34) return '25-34'
+  if (age <= 44) return '35-44'
+  if (age <= 54) return '45-54'
+  return '55+'
+}
+
+// Where the ruler starts when editing a saved profile, which only has the group.
+const RANGE_START_AGE: Record<AgeRange, number> = {
+  'under-18': 16, '18-24': 21, 'under-25': 21, '25-34': 29, '35-44': 39, '45-54': 49, '55+': 58,
+}
+
 function Step2Age({
   value,
   onChange,
   onNext,
 }: {
-  value: string
+  value: AgeRange | ''
   onChange: (v: AgeRange) => void
   onNext: () => void
 }) {
+  const [age, setAge] = useState(value ? RANGE_START_AGE[value] : DEFAULT_AGE)
+
   return (
     <div>
-      <StepHeading
-        eyebrow="About you"
-        title="How old are you?"
+      <StepHeading eyebrow="About you" title="How old are you?" />
+      <p className="text-center text-7xl sm:text-8xl font-light text-text-primary tabular-nums leading-none mb-6" aria-live="polite">
+        {age}
+      </p>
+      <AgeRuler value={age} min={MIN_AGE} max={MAX_AGE} onChange={setAge} />
+      <StepActions
+        onNext={() => {
+          onChange(ageToRange(age))
+          console.log('[onboarding] age picked', { age, range: ageToRange(age) })
+          onNext()
+        }}
+        canAdvance
       />
-      <div className="flex flex-wrap gap-3">
-        {ageRangeOptions.map((opt) => (
-          <SelectChip
-            key={opt.value}
-            label={opt.label}
-            selected={value === opt.value}
-            onClick={() => {
-              onChange(opt.value as AgeRange)
-              setTimeout(onNext, 250)
-            }}
-          />
-        ))}
-      </div>
     </div>
   )
 }

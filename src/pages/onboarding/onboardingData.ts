@@ -2,7 +2,7 @@ import {
   Briefcase, CalendarDays, CalendarRange, Camera, Coffee, Croissant, Dumbbell, GraduationCap,
   Hand, Heart, Hourglass, Laptop, PartyPopper, Plane, Rocket, Sparkles, Sun, type LucideIcon,
 } from 'lucide-react'
-import type { StylePreference, Occasion, AgeRange, RecommendationFrequency, UserProfile } from '@/types'
+import type { StylePreference, Occasion, RecommendationFrequency, UserProfile } from '@/types'
 export { COLOUR_PALETTE } from '@/lib/colourUtils'
 
 // Gen Z aesthetics people actually pick, each shown with a real product photo from the
@@ -102,15 +102,6 @@ export const occasionOptions: { value: Occasion; label: string; icon: LucideIcon
   { value: 'formal', label: 'Weddings & festive', icon: Sparkles },
   { value: 'gym', label: 'Gym', icon: Dumbbell },
   { value: 'travel', label: 'Travel', icon: Plane },
-]
-
-export const ageRangeOptions: { value: AgeRange; label: string }[] = [
-  { value: 'under-18', label: 'Under 18' },
-  { value: '18-24', label: '18–24' },
-  { value: '25-34', label: '25–34' },
-  { value: '35-44', label: '35–44' },
-  { value: '45-54', label: '45–54' },
-  { value: '55+', label: '55+' },
 ]
 
 // Saved as the label text on profile.occupation, which the stylist reads as-is.
