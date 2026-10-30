@@ -19,6 +19,7 @@ import {
   respondToRequest,
   sendFriendRequest,
 } from '@/lib/friendService'
+import { deleteWithUndo, isPendingDelete, notify } from '@/store/undoStore'
 import type { Connection, Share, SharedPiece } from '@/types'
 
 type Tab = 'inbox' | 'friends' | 'sent'
@@ -41,8 +42,9 @@ export function FriendsPage() {
   const load = useCallback(async () => {
     try {
       const [conns, sh] = await Promise.all([listConnections(), listShares()])
-      setConnections(conns)
-      setShares(sh)
+      // Anything waiting on an Undo toast is still in the database; keep it hidden.
+      setConnections(conns.filter((c) => !isPendingDelete(`friends:conn:${c.id}`)))
+      setShares(sh.filter((s) => !isPendingDelete(`friends:share:${s.id}`)))
       setError(null)
       const paths = sh.flatMap((s) => s.payload.pieces.map((p) => p.imagePath).filter((p): p is string => !!p))
       setImages(await resolveSharedImages(paths))
@@ -80,6 +82,30 @@ export function FriendsPage() {
       setError((err as Error).message)
     }
   }
+
+  // Hides the row now and only touches the database once the Undo toast closes.
+  const removeWithUndo = (message: string, key: string, hide: () => void, run: () => Promise<unknown>) =>
+    deleteWithUndo({
+      message,
+      keys: [key],
+      remove: hide,
+      restore: () => { load() },
+      commit: async () => {
+        try {
+          await run()
+          notifyChanged()
+        } catch (err) {
+          setError((err as Error).message)
+          notify('That didn’t go through, so it’s been put back.')
+          throw err
+        } finally {
+          await load()
+        }
+      },
+    })
+
+  const removeConnectionWithUndo = (c: Connection, message: string, run: () => Promise<unknown>) =>
+    removeWithUndo(message, `friends:conn:${c.id}`, () => setConnections((prev) => prev.filter((x) => x.id !== c.id)), run)
 
   const tabs: [Tab, string, number][] = [
     ['inbox', 'Received', unseen.length],
@@ -140,6 +166,7 @@ export function FriendsPage() {
             outgoing={outgoing}
             friends={friends}
             onAct={act}
+            onRemove={removeConnectionWithUndo}
           />
         ) : (
           <ShareGrid
@@ -162,7 +189,12 @@ export function FriendsPage() {
         onClose={() => setOpenShare(null)}
         onDelete={(s) => {
           setOpenShare(null)
-          act(() => deleteShare(s.id))
+          removeWithUndo(
+            `Removed ${s.payload.title}`,
+            `friends:share:${s.id}`,
+            () => setShares((prev) => prev.filter((x) => x.id !== s.id)),
+            () => deleteShare(s.id)
+          )
         }}
       />
     </div>
@@ -177,12 +209,14 @@ function FriendsTab({
   outgoing,
   friends,
   onAct,
+  onRemove,
 }: {
   myId: string
   incoming: Connection[]
   outgoing: Connection[]
   friends: Connection[]
   onAct: (fn: () => Promise<unknown>) => Promise<void>
+  onRemove: (c: Connection, message: string, run: () => Promise<unknown>) => void
 }) {
   const [email, setEmail] = useState('')
   const [sending, setSending] = useState(false)
@@ -251,7 +285,7 @@ function FriendsTab({
                   Accept
                 </button>
                 <button
-                  onClick={() => onAct(() => respondToRequest(c.id, false))}
+                  onClick={() => onRemove(c, `Declined ${c.otherName}`, () => respondToRequest(c.id, false))}
                   className="h-9 px-4 text-2xs uppercase tracking-widest text-text-muted hover:text-text-primary"
                 >
                   Decline
@@ -268,9 +302,7 @@ function FriendsTab({
             friends.map((c) => (
               <PersonRow key={c.id} person={c} meta={c.respondedAt ? `Friends since ${formatDate(c.respondedAt)}` : undefined}>
                 <button
-                  onClick={() => {
-                    if (window.confirm(`Remove ${c.otherName} from your friends?`)) onAct(() => removeConnection(c.id))
-                  }}
+                  onClick={() => onRemove(c, `Removed ${c.otherName} from your friends`, () => removeConnection(c.id))}
                   className="h-9 px-3 text-2xs uppercase tracking-widest text-text-muted hover:text-red-700"
                 >
                   Remove
@@ -285,7 +317,7 @@ function FriendsTab({
             {outgoing.map((c) => (
               <PersonRow key={c.id} person={c} meta={`Sent ${timeAgo(c.createdAt)}`}>
                 <button
-                  onClick={() => onAct(() => removeConnection(c.id))}
+                  onClick={() => onRemove(c, `Cancelled request to ${c.otherName}`, () => removeConnection(c.id))}
                   className="h-9 px-3 text-2xs uppercase tracking-widest text-text-muted hover:text-text-primary"
                 >
                   Cancel
@@ -472,9 +504,7 @@ function ShareDetail({
           </div>
 
           <button
-            onClick={() => {
-              if (window.confirm('Remove this from your list?')) onDelete(share)
-            }}
+            onClick={() => onDelete(share)}
             className="mt-14 flex items-center gap-2 text-2xs uppercase tracking-widest text-text-muted hover:text-red-700 transition-colors"
           >
             <Trash2 size={13} strokeWidth={1.5} />

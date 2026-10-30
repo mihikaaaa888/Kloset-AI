@@ -23,7 +23,7 @@ export const authNavItems: NavItem[] = [
   { label: 'Home', to: '/home', icon: <Home size={18} />, requiresAuth: true },
   { label: 'My Kloset', to: '/wardrobe', icon: <Shirt size={18} />, requiresAuth: true },
   { label: 'Shop', to: '/discover', icon: <Compass size={18} />, requiresAuth: true },
-  { label: 'AI Stylist', to: '/stylist', icon: <HangerIcon size={18} />, requiresAuth: true },
+  { label: 'Stylist', to: '/stylist', icon: <HangerIcon size={18} />, requiresAuth: true },
   { label: 'Friends', to: '/friends', icon: <Users size={18} />, requiresAuth: true },
   { label: 'Profile', to: '/profile', icon: <User size={18} />, requiresAuth: true },
 ]

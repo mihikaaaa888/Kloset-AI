@@ -8,6 +8,7 @@ import { searchWebShopCached, cleanProductTitle, type Retailer } from '@/lib/web
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useUserStore } from '@/store/userStore'
 import { useChatStore } from '@/store/chatStore'
+import { deleteWithUndo } from '@/store/undoStore'
 import { useAuth } from '@/contexts/AuthContext'
 import { insertItem } from '@/lib/wardrobeService'
 import { useItemImage } from '@/hooks/useItemImage'
@@ -190,9 +191,17 @@ export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
     }
   }
 
+  // Starting over wipes the conversation, so it can be undone.
   const reset = () => {
-    clearChat()
-    setInput('')
+    const previous = useChatStore.getState().messages
+    deleteWithUndo({
+      message: 'Conversation cleared',
+      remove: () => {
+        clearChat()
+        setInput('')
+      },
+      restore: () => useChatStore.getState().setMessages(previous),
+    })
   }
 
   const handleAddCatalogItem = (catalogItem: CatalogItem) => {
@@ -778,7 +787,7 @@ function EmptyState({ onPrompt }: { onPrompt: (p: string) => void }) {
       </div>
       <h3 className="font-display text-xl font-medium text-text-primary mb-1">Meet Kaia</h3>
       <p className="text-text-muted text-sm text-center max-w-xs mb-8">
-        Your personal AI stylist. Ask anything about what to wear, how to style your pieces, or what to add to your wardrobe.
+        Your personal stylist. Ask anything about what to wear, how to style your pieces, or what to add to your wardrobe.
       </p>
       <div className="w-full space-y-2">
         {SUGGESTED_PROMPTS.map((p) => (

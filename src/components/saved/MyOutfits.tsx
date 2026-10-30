@@ -9,6 +9,7 @@ import { ShareSheet } from '@/components/friends/ShareSheet'
 import type { ShareTarget } from '@/lib/friendService'
 import { useOutfitStore } from '@/store/outfitStore'
 import { useKlosetStore } from '@/store/klosetStore'
+import { deleteWithUndo } from '@/store/undoStore'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { resolveOutfitItems } from '@/lib/outfitPieces'
 import type { Outfit } from '@/types'
@@ -57,15 +58,47 @@ export function MyOutfits() {
     setShareTarget({ kind: 'outfit', outfit, items })
   }
 
+  // Every removal here can be undone from the toast, including emptying it from the recycle bin.
   const removeFromCurrentView = (outfit: Outfit) => {
+    const closeIfOpen = () => { if (selectedOutfit?.id === outfit.id) setSelectedOutfit(null) }
+    const name = outfit.name || 'outfit'
     if (showRecycleBin) {
-      if (window.confirm(`Permanently delete “${outfit.name}”? This cannot be undone.`)) permanentlyDeleteOutfit(outfit.id)
+      const index = useOutfitStore.getState().trashedOutfits.findIndex((o) => o.id === outfit.id)
+      deleteWithUndo({
+        message: `Deleted ${name}`,
+        remove: () => { permanentlyDeleteOutfit(outfit.id); closeIfOpen() },
+        restore: () => useOutfitStore.setState((s) => {
+          const rest = s.trashedOutfits.filter((o) => o.id !== outfit.id)
+          return { trashedOutfits: [...rest.slice(0, index), outfit, ...rest.slice(index)] }
+        }),
+      })
     } else if (isMain) {
-      trashOutfit(outfit.id)
+      deleteWithUndo({
+        message: `Moved ${name} to the recycle bin`,
+        remove: () => { trashOutfit(outfit.id); closeIfOpen() },
+        restore: () => restoreOutfit(outfit.id),
+      })
     } else {
-      removeOutfit(activeCollection.id, outfit.id)
+      const collectionId = activeCollection.id
+      deleteWithUndo({
+        message: `Removed ${name} from ${activeCollection.name}`,
+        remove: () => { removeOutfit(collectionId, outfit.id); closeIfOpen() },
+        restore: () => addOutfits(collectionId, [outfit.id]),
+      })
     }
-    if (selectedOutfit?.id === outfit.id) setSelectedOutfit(null)
+  }
+
+  const deleteActiveCollection = () => {
+    const collection = activeCollection
+    const index = useKlosetStore.getState().collections.findIndex((c) => c.id === collection.id)
+    deleteWithUndo({
+      message: `Deleted ${collection.name}`,
+      remove: () => deleteCollection(collection.id),
+      restore: () => useKlosetStore.setState((s) => {
+        const rest = s.collections.filter((c) => c.id !== collection.id)
+        return { collections: [...rest.slice(0, index), collection, ...rest.slice(index)], activeCollectionId: collection.id }
+      }),
+    })
   }
 
   const handleCreate = (outfit: Outfit) => {
@@ -127,9 +160,7 @@ export function MyOutfits() {
               <Plus size={14} /> New Kloset
             </button>
             {!isMain && <button
-              onClick={() => {
-                if (window.confirm(`Delete “${activeCollection.name}”? Its outfits will remain in Main Kloset.`)) deleteCollection(activeCollection.id)
-              }}
+              onClick={deleteActiveCollection}
               className="h-10 px-4 ring-1 ring-inset ring-red-800/20 text-2xs font-medium uppercase tracking-widest text-red-800 hover:ring-red-800/50"
             >
               Delete Kloset

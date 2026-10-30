@@ -12,12 +12,12 @@ import { BuildBoard } from '@/components/build/BuildBoard'
 import { ShareSheet } from '@/components/friends/ShareSheet'
 import type { ShareTarget } from '@/lib/friendService'
 import { Button } from '@/components/ui/Button'
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useUserStore } from '@/store/userStore'
 import { useOutfitStore } from '@/store/outfitStore'
 import { usePhotoCleanupStore } from '@/store/photoCleanupStore'
 import { deleteImage } from '@/lib/imageStorage'
+import { deleteWithUndo, notify } from '@/store/undoStore'
 import { SAMPLE_WARDROBE_ITEMS } from '@/lib/sampleData'
 import { useAuth } from '@/contexts/AuthContext'
 import { insertItem, updateItem as dbUpdateItem, deleteItem as dbDeleteItem } from '@/lib/wardrobeService'
@@ -36,7 +36,7 @@ export function WardrobePage() {
     setSearchParams(next === 'pieces' ? {} : { view: next }, { replace: true })
     console.log('[wardrobe] view changed', next)
   }
-  const { items, addItem, updateItem, removeItem, toggleFavourite, activeCategory, setActiveCategory } =
+  const { items, setItems, addItem, updateItem, removeItem, toggleFavourite, activeCategory, setActiveCategory } =
     useWardrobeStore()
 
   const [showAddModal, setShowAddModal] = useState(false)
@@ -95,32 +95,36 @@ export function WardrobePage() {
     setShowAddModal(true)
   }
 
-  // Delete is two steps: handleDelete asks (ConfirmDialog), confirmDelete does it.
-  const [deleteId, setDeleteId] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState(false)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
-  const deleteTarget = items.find((i) => i.id === deleteId)
-
-  const handleDelete = (id: string) => { setDeleteError(null); setDeleteId(id) }
-
-  const confirmDelete = async () => {
-    if (!deleteId) return
-    const item = items.find((i) => i.id === deleteId)
-    setDeleting(true)
-    if (user) {
-      try {
-        await dbDeleteItem(user.id, deleteId, item?.imageStoragePath)
-      } catch {
-        setDeleteError('Could not remove this item right now. Please try again.')
-        setDeleting(false)
-        return
-      }
+  // Hidden straight away; the database row and photo only go once the Undo toast closes.
+  const handleDelete = (id: string) => {
+    const index = items.findIndex((i) => i.id === id)
+    const item = items[index]
+    if (!item) return
+    const putBack = () => {
+      const current = useWardrobeStore.getState().items.filter((i) => i.id !== id)
+      setItems([...current.slice(0, index), item, ...current.slice(index)])
     }
-    if (item?.imageId) deleteImage(item.imageId).catch(() => {})
-    removeItem(deleteId)
-    setDetailItem(null)
-    setDeleting(false)
-    setDeleteId(null)
+    deleteWithUndo({
+      message: `Removed ${item.name}`,
+      keys: [`wardrobe:${id}`],
+      remove: () => {
+        removeItem(id)
+        setDetailItem(null)
+      },
+      restore: putBack,
+      commit: async () => {
+        if (user) {
+          try {
+            await dbDeleteItem(user.id, id, item.imageStoragePath)
+          } catch (err) {
+            putBack()
+            notify(`Couldn't remove ${item.name}. It's back in your Kloset.`)
+            throw err
+          }
+        }
+        if (item.imageId) deleteImage(item.imageId).catch(() => {})
+      },
+    })
   }
 
   const handleIncrementWorn = (item: ClothingItem) => {
@@ -279,7 +283,7 @@ export function WardrobePage() {
               >
                 <span>
                   <span className="block font-display text-2xl text-text-primary">Not sure what to wear?</span>
-                  <span className="block text-sm text-text-muted mt-0.5">Your AI stylist can build a look from these pieces.</span>
+                  <span className="block text-sm text-text-muted mt-0.5">Your stylist can build a look from these pieces.</span>
                 </span>
                 <span className="flex items-center gap-2 text-2xs font-semibold uppercase tracking-widest text-butter-yellow flex-shrink-0">
                   Style me
@@ -295,7 +299,7 @@ export function WardrobePage() {
                   item={item}
                   onClick={() => setDetailItem(item)}
                   onToggleFavourite={(e) => { e.stopPropagation(); handleToggleFavourite(item) }}
-                  onDelete={(e) => { e.stopPropagation(); void handleDelete(item.id) }}
+                  onDelete={(e) => { e.stopPropagation(); handleDelete(item.id) }}
                   onStyleThis={(e) => { e.stopPropagation(); navigate('/stylist', { state: { mode: 'item', itemId: item.id } }) }}
                 />
               ))}
@@ -305,16 +309,6 @@ export function WardrobePage() {
         )}
         </>}
       </div>
-
-      <ConfirmDialog
-        open={!!deleteId}
-        title={deleteTarget ? `Remove “${deleteTarget.name}”?` : 'Remove this piece?'}
-        message="It will be taken out of your Kloset, along with its photo. This can’t be undone."
-        error={deleteError}
-        busy={deleting}
-        onConfirm={() => void confirmDelete()}
-        onCancel={() => setDeleteId(null)}
-      />
 
       <AddItemModal
         open={showAddModal}

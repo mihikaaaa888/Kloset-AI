@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/Button'
 import { useUserStore } from '@/store/userStore'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useOutfitStore } from '@/store/outfitStore'
-import { styleOptions } from '@/pages/onboarding/onboardingData'
+import { deleteWithUndo } from '@/store/undoStore'
+import { styleOptions, genderStyleOptions } from '@/pages/onboarding/onboardingData'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAvatar } from '@/hooks/useAvatar'
 
@@ -52,20 +53,51 @@ export function ProfilePage() {
 
   const handleEditProfile = () => navigate('/onboarding?edit=true')
 
-  const handleResetOnboarding = () => {
-    if (window.confirm('This will restart your onboarding and clear your profile. Your wardrobe and saved outfits will remain. Continue?')) {
-      clearProfile()
-      navigate('/onboarding')
+  // Both resets keep a copy of what they wipe, so the Undo toast can put it all back.
+  const snapshotProfile = () => {
+    const { profile: savedProfile, loadedForUserId } = useUserStore.getState()
+    return () => {
+      if (savedProfile) useUserStore.getState().setProfile(savedProfile)
+      useUserStore.getState().markLoaded(loadedForUserId)
     }
   }
 
+  const handleResetOnboarding = () => {
+    if (!window.confirm('This will restart your onboarding and clear your profile. Your wardrobe and saved outfits will remain. Continue?')) return
+    const restoreProfile = snapshotProfile()
+    deleteWithUndo({
+      message: 'Profile cleared',
+      remove: () => {
+        clearProfile()
+        navigate('/onboarding')
+      },
+      restore: () => {
+        restoreProfile()
+        navigate('/profile')
+      },
+    })
+  }
+
   const handleClearAll = () => {
-    if (window.confirm('This will permanently delete your profile, wardrobe, and saved outfits. Are you sure?')) {
-      wardrobeItems.forEach((item) => removeWardrobeItem(item.id))
-      clearOutfits()
-      clearProfile()
-      navigate('/')
-    }
+    if (!window.confirm('This will permanently delete your profile, wardrobe, and saved outfits. Are you sure?')) return
+    const restoreProfile = snapshotProfile()
+    const items = useWardrobeStore.getState().items
+    const { savedOutfits: outfits, trashedOutfits } = useOutfitStore.getState()
+    deleteWithUndo({
+      message: 'Everything cleared',
+      remove: () => {
+        wardrobeItems.forEach((item) => removeWardrobeItem(item.id))
+        clearOutfits()
+        clearProfile()
+        navigate('/')
+      },
+      restore: () => {
+        useWardrobeStore.getState().setItems(items)
+        useOutfitStore.setState({ savedOutfits: outfits, trashedOutfits })
+        restoreProfile()
+        navigate('/profile')
+      },
+    })
   }
 
   const handleSignOut = async () => {
@@ -81,7 +113,9 @@ export function ProfilePage() {
   const occasions = profile.typicalOccasions.map((o) => OCCASION_LABEL[o] ?? o.replace('-', ' '))
   const recommendations = [
     FREQUENCY_LABEL[profile.recommendationFrequency],
-    profile.genderStylePreference && profile.genderStylePreference !== 'no-preference' ? profile.genderStylePreference : null,
+    profile.genderStylePreference && profile.genderStylePreference !== 'no-preference'
+      ? genderStyleOptions.find((o) => o.value === profile.genderStylePreference)?.label ?? profile.genderStylePreference
+      : null,
   ].filter(Boolean).join(', ')
   const occupation = [profile.occupation, profile.ageRange && AGE_LABEL[profile.ageRange]].filter(Boolean).join(', ')
 
@@ -113,7 +147,7 @@ export function ProfilePage() {
           </div>
 
           <Field label="Avoids" className="mt-9 lg:mt-0">{profile.avoidColours.join(', ') || 'Nothing'}</Field>
-          <Field label="Lifestyle">{profile.lifestyle || '—'}</Field>
+          <Field label="Lifestyle">{profile.lifestyle && profile.lifestyle !== profile.occupation ? profile.lifestyle : '—'}</Field>
           <Field label="Recommendations"><span className="capitalize">{recommendations || '—'}</span></Field>
         </div>
 
@@ -227,10 +261,12 @@ function TextAction({ children, onClick, hint, danger = false }: { children: Rea
 // ─── Label maps ───────────────────────────────────────────────────────────────
 
 const AGE_LABEL: Record<string, string> = {
+  'under-18': 'Under 18',
+  '18-24': '18–24',
   'under-25': 'Under 25',
-  '25-34': '25 – 34',
-  '35-44': '35 – 44',
-  '45-54': '45 – 54',
+  '25-34': '25–34',
+  '35-44': '35–44',
+  '45-54': '45–54',
   '55+': '55+',
 }
 
@@ -244,11 +280,11 @@ const FREQUENCY_LABEL: Record<string, string> = {
 // Short chip labels ("Work" rather than "Work / Office").
 const OCCASION_LABEL: Record<string, string> = {
   work: 'Work',
-  casual: 'Casual',
-  formal: 'Formal',
-  'date-night': 'Date night',
-  weekend: 'Weekend',
+  casual: 'Everyday',
+  formal: 'Weddings & festive',
+  'date-night': 'Dates',
+  weekend: 'Brunch & cafés',
   travel: 'Travel',
-  gym: 'Active',
-  'special-event': 'Special events',
+  gym: 'Gym',
+  'special-event': 'Parties',
 }

@@ -1,6 +1,7 @@
 // ─── User & Profile ──────────────────────────────────────────────────────────
 
-export type AgeRange = 'under-25' | '25-34' | '35-44' | '45-54' | '55+'
+// 'under-25' is from the old survey; kept so existing profiles still read correctly.
+export type AgeRange = 'under-18' | '18-24' | 'under-25' | '25-34' | '35-44' | '45-54' | '55+'
 
 export type StylePreference =
   | 'classic'
