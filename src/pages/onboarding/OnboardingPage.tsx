@@ -435,7 +435,6 @@ function Step2Age({
       <StepActions
         onNext={() => {
           onChange(ageToRange(age))
-          console.log('[onboarding] age picked', { age, range: ageToRange(age) })
           onNext()
         }}
         canAdvance
