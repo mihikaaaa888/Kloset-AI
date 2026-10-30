@@ -6,7 +6,6 @@ import { clsx } from 'clsx'
 
 import { OnboardingLayout } from './OnboardingLayout'
 import {
-  styleOptions,
   occasionOptions,
   occupationOptions,
   COLOUR_PALETTE,
@@ -54,7 +53,7 @@ const INITIAL_DRAFT: OnboardingDraft = {
   recommendationFrequency: '',
 }
 
-const TOTAL_STEPS = 10
+const TOTAL_STEPS = 9
 
 function profileToDraft(profile: UserProfile): OnboardingDraft {
   return {
@@ -144,12 +143,11 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
       case 2: return draft.ageRange !== ''
       case 3: return draft.occupation !== ''
       case 4: return true // catalogue selection optional
-      case 5: return draft.stylePreferences.length >= 1
-      case 6: return draft.typicalOccasions.length >= 1
-      case 7: return true // colours optional
-      case 8: return true // avoid colours optional
-      case 9: return true // gender optional
-      case 10: return draft.recommendationFrequency !== ''
+      case 5: return draft.typicalOccasions.length >= 1
+      case 6: return true // colours optional
+      case 7: return true // avoid colours optional
+      case 8: return true // gender optional
+      case 9: return draft.recommendationFrequency !== ''
       default: return false
     }
   }
@@ -185,6 +183,7 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
       // No longer asked; an older profile keeps what it had.
       lifestyle: draft.lifestyle.trim(),
       styleItemSelections: draft.styleItemSelections,
+      // No longer asked; an older profile keeps what it had.
       stylePreferences: draft.stylePreferences,
       typicalOccasions: draft.typicalOccasions,
       favouriteColours: draft.favouriteColours,
@@ -250,14 +249,6 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
           />
         )}
         {step === 5 && (
-          <Step5Style
-            selected={draft.stylePreferences}
-            onToggle={(v) => toggleArray('stylePreferences', v)}
-            onNext={goNext}
-            canAdvance={canAdvance()}
-          />
-        )}
-        {step === 6 && (
           <Step6Occasions
             selected={draft.typicalOccasions}
             onToggle={(v) => toggleArray('typicalOccasions', v)}
@@ -265,7 +256,7 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
             canAdvance={canAdvance()}
           />
         )}
-        {step === 7 && (
+        {step === 6 && (
           <StepColours
             title="Colours you love"
             subtitle="Pick all that apply."
@@ -274,7 +265,7 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
             onNext={goNext}
           />
         )}
-        {step === 8 && (
+        {step === 7 && (
           <StepColours
             title="Colours you avoid"
             subtitle="Pick all that apply."
@@ -284,14 +275,14 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
             skipLabel="None"
           />
         )}
-        {step === 9 && (
+        {step === 8 && (
           <Step9Gender
             value={draft.genderStylePreference ?? ''}
             onChange={(v) => update('genderStylePreference', v)}
             onNext={goNext}
           />
         )}
-        {step === 10 && (
+        {step === 9 && (
           <Step10Frequency
             name={draft.name}
             value={draft.recommendationFrequency}
@@ -650,75 +641,6 @@ function Step4Catalogue({
           </button>
         )}
       </div>
-    </div>
-  )
-}
-
-// Step 5 — Style aesthetics (visual cards)
-function Step5Style({
-  selected,
-  onToggle,
-  onNext,
-  canAdvance,
-}: {
-  selected: StylePreference[]
-  onToggle: (v: StylePreference) => void
-  onNext: () => void
-  canAdvance: boolean
-}) {
-  return (
-    <div>
-      <StepHeading
-        eyebrow="Your aesthetic"
-        title="Which styles feel like you?"
-        subtitle="Pick all that apply."
-      />
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {styleOptions.map((opt) => {
-          const isSelected = selected.includes(opt.value)
-          return (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => onToggle(opt.value)}
-              className={clsx(
-                'relative rounded-2xl overflow-hidden aspect-[3/4] transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow',
-                isSelected
-                  ? 'ring-2 ring-butter-yellow ring-offset-2 scale-[0.98]'
-                  : 'hover:scale-[0.97] hover:shadow-medium'
-              )}
-            >
-              <img
-                src={opt.imageUrl}
-                alt={opt.label}
-                referrerPolicy="no-referrer"
-                loading="lazy"
-                className="w-full h-full object-cover object-top"
-                onError={(e) => {
-                  const el = e.currentTarget
-                  el.style.display = 'none'
-                  const parent = el.parentElement
-                  if (parent) parent.style.backgroundColor = opt.accent
-                }}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
-              <div className="absolute inset-x-0 bottom-0 p-3 text-left">
-                <p className="text-white text-sm font-semibold leading-none">{opt.label}</p>
-                <p className="text-white/70 text-2xs mt-0.5">{opt.description}</p>
-              </div>
-              <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-full bg-black/40 backdrop-blur-sm text-white/90 text-[10px] tracking-wide">
-                {opt.brand}
-              </span>
-              {isSelected && (
-                <div className="absolute top-2.5 right-2.5 w-6 h-6 rounded-full bg-dark-purple flex items-center justify-center shadow-soft">
-                  <Check size={13} className="text-butter-yellow" />
-                </div>
-              )}
-            </button>
-          )
-        })}
-      </div>
-      <StepActions onNext={onNext} canAdvance={canAdvance} />
     </div>
   )
 }
