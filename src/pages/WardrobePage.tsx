@@ -199,6 +199,13 @@ export function WardrobePage() {
     setDetailItem((prev) => prev ? { ...prev, timesWorn: updated.timesWorn } : null)
   }
 
+  const handleToggleFavourite = (item: ClothingItem) => {
+    const updated = { ...item, isFavourite: !item.isFavourite, updatedAt: new Date().toISOString() }
+    updateItem(item.id, { isFavourite: updated.isFavourite, updatedAt: updated.updatedAt })
+    if (user) dbUpdateItem(user.id, updated).catch(() => {})
+    setDetailItem((prev) => prev?.id === item.id ? { ...prev, isFavourite: updated.isFavourite } : prev)
+  }
+
   const openAdd = () => {
     setEditItem(undefined)
     setShowAddModal(true)
@@ -375,6 +382,8 @@ export function WardrobePage() {
                   onDelete={(e) => { e.stopPropagation(); handleDelete(item.id) }}
                   deleteLabel={isMainCollection ? `Delete ${item.name}` : `Remove ${item.name} from ${activeCollection?.name ?? 'this Kloset'}`}
                   onCompletePiece={(e) => { e.stopPropagation(); openCompletePiece(item) }}
+                  isFavourite={item.isFavourite}
+                  onFavourite={() => handleToggleFavourite(item)}
                 />
               ))}
               {!completeSelectionMode && <AddItemCard onClick={openAdd} />}
