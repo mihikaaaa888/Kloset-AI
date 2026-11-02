@@ -236,16 +236,21 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
           />
         )}
         {step === 4 && (
-          <Step4Catalogue
-            selected={draft.styleItemSelections}
-            onToggle={(id) => toggleArray('styleItemSelections', id)}
+          <Step9Gender
+            value={draft.genderStylePreference ?? ''}
+            onChange={(v) => update('genderStylePreference', v)}
             onNext={goNext}
           />
         )}
         {step === 5 && (
-          <Step9Gender
-            value={draft.genderStylePreference ?? ''}
-            onChange={(v) => update('genderStylePreference', v)}
+          <Step4Catalogue
+            selected={draft.styleItemSelections}
+            preferredAudience={draft.genderStylePreference === 'masculine'
+              ? 'men'
+              : draft.genderStylePreference === 'feminine'
+                ? 'women'
+                : 'all'}
+            onToggle={(id) => toggleArray('styleItemSelections', id)}
             onNext={goNext}
           />
         )}
@@ -494,15 +499,17 @@ function Step3Occupation({
 // Step 4 — Style Catalogue
 function Step4Catalogue({
   selected,
+  preferredAudience,
   onToggle,
   onNext,
 }: {
   selected: string[]
+  preferredAudience: 'all' | 'women' | 'men'
   onToggle: (id: string) => void
   onNext: () => void
 }) {
   const [activeCategory, setActiveCategory] = useState<string>('all')
-  const [activeAudience, setActiveAudience] = useState<'all' | 'women' | 'men'>('all')
+  const [activeAudience, setActiveAudience] = useState<'all' | 'women' | 'men'>(preferredAudience)
 
   const filtered = CATALOGUE_ITEMS.filter((item) =>
     (activeCategory === 'all' || item.category === activeCategory) &&
