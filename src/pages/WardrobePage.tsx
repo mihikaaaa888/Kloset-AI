@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { Plus, Search, Shirt, Compass, X, ChevronDown, ArrowLeft } from 'lucide-react'
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Plus, Search, Shirt, Compass, X, ChevronDown } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { clsx } from 'clsx'
 
 import { ClothingCard } from '@/components/wardrobe/ClothingCard'
@@ -26,9 +26,7 @@ import type { ClothingItem, ClothingCategory } from '@/types'
 type KlosetView = 'pieces' | 'build' | 'outfits'
 
 export function WardrobePage() {
-  const location = useLocation()
   const navigate = useNavigate()
-  const showLandingBack = (location.state as { fromBuildMyKloset?: boolean } | null)?.fromBuildMyKloset === true
   const profile = useUserStore((s) => s.profile)
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -48,8 +46,10 @@ export function WardrobePage() {
   const [showMainPicker, setShowMainPicker] = useState(false)
   const [mainPickerIds, setMainPickerIds] = useState<string[]>([])
   const klosetMenuRef = useRef<HTMLDivElement>(null)
+  const addMenuRef = useRef<HTMLDivElement>(null)
 
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showAddMenu, setShowAddMenu] = useState(false)
   const [editItem, setEditItem] = useState<ClothingItem | undefined>()
   const [detailItem, setDetailItem] = useState<ClothingItem | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -70,6 +70,20 @@ export function WardrobePage() {
     document.addEventListener('pointerdown', closeOnOutsideClick)
     return () => document.removeEventListener('pointerdown', closeOnOutsideClick)
   }, [showKlosetMenu])
+
+  useEffect(() => {
+    if (!showAddMenu) return
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (event.target instanceof Node && !addMenuRef.current?.contains(event.target)) setShowAddMenu(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setShowAddMenu(false) }
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [showAddMenu])
 
   useEffect(() => {
     if (!completeSelectionMode) return
@@ -240,7 +254,6 @@ export function WardrobePage() {
         ) : <>
         <div className="flex min-h-14 items-center justify-between gap-3 pb-4 pt-2">
           <div className="flex min-w-0 items-center gap-2">
-          {showLandingBack && <button type="button" onClick={() => navigate('/')} aria-label="Back to home" className="inline-flex h-10 shrink-0 items-center gap-1.5 px-1 text-sm text-text-muted transition-colors hover:text-text-primary md:hidden"><ArrowLeft size={18} strokeWidth={1.5} /><span>Back</span></button>}
           <div ref={klosetMenuRef} className="relative min-w-0">
             <button
               type="button"
@@ -273,7 +286,13 @@ export function WardrobePage() {
             <button onClick={() => setShowSearch((visible) => !visible)} aria-pressed={showSearch} aria-label="Search wardrobe" className="flex h-10 w-10 items-center justify-center text-text-primary transition-colors hover:bg-text-primary/5">
               {showSearch ? <X size={18} strokeWidth={1.4} /> : <Search size={18} strokeWidth={1.4} />}
             </button>
-            <button onClick={openAdd} className="inline-flex h-9 sm:h-10 items-center gap-1.5 bg-text-primary px-2.5 sm:px-5 text-2xs font-medium uppercase tracking-widest text-warm-cream transition-colors hover:bg-text-primary/90"><Plus size={14} strokeWidth={1.5} /> <span className="hidden sm:inline">Add piece</span><span className="sm:hidden">Add</span></button>
+            <div ref={addMenuRef} className="relative">
+              <button type="button" aria-haspopup="menu" aria-expanded={showAddMenu} onClick={() => setShowAddMenu((visible) => !visible)} className="inline-flex h-9 sm:h-10 items-center gap-1.5 bg-text-primary px-2.5 sm:px-5 text-2xs font-medium uppercase tracking-widest text-warm-cream transition-colors hover:bg-text-primary/90"><Plus size={14} strokeWidth={1.5} /> Add <ChevronDown size={13} /></button>
+              {showAddMenu && <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-48 border border-text-primary/10 bg-surface p-1 shadow-lifted">
+                <button role="menuitem" onClick={() => { setShowAddMenu(false); setView('outfits') }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Outfit</button>
+                <button role="menuitem" onClick={() => { setShowAddMenu(false); openAdd() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Upload item</button>
+              </div>}
+            </div>
           </div>}
         </div>
 
@@ -286,7 +305,7 @@ export function WardrobePage() {
         </div>}
 
         {/* Two primary views; Build stays available from outfit creation. */}
-        <div role="tablist" aria-label="My Kloset sections" className="mb-4 hidden gap-8 border-b border-text-primary/10 md:flex">
+        <div role="tablist" aria-label="My Kloset sections" className="mb-4 flex gap-6 border-b border-text-primary/10 sm:gap-8">
           {([['pieces', 'Pieces'], ['outfits', 'Outfits']] as const).map(([value, label]) => (
             <button
               key={value}
@@ -294,7 +313,7 @@ export function WardrobePage() {
               aria-selected={view === value}
               onClick={() => setView(value)}
               className={clsx(
-                'relative -mb-px pt-3 pb-3 text-xs uppercase tracking-widest transition-colors',
+                'relative -mb-px pt-3 pb-3 text-[10px] sm:text-xs uppercase tracking-widest transition-colors',
                 view === value
                   ? 'text-text-primary font-semibold after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-text-primary'
                   : 'text-text-muted hover:text-text-primary'
@@ -366,14 +385,6 @@ export function WardrobePage() {
         </>}
         </>}
       </div>
-
-      {view !== 'build' && <nav aria-label="Kloset navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-text-primary/10 bg-surface/95 px-8 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 backdrop-blur md:hidden">
-        <div className="mx-auto flex max-w-sm items-center justify-around">
-          <button onClick={() => setView('pieces')} aria-current={view === 'pieces' ? 'page' : undefined} className={clsx('min-w-20 py-1 text-xs transition-colors', view === 'pieces' ? 'font-medium text-text-primary' : 'text-text-muted')}>Pieces</button>
-          <button onClick={openAdd} aria-label="Add a piece" className="flex h-11 w-11 items-center justify-center rounded-full bg-text-primary text-warm-cream shadow-soft"><Plus size={20} /></button>
-          <button onClick={() => setView('outfits')} aria-current={view === 'outfits' ? 'page' : undefined} className={clsx('min-w-20 py-1 text-xs transition-colors', view === 'outfits' ? 'font-medium text-text-primary' : 'text-text-muted')}>Outfits</button>
-        </div>
-      </nav>}
 
       <AddItemModal
         open={showAddModal}
