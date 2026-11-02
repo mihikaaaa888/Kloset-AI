@@ -1,6 +1,6 @@
 import { apiUrl } from '@/lib/apiUrl'
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent } from 'react'
-import { ArrowUpToLine, Check, Minus, Plus, RotateCcw, RotateCw, Search, Trash2, X } from 'lucide-react'
+import { ArrowLeft, ArrowUpToLine, Minus, MoreHorizontal, Palette, Plus, RotateCcw, RotateCw, Search, Share2, Trash2, Undo2, X } from 'lucide-react'
 import { clsx } from 'clsx'
 
 import { useItemImage } from '@/hooks/useItemImage'
@@ -21,7 +21,7 @@ import type { ClothingCategory, ClothingItem, Occasion, Outfit, OutfitItem } fro
 type Source = BoardPiece['source']
 
 const SOURCES: { id: Source; label: string }[] = [
-  { id: 'kloset', label: 'My Kloset' },
+  { id: 'kloset', label: 'Closet' },
   { id: 'shop', label: 'Shop' },
   { id: 'inspiration', label: 'Inspiration' },
 ]
@@ -54,6 +54,7 @@ interface Candidate {
   source: Source
   name: string
   category: ClothingCategory
+  subcategory?: string
   imageUrl: string | null
   colour: string[]
   catalogId?: string
@@ -92,16 +93,23 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n
  * A free-form cork board: pin pieces from your Kloset, the shop, or inspiration
  * photos, then drag, resize and tilt them into an outfit.
  */
-export function BuildBoard({ onSaved }: { onSaved: () => void }) {
-  const wardrobe = useWardrobeStore((s) => s.items)
+export function BuildBoard({ onSaved, onBack, onAddPiece, onStyleMe, availableItems }: { onSaved: () => void; onBack: () => void; onAddPiece: () => void; onStyleMe: () => void; availableItems?: ClothingItem[] }) {
+  const allWardrobe = useWardrobeStore((s) => s.items)
+  const wardrobe = availableItems ?? allWardrobe
   const saveOutfit = useOutfitStore((s) => s.saveOutfit)
   const { pieces: storedPieces, setPieces: storePieces } = useBoardStore()
 
   // Local copy so dragging doesn't write to localStorage on every frame; committed on release.
   const [pieces, setPieces] = useState<BoardPiece[]>(storedPieces)
+  const [hasPinnedPiece, setHasPinnedPiece] = useState(storedPieces.length > 0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [dropActive, setDropActive] = useState(false)
+  const [outfitTitle, setOutfitTitle] = useState('Untitled outfit')
   const [saving, setSaving] = useState(false)
+  const [saveOccasion, setSaveOccasion] = useState<Occasion>('casual')
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [background, setBackground] = useState(0)
+  const undoStack = useRef<BoardPiece[][]>([])
   const boardRef = useRef<HTMLDivElement>(null)
   const gesture = useRef<{
     id: string
@@ -118,9 +126,19 @@ export function BuildBoard({ onSaved }: { onSaved: () => void }) {
   }, [storedPieces])
 
   const commit = useCallback((next: BoardPiece[]) => {
+    undoStack.current.push(pieces)
     setPieces(next)
     storePieces(next)
-  }, [storePieces])
+  }, [pieces, storePieces])
+
+  const undo = () => {
+    const previous = undoStack.current.pop()
+    if (previous) {
+      setPieces(previous)
+      storePieces(previous)
+      setSelectedId(null)
+    }
+  }
 
   const wardrobeById = useMemo(() => new Map(wardrobe.map((i) => [i.id, i])), [wardrobe])
   const selected = pieces.find((p) => p.id === selectedId) ?? null
@@ -145,6 +163,7 @@ export function BuildBoard({ onSaved }: { onSaved: () => void }) {
     }
     console.log('[build] pinned piece', { source: c.source, itemId: c.itemId })
     commit([...pieces, piece])
+    setHasPinnedPiece(true)
     setSelectedId(piece.id)
   }
 
@@ -182,6 +201,7 @@ export function BuildBoard({ onSaved }: { onSaved: () => void }) {
     e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
     setSelectedId(piece.id)
+    undoStack.current.push(pieces)
     const raised = piece.z < topZ ? { ...piece, z: topZ + 1 } : piece
     if (raised !== piece) updatePiece(piece.id, { z: raised.z }, false)
     gesture.current = { id: piece.id, mode, startX: e.clientX, startY: e.clientY, piece: raised, rect: boardRef.current.getBoundingClientRect() }
@@ -242,7 +262,7 @@ export function BuildBoard({ onSaved }: { onSaved: () => void }) {
   }
 
   // ── Save as outfit ──
-  const handleSave = (name: string, occasion: Occasion) => {
+  const handleSave = (occasion: Occasion) => {
     const seen = new Set<string>()
     const items: OutfitItem[] = []
     for (const p of [...pieces].sort((a, b) => a.z - b.z)) {
@@ -259,7 +279,7 @@ export function BuildBoard({ onSaved }: { onSaved: () => void }) {
     const now = new Date().toISOString()
     const outfit: Outfit = {
       id: crypto.randomUUID(),
-      name: name.trim() || `${OCCASIONS.find((o) => o.value === occasion)?.label} look`,
+      name: outfitTitle.trim() || 'Untitled outfit',
       items,
       occasion,
       stylingNotes: '',
@@ -275,36 +295,36 @@ export function BuildBoard({ onSaved }: { onSaved: () => void }) {
   }
 
   return (
-    <div className="grid lg:grid-cols-[1fr_340px] gap-6 lg:gap-8">
+    <div className="space-y-5">
+      <header className="grid grid-cols-[auto_minmax(64px,1fr)_auto] items-center gap-2 border-b border-text-primary/10 pb-4 sm:grid-cols-[1fr_auto_1fr]">
+        <button onClick={onBack} className="inline-flex min-h-10 items-center gap-1 justify-self-start text-xs text-text-muted hover:text-text-primary sm:gap-2 sm:text-sm" aria-label="Back to outfits">
+          <ArrowLeft size={17} strokeWidth={1.5} /><span>Outfits</span>
+        </button>
+        <input aria-label="Outfit title" value={outfitTitle} onChange={(event) => setOutfitTitle(event.target.value)} maxLength={60} className="w-full min-w-0 max-w-sm border-b border-transparent bg-transparent px-1 py-2 text-center font-display text-xl text-text-primary focus:border-text-primary/25 focus:outline-none sm:text-2xl" />
+        <div className="flex items-center justify-self-end gap-2">
+          <button onClick={onStyleMe} className="h-10 border border-text-primary/25 px-2 text-xs text-text-primary transition-colors hover:bg-text-primary/5 sm:px-4">Style me</button>
+          <button onClick={() => saving ? handleSave(saveOccasion) : setSaving(true)} className="h-10 bg-text-primary px-4 text-xs font-medium text-warm-cream transition-colors hover:bg-text-primary/90 sm:px-5">Save</button>
+        </div>
+      </header>
+
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-8">
       {/* ── Board column ── */}
       <div className="min-w-0">
-        <div className="flex items-center justify-between gap-3 mb-3 min-h-11">
-          <p className="text-2xs uppercase tracking-widest text-text-muted">
-            {pieces.length === 0 ? 'Your board' : `${pieces.length} ${pieces.length === 1 ? 'piece' : 'pieces'} pinned`}
-          </p>
-          {pieces.length > 0 && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => removeWithUndo(pieces, 'Board cleared')}
-                className="h-11 px-4 text-2xs uppercase tracking-widest text-text-muted hover:text-text-primary transition-colors"
-              >
-                Clear
-              </button>
-              <button
-                onClick={() => setSaving(true)}
-                className="h-11 px-5 flex items-center gap-2 bg-text-primary text-warm-cream text-xs font-medium uppercase tracking-widest hover:bg-text-primary/90 transition-colors"
-              >
-                <Check size={14} strokeWidth={1.5} />
-                Save<span className="hidden sm:inline"> as outfit</span>
-              </button>
-            </div>
-          )}
-        </div>
-
-        {saving && <SavePanel onCancel={() => setSaving(false)} onSave={handleSave} />}
+        {saving && <SavePanel occasion={saveOccasion} onOccasionChange={setSaveOccasion} />}
 
         {/* Wooden frame around the cork */}
-        <div className="p-2 sm:p-3 bg-[#7A5A3C] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.25),0_10px_30px_rgba(36,27,41,0.18)]">
+        <div className="relative p-2 sm:p-3 bg-[#7A5A3C] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.25),0_10px_30px_rgba(36,27,41,0.18)]">
+          <div className="absolute right-3 top-3 z-30 flex items-center gap-1 bg-warm-cream/90 px-1 backdrop-blur-sm">
+            <ToolButton label="Undo" onClick={undo} disabled={undoStack.current.length === 0}><Undo2 size={16} strokeWidth={1.4} /></ToolButton>
+            <ToolButton label="Clear board" onClick={() => { if (pieces.length) { commit([]); setSelectedId(null) } }} disabled={pieces.length === 0}><Trash2 size={16} strokeWidth={1.4} /></ToolButton>
+            <div className="relative">
+              <ToolButton label="More board options" onClick={() => setMenuOpen((open) => !open)}><MoreHorizontal size={18} strokeWidth={1.4} /></ToolButton>
+              {menuOpen && <div className="absolute right-0 top-11 z-40 min-w-40 border border-text-primary/10 bg-surface p-1 shadow-lg">
+                <button onClick={async () => { setMenuOpen(false); const text = `${outfitTitle}: ${pieces.map((piece) => piece.name).join(', ')}`; try { if (navigator.share) await navigator.share({ title: outfitTitle, text }); else await navigator.clipboard.writeText(text) } catch { /* Share can be dismissed by the user. */ } }} className="flex h-10 w-full items-center gap-2 px-3 text-left text-xs text-text-primary hover:bg-text-primary/5"><Share2 size={15} />Share</button>
+                <button onClick={() => { setBackground((current) => (current + 1) % 3); setMenuOpen(false) }} className="flex h-10 w-full items-center gap-2 px-3 text-left text-xs text-text-primary hover:bg-text-primary/5"><Palette size={15} />Background</button>
+              </div>}
+            </div>
+          </div>
           <div
             ref={boardRef}
             onPointerDown={() => setSelectedId(null)}
@@ -316,10 +336,12 @@ export function BuildBoard({ onSaved }: { onSaved: () => void }) {
             onDrop={onDrop}
             className={clsx(
               'cork relative overflow-hidden aspect-[4/5] sm:aspect-[4/3] lg:aspect-auto lg:h-[72vh] lg:min-h-[540px] select-none',
+              background === 1 && '[background-color:#d9cfbb]',
+              background === 2 && '[background-color:#b9c5b1]',
               dropActive && 'outline outline-2 outline-offset-[-6px] outline-warm-cream/80'
             )}
           >
-            {pieces.length === 0 && (
+            {pieces.length === 0 && !hasPinnedPiece && (
               <div className="absolute inset-0 flex items-center justify-center p-8 pointer-events-none">
                 <div className="bg-warm-cream px-6 py-5 max-w-xs text-center rotate-[-1.5deg] shadow-[0_6px_18px_rgba(0,0,0,0.25)]">
                   <p className="font-display text-2xl text-text-primary leading-tight">Pin pieces here</p>
@@ -346,7 +368,7 @@ export function BuildBoard({ onSaved }: { onSaved: () => void }) {
         </div>
 
         {/* Controls for the selected piece */}
-        <div className="h-14 mt-3 flex items-center justify-center">
+        <div className="mt-3 flex min-h-14 items-center justify-center">
           {selected ? (
             <div className="flex items-center gap-1 bg-warm-cream ring-1 ring-text-primary/15 px-1.5 animate-fade-in">
               <span className="hidden sm:block max-w-[180px] truncate px-2 text-xs text-text-primary">{selected.name}</span>
@@ -357,26 +379,27 @@ export function BuildBoard({ onSaved }: { onSaved: () => void }) {
               <ToolButton label="Bring to front" onClick={() => updatePiece(selected.id, { z: topZ + 1 })}><ArrowUpToLine size={16} strokeWidth={1.25} /></ToolButton>
               <ToolButton label="Remove" onClick={() => removePiece(selected.id)} danger><Trash2 size={16} strokeWidth={1.25} /></ToolButton>
             </div>
-          ) : pieces.length > 0 ? (
-            <p className="text-xs text-text-muted">Tap a piece to resize, tilt or remove it.</p>
           ) : null}
         </div>
       </div>
 
       {/* ── Drawer ── */}
-      <PieceDrawer wardrobe={wardrobe} onPick={(c) => addPiece(c)} />
+      <PieceDrawer wardrobe={wardrobe} onPick={(c) => addPiece(c)} onAddPiece={onAddPiece} />
+    </div>
     </div>
   )
 }
 
-function ToolButton({ label, onClick, danger, children }: { label: string; onClick: () => void; danger?: boolean; children: React.ReactNode }) {
+function ToolButton({ label, onClick, danger, disabled, children }: { label: string; onClick: () => void; danger?: boolean; disabled?: boolean; children: React.ReactNode }) {
   return (
     <button
       onClick={onClick}
       aria-label={label}
       title={label}
+      disabled={disabled}
       className={clsx(
         'w-11 h-11 flex items-center justify-center text-text-primary transition-colors',
+        disabled && 'cursor-not-allowed opacity-35',
         danger ? 'hover:text-red-700' : 'hover:bg-text-primary/5'
       )}
     >
@@ -458,21 +481,21 @@ function PinnedPiece({
 
 // ─── Drawer ───────────────────────────────────────────────────────────────────
 
-function PieceDrawer({ wardrobe, onPick }: { wardrobe: ClothingItem[]; onPick: (c: Candidate) => void }) {
+function PieceDrawer({ wardrobe, onPick, onAddPiece }: { wardrobe: ClothingItem[]; onPick: (c: Candidate) => void; onAddPiece: () => void }) {
   const profile = useUserStore((s) => s.profile)
   const [source, setSource] = useState<Source>(wardrobe.length > 0 ? 'kloset' : 'shop')
   const [filter, setFilter] = useState<Filter>('all')
+  const [search, setSearch] = useState('')
 
-  const candidates = useMemo<Candidate[]>(() => {
+  const sourceCandidates = useMemo<Candidate[]>(() => {
     if (source === 'kloset') {
-      return wardrobe
-        .filter((i) => matchesFilter(filter, i.category, i.name, i.subcategory))
-        .map((i) => ({
+      return wardrobe.map((i) => ({
           key: i.id,
           itemId: i.id,
           source: 'kloset',
           name: i.name,
           category: i.category,
+          subcategory: i.subcategory,
           imageUrl: i.imageUrl,
           colour: i.colour,
           item: i,
@@ -480,13 +503,13 @@ function PieceDrawer({ wardrobe, onPick }: { wardrobe: ClothingItem[]; onPick: (
     }
     if (source === 'shop') {
       return rankForUser(CATALOG_ITEMS, profile, wardrobe)
-        .filter((c) => matchesFilter(filter, c.category, c.name, c.subcategory))
         .map((c) => ({
           key: c.id,
           itemId: c.id,
           source: 'shop',
           name: c.name,
           category: c.category,
+          subcategory: c.subcategory,
           imageUrl: c.imageUrl,
           colour: c.colours,
           catalogId: c.id,
@@ -494,17 +517,24 @@ function PieceDrawer({ wardrobe, onPick }: { wardrobe: ClothingItem[]; onPick: (
         }))
     }
     return []
-  }, [source, filter, wardrobe, profile])
+  }, [source, wardrobe, profile])
+
+  const availableFilters = useMemo(() => source === 'inspiration'
+    ? FILTERS
+    : FILTERS.filter((f) => f.id === 'all' ? sourceCandidates.length > 0 : sourceCandidates.some((candidate) => matchesFilter(f.id, candidate.category, candidate.name, candidate.subcategory))), [source, sourceCandidates])
+  const visibleCandidates = useMemo(() => sourceCandidates
+    .filter((candidate) => matchesFilter(filter, candidate.category, candidate.name, candidate.subcategory))
+    .filter((candidate) => !search.trim() || `${candidate.name} ${candidate.category} ${candidate.subcategory ?? ''} ${candidate.colour.join(' ')}`.toLowerCase().includes(search.trim().toLowerCase())), [sourceCandidates, filter, search])
 
   return (
-    <aside className="lg:sticky lg:top-24 self-start min-w-0 lg:h-[calc(72vh+4.5rem)] lg:min-h-[600px] flex flex-col border-t lg:border-t-0 lg:border-l border-text-primary/10 pt-6 lg:pt-0 lg:pl-6">
+    <aside className="flex min-w-0 flex-col border-t border-text-primary/10 pt-5 lg:sticky lg:top-24 lg:h-[calc(72vh+4.5rem)] lg:min-h-[600px] lg:border-l lg:border-t-0 lg:pt-0 lg:pl-6">
       <div role="tablist" aria-label="Pieces from" className="flex gap-6 border-b border-text-primary/10">
         {SOURCES.map((s) => (
           <button
             key={s.id}
             role="tab"
             aria-selected={source === s.id}
-            onClick={() => setSource(s.id)}
+            onClick={() => { setSource(s.id); setFilter('all'); setSearch('') }}
             className={clsx(
               'relative -mb-px pb-3 text-2xs uppercase tracking-widest transition-colors',
               source === s.id
@@ -517,29 +547,36 @@ function PieceDrawer({ wardrobe, onPick }: { wardrobe: ClothingItem[]; onPick: (
         ))}
       </div>
 
-      <div className="flex gap-4 overflow-x-auto no-scrollbar py-3.5">
-        {FILTERS.map((f) => (
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-3">
+        {availableFilters.map((f) => (
           <button
             key={f.id}
             onClick={() => setFilter(f.id)}
-            className={clsx('text-tab flex-shrink-0 !text-2xs', filter === f.id && 'text-tab-active')}
+            className={clsx('shrink-0 rounded-full border px-3 py-1.5 text-2xs transition-colors', filter === f.id ? 'border-text-primary bg-text-primary text-warm-cream' : 'border-text-primary/15 text-text-muted hover:text-text-primary')}
           >
             {f.label}
           </button>
         ))}
+        <button onClick={onAddPiece} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-primary hover:bg-text-primary/5" aria-label="Add a piece to your closet" title="Add a piece"><Plus size={17} /></button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto -mr-2 pr-2 max-h-[60vh] lg:max-h-none">
+      {source !== 'inspiration' && <div className="relative mb-3">
+        <Search size={15} strokeWidth={1.25} className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-text-muted" />
+        <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${source === 'kloset' ? 'closet' : 'shop'}…`} aria-label={`Search ${source === 'kloset' ? 'closet' : 'shop'} pieces`} className="w-full border-b border-text-primary/20 bg-transparent py-2 pl-6 pr-7 text-sm text-text-primary placeholder:text-text-muted focus:border-text-primary focus:outline-none" />
+        {search && <button onClick={() => setSearch('')} aria-label="Clear search" className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-text-muted hover:text-text-primary"><X size={14} /></button>}
+      </div>}
+
+      <div className="max-h-[55vh] min-h-0 flex-1 overflow-y-auto pr-1 lg:-mr-2 lg:pr-2 lg:max-h-none">
         {source === 'inspiration' ? (
           <InspirationResults filter={filter} onPick={onPick} />
-        ) : candidates.length === 0 ? (
+        ) : visibleCandidates.length === 0 ? (
           <p className="text-sm text-text-muted py-6">
             {source === 'kloset' && wardrobe.length === 0
               ? 'Your Kloset is empty. Pull from the shop or inspiration instead.'
               : 'Nothing here in this category.'}
           </p>
         ) : (
-          <CandidateGrid candidates={candidates} onPick={onPick} />
+          <CandidateGrid candidates={visibleCandidates} onPick={onPick} />
         )}
       </div>
       <p className="hidden lg:block text-2xs text-text-muted pt-3">Tap to pin, or drag onto the board.</p>
@@ -674,44 +711,13 @@ function InspirationResults({ filter, onPick }: { filter: Filter; onPick: (c: Ca
 
 // ─── Save panel ───────────────────────────────────────────────────────────────
 
-function SavePanel({ onCancel, onSave }: { onCancel: () => void; onSave: (name: string, occasion: Occasion) => void }) {
-  const [name, setName] = useState('')
-  const [occasion, setOccasion] = useState<Occasion>('casual')
-
+function SavePanel({ occasion, onOccasionChange }: { occasion: Occasion; onOccasionChange: (occasion: Occasion) => void }) {
   return (
-    <form
-      onSubmit={(e) => { e.preventDefault(); onSave(name, occasion) }}
-      className="mb-4 p-4 sm:p-5 ring-1 ring-inset ring-text-primary/15 bg-warm-cream flex flex-col sm:flex-row sm:items-end gap-4 animate-fade-up"
-    >
-      <label className="flex-1 min-w-0">
-        <span className="text-2xs uppercase tracking-widest text-text-muted">Outfit name</span>
-        <input
-          autoFocus
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Sunday brunch"
-          maxLength={60}
-          className="mt-1 w-full bg-transparent border-b border-text-primary/25 focus:border-text-primary py-1.5 font-display text-xl text-text-primary placeholder:text-text-muted/50 focus:outline-none"
-        />
-      </label>
-      <label>
-        <span className="text-2xs uppercase tracking-widest text-text-muted">Occasion</span>
-        <select
-          value={occasion}
-          onChange={(e) => setOccasion(e.target.value as Occasion)}
-          className="mt-1 block w-full sm:w-44 h-11 bg-transparent border-b border-text-primary/25 text-base sm:text-sm text-text-primary focus:outline-none focus:border-text-primary"
-        >
-          {OCCASIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-      </label>
-      <div className="flex gap-2">
-        <button type="button" onClick={onCancel} className="h-11 px-4 text-2xs uppercase tracking-widest text-text-muted hover:text-text-primary">
-          Cancel
-        </button>
-        <button type="submit" className="h-11 px-6 bg-text-primary text-warm-cream text-xs font-medium uppercase tracking-widest hover:bg-text-primary/90">
-          Save
-        </button>
-      </div>
-    </form>
+    <label className="mb-3 flex items-center gap-3 text-xs text-text-muted">
+      <span>Occasion</span>
+      <select value={occasion} onChange={(event) => onOccasionChange(event.target.value as Occasion)} className="h-9 min-w-0 border-b border-text-primary/20 bg-transparent px-1 text-sm text-text-primary focus:border-text-primary focus:outline-none">
+        {OCCASIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </label>
   )
 }

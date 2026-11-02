@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, Shirt, Check } from 'lucide-react'
+import { ArrowLeft, MessageCircle, Shirt, Check } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { clsx } from 'clsx'
 
@@ -44,6 +44,7 @@ export function StylistPage() {
   const [attempt, setAttempt] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [isSaved, setIsSaved] = useState(false)
+  const [formStep, setFormStep] = useState(1)
 
   // If navigated with a specific item, skip item-pick and go to form
   useEffect(() => {
@@ -62,6 +63,7 @@ export function StylistPage() {
     setError(null)
     setPinnedItem(null)
     setAttempt(0)
+    setFormStep(1)
     if (m === 'chat') setPageState('mode-select')
     else if (m === 'item') setPageState('item-pick')
     else setPageState('form')
@@ -137,23 +139,21 @@ export function StylistPage() {
       )}>
 
         {/* ── Mode tabs ── */}
-        <nav className="flex justify-center gap-8 sm:gap-12 mb-10" aria-label="Stylist mode">
-          {([
-            { id: 'wardrobe', label: 'Style My Wardrobe', short: 'Wardrobe' },
-            { id: 'item', label: 'Style an Item', short: 'Item' },
-            { id: 'chat', label: 'Chat with Kaia', short: 'Chat' },
-          ] as { id: StylistMode; label: string; short: string }[]).map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => selectMode(tab.id)}
-              aria-current={mode === tab.id ? 'page' : undefined}
-              className={clsx('text-tab sm:text-sm', mode === tab.id && 'text-tab-active')}
-            >
-              <span className="hidden sm:inline">{tab.label}</span>
-              <span className="sm:hidden">{tab.short}</span>
-            </button>
-          ))}
-        </nav>
+        <div className="mb-8 flex items-start justify-between gap-4">
+          <nav className="flex min-w-0 items-center gap-6 overflow-x-auto" role="tablist" aria-label="Stylist mode">
+            {([
+              { id: 'wardrobe', label: 'Style my wardrobe' },
+              { id: 'item', label: 'Style an item' },
+            ] as { id: 'wardrobe' | 'item'; label: string }[]).map((tab) => (
+              <button key={tab.id} role="tab" aria-selected={mode === tab.id} onClick={() => selectMode(tab.id)} className={clsx('relative shrink-0 pb-2 text-sm transition-colors sm:text-base', mode === tab.id ? 'font-medium text-text-primary after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-text-primary' : 'text-text-muted hover:text-text-primary')}>
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+          <button type="button" onClick={() => selectMode('chat')} aria-label="Ask Kaia" title="Ask Kaia" className={clsx('flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-text-primary/5 hover:text-text-primary', mode === 'chat' && 'bg-text-primary/8 text-text-primary')}>
+            <MessageCircle size={18} strokeWidth={1.7} />
+          </button>
+        </div>
 
         {/* ── Mode: Chat ── */}
         {mode === 'chat' && <StylistChat />}
@@ -176,20 +176,10 @@ export function StylistPage() {
                   <PinnedItemBanner item={pinnedItem} onClear={() => { setPinnedItem(null); setPageState('item-pick') }} />
                 ) : (
                   <>
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-2xl bg-dark-purple flex items-center justify-center">
-                        <HangerIcon size={18} className="text-butter-yellow" />
-                      </div>
-                      <p className="text-butter-yellow text-xs font-medium uppercase tracking-ultra-wide">Stylist</p>
-                    </div>
                     <h1 className="font-display text-3xl lg:text-4xl font-medium text-text-primary leading-tight">
                       {mode === 'item' ? 'Pick a piece to style.' : 'What are we styling today?'}
                     </h1>
-                    <p className="text-text-muted text-base mt-2 leading-relaxed">
-                      {mode === 'item'
-                        ? 'Select an item from your Kloset and we\'ll build an outfit around it.'
-                        : 'Answer three questions and your stylist will build an outfit from your Kloset.'}
-                    </p>
+                    {(mode === 'item' || formStep === 1) && <p className="text-text-muted text-sm mt-2 leading-relaxed">{mode === 'item' ? 'Select an item from your Kloset and we\'ll build an outfit around it.' : 'Two quick questions'}</p>}
                   </>
                 )}
               </div>
@@ -216,7 +206,7 @@ export function StylistPage() {
 
             {/* Style form */}
             {!isEmpty && pageState === 'form' && (mode === 'wardrobe' || (mode === 'item' && pinnedItem)) && (
-              <StyleRequestForm onSubmit={handleFormSubmit} isLoading={false} />
+              <StyleRequestForm onSubmit={handleFormSubmit} isLoading={false} onStepChange={setFormStep} />
             )}
 
             {/* Loading */}

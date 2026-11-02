@@ -14,7 +14,6 @@ const CLOTHING: Record<string, { category: ClothingCategory; name: string }> = {
   'hat': { category: 'accessories', name: 'Hat' },
   'sunglasses': { category: 'accessories', name: 'Sunglasses' },
 }
-const FACE_LABELS = new Set(['face', 'hair', 'sunglasses'])
 const HUMAN_LABELS = new Set(['face', 'hair', 'sunglasses', 'left-arm', 'right-arm', 'arms', 'left-leg', 'right-leg', 'legs', 'torso', 'hands', 'feet'])
 
 interface SegmentationMask {
@@ -31,8 +30,6 @@ interface ParsedGarment {
 export interface ParsedPhoto {
   garments: ParsedGarment[]
   containsPerson: boolean
-  /** Background-removed fallback for standalone product photos, with face pixels erased. */
-  safeFallback: Blob
 }
 
 type Segmenter = (image: string) => Promise<SegmentationMask[]>
@@ -62,10 +59,6 @@ function decodeImage(blob: Blob): Promise<HTMLImageElement> {
     image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read uploaded image.')) }
     image.src = url
   })
-}
-
-function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
-  return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Could not create garment image.')), 'image/png'))
 }
 
 function maskAt(mask: SegmentationMask['mask'], x: number, y: number, width: number, height: number): boolean {
@@ -145,7 +138,7 @@ function keepPersonAttachedComponents(
   return { ...garment, mask: { ...garment.mask, data: filtered } }
 }
 
-/** Segment locally; original photo pixels never leave the browser. */
+/** Segment locally and save rectangular crops from the untouched source photo. */
 export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
   const image = await decodeImage(source)
   const sourceUrl = URL.createObjectURL(source)
@@ -196,33 +189,14 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
     const right = Math.min(inputWidth, maxX + padX + 1), bottom = Math.min(inputHeight, maxY + padY + 1)
     const crop = document.createElement('canvas')
     crop.width = right - left; crop.height = bottom - top
-    const context = crop.getContext('2d', { willReadFrequently: true })!
+    const context = crop.getContext('2d')!
+    // Keep every original pixel in the crop, including the background. The
+    // segmentation mask is used only to locate and label each piece.
     context.drawImage(image, left, top, crop.width, crop.height, 0, 0, crop.width, crop.height)
-    const imagePixels = context.getImageData(0, 0, crop.width, crop.height)
-    for (let y = 0; y < crop.height; y++) for (let x = 0; x < crop.width; x++) {
-      const modelX = left + Math.min(right - left - 1, Math.floor(x / crop.width * (right - left)))
-      const modelY = top + Math.min(bottom - top - 1, Math.floor(y / crop.height * (bottom - top)))
-      if (!group.masks.some(({ mask }) => maskAt(mask, modelX, modelY, inputWidth, inputHeight))) {
-        imagePixels.data[(y * crop.width + x) * 4 + 3] = 0
-      }
-    }
-    context.putImageData(imagePixels, 0, 0)
-    garments.push({ blob: await canvasBlob(crop), category: group.category, name: group.name })
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      crop.toBlob((result) => result ? resolve(result) : reject(new Error('Could not create item crop.')), 'image/png')
+    })
+    garments.push({ blob, category: group.category, name: group.name })
   }
-
-  // Product-photo fallback retains the background remover, but first clears
-  // predicted face, hair, and glasses pixels from the pixels it will process.
-  const faceMasks = [...FACE_LABELS].map((label) => byLabel.get(label)).filter((mask): mask is SegmentationMask => !!mask)
-  const safe = document.createElement('canvas')
-  safe.width = image.naturalWidth; safe.height = image.naturalHeight
-  const safeContext = safe.getContext('2d', { willReadFrequently: true })!
-  safeContext.drawImage(image, 0, 0)
-  const pixels = safeContext.getImageData(0, 0, safe.width, safe.height)
-  for (let y = 0; y < safe.height; y++) for (let x = 0; x < safe.width; x++) {
-    if (faceMasks.some(({ mask }) => maskAt(mask, x, y, safe.width, safe.height))) {
-      pixels.data[(y * safe.width + x) * 4 + 3] = 0
-    }
-  }
-  safeContext.putImageData(pixels, 0, 0)
-  return { garments, containsPerson, safeFallback: await canvasBlob(safe) }
+  return { garments, containsPerson }
 }

@@ -6,6 +6,7 @@ import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useItemImage } from '@/hooks/useItemImage'
 import type { ClothingItem } from '@/types'
 import { generateOutfit, type WeatherCondition } from '@/lib/stylist'
+import { getLocalWeather } from '@/lib/weather'
 
 export function HomePage() {
   const navigate = useNavigate()
@@ -57,14 +58,6 @@ export function HomePage() {
 
 type CurrentWeather = { temperature: number; label: string; condition: WeatherCondition; code: number; dateKey: string }
 
-function dailyWeatherCondition(temperature: number, code: number): WeatherCondition {
-  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99].includes(code)) return 'rainy'
-  if (temperature >= 30) return 'hot'
-  if (temperature >= 23) return 'warm'
-  if (temperature >= 14) return 'cool'
-  return 'cold'
-}
-
 function weatherDescription(code: number): string {
   if (code === 0) return 'Clear sky'
   if (code === 1) return 'Mostly clear'
@@ -91,6 +84,76 @@ function weatherIcon(code: number): LucideIcon {
   return CloudSun
 }
 
+/** Practical, outfit-specific finishing ideas based on the pieces on today's rack. */
+function buildStylingTips(outfit: ClothingItem[], weather: CurrentWeather | null): string[] {
+  if (outfit.length === 0) return []
+
+  const tops = outfit.filter((item) => item.category === 'tops')
+  const bottoms = outfit.filter((item) => item.category === 'bottoms')
+  const dresses = outfit.filter((item) => item.category === 'dresses')
+  const outerwear = outfit.filter((item) => item.category === 'outerwear')
+  const shoes = outfit.filter((item) => item.category === 'shoes')
+  const accessories = outfit.filter((item) => item.category === 'accessories')
+  const printed = outfit.filter((item) => item.pattern !== 'solid')
+  const solid = outfit.filter((item) => item.pattern === 'solid')
+  const sharedColour = outfit
+    .flatMap((item) => item.colour.map((colour) => ({ itemId: item.id, colour: colour.trim(), key: colour.trim().toLowerCase() })))
+    .find(({ itemId, key }) => key && outfit.some((item) => item.id !== itemId && item.colour.some((colour) => colour.trim().toLowerCase() === key)))
+  const tips: string[] = []
+
+  if (tops.length && bottoms.length) {
+    const top = tops[0]
+    const bottom = bottoms[0]
+    const relaxedTop = /relaxed|oversized|loose/i.test(top.fit ?? top.name)
+    const relaxedBottom = /relaxed|oversized|wide|loose/i.test(bottom.fit ?? bottom.name)
+    if (relaxedTop && relaxedBottom) {
+      tips.push(`With the relaxed ${top.name} and ${bottom.name}, try a front tuck or roll the sleeves to give the silhouette a little shape.`)
+    } else if (relaxedTop) {
+      tips.push(`Balance the relaxed ${top.name} with a clean waistline: try a half-tuck or show a slim belt with ${bottom.name}.`)
+    } else if (relaxedBottom) {
+      tips.push(`Let the shape of ${bottom.name} stand out; a neat tuck with ${top.name} keeps the proportions intentional.`)
+    } else {
+      tips.push(`Try a small front tuck with ${top.name} to create a clear waistline above ${bottom.name}.`)
+    }
+  } else if (dresses.length) {
+    tips.push(`Let ${dresses[0].name} be the focal point; keep the silhouette clean and add one considered finishing detail.`)
+  } else if (tops.length) {
+    tips.push(`Try a cuff or relaxed half-tuck with ${tops[0].name} to add shape without changing the easy feel.`)
+  } else if (bottoms.length) {
+    tips.push(`Keep the top half simple so ${bottoms[0].name} remains the focus; a defined waist helps finish the look.`)
+  }
+
+  if (printed.length && solid.length) {
+    tips.push(`Let the print on ${printed[0].name} lead and keep ${solid[0].name} simple; repeat one print colour in a small accessory if you have one.`)
+  } else if (sharedColour) {
+    tips.push(`Repeat ${sharedColour.colour} once in your bag, belt, or jewellery to make the palette feel connected.`)
+  } else if (printed.length) {
+    tips.push(`Keep accessories pared back around ${printed[0].name}, and let its pattern do the talking.`)
+  } else if (accessories.length) {
+    tips.push(`Use ${accessories[0].name} as the finishing point; keep the other accessories quiet so it reads as intentional.`)
+  } else if (shoes.length) {
+    tips.push(`Echo one colour from ${shoes[0].name} in a bag or jewellery detail for a pulled-together finish.`)
+  } else {
+    tips.push('Add one third piece you already own—a belt, scarf, or light layer—to make the look feel finished.')
+  }
+
+  if (outerwear.length) {
+    tips.push(`Wear ${outerwear[0].name} open to show the layers underneath; push the sleeves back slightly for an easy finish.`)
+  } else if (weather?.condition === 'rainy') {
+    tips.push('For the wet weather, choose a light layer and shoes with a grippy sole; keep a scarf or bag tucked under cover.')
+  } else if (weather?.condition === 'cold' || weather?.condition === 'cool') {
+    tips.push('For the cooler weather, add a warm layer and keep it open indoors so the outfit still has dimension.')
+  } else if (weather?.condition === 'hot') {
+    tips.push('For the heat, keep layers light and choose one breathable finishing piece rather than stacking heavy accessories.')
+  } else if (accessories.length) {
+    tips.push(`A small styling change—like rolling a cuff beside ${accessories[0].name}—keeps the details feeling considered.`)
+  } else {
+    tips.push('Finish with one simple detail, such as a rolled cuff or a slim belt, rather than adding several competing accents.')
+  }
+
+  return tips.slice(0, 3)
+}
+
 function DailyOutfitCard({ items, profile, onAskStylist }: {
   items: ClothingItem[]
   profile: Parameters<typeof generateOutfit>[2]
@@ -105,13 +168,7 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
   const recommendedItems = recommendation?.length
     ? items.filter((item) => recommendation.includes(item.id))
     : []
-  const stylingTips = [
-    'Pair a relaxed top with high-waisted bottoms and add a slim belt to define the waist.',
-    'Add colorful bangles for a cheerful pop; repeat one shade in your bag or shoes.',
-    recommendedItems.some((item) => item.category === 'outerwear')
-      ? 'Push the outerwear sleeves up slightly so a watch or bangle stack can show.'
-      : 'Layer two slim bangles with a watch for an easy, polished finish.',
-  ]
+  const stylingTips = buildStylingTips(recommendedItems, weather)
 
   useEffect(() => {
     const now = new Date()
@@ -124,30 +181,9 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
     const weatherDateKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
     setWeather(null)
     setWeatherError(false)
-    if (!navigator.geolocation) {
-      setWeatherError(true)
-      return
-    }
-
-    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
-      try {
-        const params = new URLSearchParams({
-          latitude: String(coords.latitude),
-          longitude: String(coords.longitude),
-          current: 'temperature_2m,weather_code',
-          timezone: 'auto',
-        })
-        const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`)
-        if (!response.ok) throw new Error('Weather request failed')
-        const data = await response.json() as { current?: { temperature_2m?: number; weather_code?: number } }
-        const temperature = data.current?.temperature_2m
-        const code = data.current?.weather_code
-        if (temperature === undefined || code === undefined) throw new Error('Weather data unavailable')
-        setWeather({ temperature, label: weatherDescription(code), condition: dailyWeatherCondition(temperature, code), code, dateKey: weatherDateKey })
-      } catch {
-        setWeatherError(true)
-      }
-    }, () => setWeatherError(true), { timeout: 12000, maximumAge: 30 * 60 * 1000 })
+    getLocalWeather().then(({ temperature, code, condition }) => {
+      setWeather({ temperature, label: weatherDescription(code), condition, code, dateKey: weatherDateKey })
+    }).catch(() => setWeatherError(true))
   }, [today.getDate(), today.getMonth(), today.getFullYear()])
 
   useEffect(() => {
@@ -155,7 +191,7 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
     if ((!weather && !weatherError) || (weather && weather.dateKey !== dayKey) || items.length < 2) return
     let cancelled = false
     const wardrobeKey = items.map((item) => item.id).sort().join(',')
-    const cacheKey = `kloset:daily-outfit:v2:${profile?.name ?? 'guest'}:${dayKey}:${wardrobeKey}`
+    const cacheKey = `kloset:daily-outfit:v3:${profile?.name ?? 'guest'}:${dayKey}:${wardrobeKey}`
     try {
       const cached = localStorage.getItem(cacheKey)
       if (cached) {
@@ -221,14 +257,14 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
           <div className="mb-4 text-[#355E3B] dark:text-[#9BC89D]">
             <h3 id="styling-tips-title" className="text-2xs font-semibold uppercase tracking-ultra-wide">Styling tips</h3>
           </div>
-          <ul className="space-y-4">
+          {stylingTips.length ? <ul className="space-y-4">
             {stylingTips.map((tip) => (
               <li key={tip} className="flex gap-3 text-sm leading-relaxed text-text-muted">
                 <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-butter-yellow" aria-hidden="true" />
                 <span>{tip}</span>
               </li>
             ))}
-          </ul>
+          </ul> : <p className="text-sm leading-relaxed text-text-muted">Outfit-specific tips will appear here with today’s look.</p>}
           </aside>
           <button
           onClick={onAskStylist}

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Heart, Pencil, Trash2, Plus, X, Send } from 'lucide-react'
-import { clsx } from 'clsx'
+import { Pencil, Trash2, Plus, X, Send } from 'lucide-react'
 import { colourNameToHex, isLightColour } from '@/lib/colourUtils'
 import { useItemImage } from '@/hooks/useItemImage'
 import { CATEGORY_LABEL, CategoryGlyph } from '@/components/wardrobe/categoryVisuals'
@@ -13,9 +12,9 @@ interface ItemDetailModalProps {
   onClose: () => void
   onEdit: () => void
   onDelete: () => void
-  onToggleFavourite: () => void
   onIncrementWorn: () => void
   onSend: () => void
+  deleteLabel?: string
 }
 
 /**
@@ -31,9 +30,9 @@ export function ItemDetailModal({
   onClose,
   onEdit,
   onDelete,
-  onToggleFavourite,
   onIncrementWorn,
   onSend,
+  deleteLabel = 'Remove from Kloset',
 }: ItemDetailModalProps) {
   const imageUrl = useItemImage(item)
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null)
@@ -111,26 +110,13 @@ export function ItemDetailModal({
             {item.name}
           </h2>
 
-          <div className="flex items-center gap-3 mt-8">
+          <div className="mt-8">
             <button
               onClick={onEdit}
-              className="flex-1 flex items-center justify-center gap-2 h-12 bg-text-primary text-warm-cream text-xs font-medium uppercase tracking-widest hover:bg-text-primary/90 transition-colors"
+              className="flex w-full items-center justify-center gap-2 h-12 bg-text-primary text-warm-cream text-xs font-medium uppercase tracking-widest hover:bg-text-primary/90 transition-colors"
             >
               <Pencil size={14} strokeWidth={1.5} />
               Edit piece
-            </button>
-            <button
-              onClick={onToggleFavourite}
-              aria-label={item.isFavourite ? 'Remove from favourites' : 'Add to favourites'}
-              aria-pressed={item.isFavourite}
-              className={clsx(
-                'w-12 h-12 flex items-center justify-center ring-1 ring-inset transition-colors',
-                item.isFavourite
-                  ? 'ring-rose-300 text-rose-500 bg-rose-50'
-                  : 'ring-text-primary/20 text-text-primary hover:ring-text-primary/50'
-              )}
-            >
-              <Heart size={18} strokeWidth={1.25} className={item.isFavourite ? 'fill-rose-500' : ''} />
             </button>
           </div>
           <button
@@ -197,7 +183,7 @@ export function ItemDetailModal({
             className="mt-10 flex items-center gap-2 text-2xs uppercase tracking-widest text-text-muted hover:text-red-700 transition-colors"
           >
             <Trash2 size={13} strokeWidth={1.5} />
-            Remove from Kloset
+            {deleteLabel}
           </button>
         </div>
       </div>

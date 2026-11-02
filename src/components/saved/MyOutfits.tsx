@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { ChevronDown } from 'lucide-react'
 
 import { SavedOutfitCard } from '@/components/saved/SavedOutfitCard'
 import { SavedOutfitDetailModal } from '@/components/saved/SavedOutfitDetailModal'
@@ -23,6 +24,7 @@ export function MyOutfits() {
 
   const [selectedOutfit, setSelectedOutfit] = useState<Outfit | null>(null)
   const [creating, setCreating] = useState(false)
+  const [showCreateMenu, setShowCreateMenu] = useState(false)
   const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null)
   const showRecycleBin = searchParams.get('recycle') === '1'
   const clearRecycleBinView = () => {
@@ -97,13 +99,22 @@ export function MyOutfits() {
 
   return (
     <>
-      <div className="mb-8 flex justify-end border-b border-text-primary/10 pb-6">
-        {!showRecycleBin && <button
-          onClick={() => navigate('/stylist')}
-          className="h-10 px-4 flex items-center gap-2 ring-1 ring-inset ring-text-primary/20 text-2xs font-medium uppercase tracking-widest text-text-primary hover:ring-text-primary/50"
-        >
-          Ask the stylist
-        </button>}
+      <div className="mb-5 flex justify-end border-b border-text-primary/10 pb-4">
+        {!showRecycleBin && <div className="relative">
+          <button
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={showCreateMenu}
+            onClick={() => setShowCreateMenu((visible) => !visible)}
+            className="inline-flex items-center gap-2 py-2 text-xs font-medium uppercase tracking-widest text-text-primary hover:text-text-muted"
+          >
+            Create outfit <ChevronDown size={14} />
+          </button>
+          {showCreateMenu && <div role="menu" className="absolute right-0 top-full z-30 mt-2 w-56 border border-text-primary/10 bg-surface p-1 shadow-lifted">
+            <button role="menuitem" onClick={() => { setShowCreateMenu(false); navigate('/wardrobe?view=build') }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Build it myself</button>
+            <button role="menuitem" onClick={() => { setShowCreateMenu(false); navigate('/stylist') }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Let the stylist do it</button>
+          </div>}
+        </div>}
       </div>
 
       {resolvedOutfits.length === 0 ? (

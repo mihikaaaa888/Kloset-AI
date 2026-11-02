@@ -152,8 +152,7 @@ function scoreItem(
   request: StyleRequest,
   profile: UserProfile | null,
   learnedStyle: ReturnType<typeof learnStyleFromWardrobe>,
-  alreadySelected: ClothingItem[],
-  attempt: number
+  alreadySelected: ClothingItem[]
 ): number {
   let score = 0
 
@@ -234,11 +233,6 @@ function scoreItem(
     score += 8
   }
 
-  // Add slight randomness per attempt so "try another" gives different results
-  // Use item id as a stable seed component so results are reproducible per attempt
-  const idSeed = item.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
-  score += ((idSeed + attempt * 37) % 7) - 3
-
   return score
 }
 
@@ -258,10 +252,18 @@ function pickBest(
 
   const scored = candidates.map((item) => ({
     item,
-    score: scoreItem(item, request, profile, learnedStyle, selected, attempt),
+    score: scoreItem(item, request, profile, learnedStyle, selected),
   }))
-  scored.sort((a, b) => b.score - a.score)
-  return scored[0].score > -100 ? scored[0].item : null
+  scored.sort((a, b) => b.score - a.score || a.item.timesWorn - b.item.timesWorn || a.item.id.localeCompare(b.item.id))
+  if (scored[0].score <= -100) return null
+
+  // Rotate among the strongest, similarly suitable pieces so a single item
+  // cannot win every daily outfit just because its colour/style score is a bit higher.
+  const bestScore = scored[0].score
+  const contenders = scored
+    .filter((candidate) => bestScore - candidate.score <= 5)
+    .slice(0, 4)
+  return contenders[Math.abs(attempt) % contenders.length].item
 }
 
 // ─── Text generation ──────────────────────────────────────────────────────────

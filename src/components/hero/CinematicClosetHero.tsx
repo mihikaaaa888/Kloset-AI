@@ -77,9 +77,8 @@ function CinematicHeroDesktop({ onDoorOpenChange }: CinematicClosetHeroProps) {
     <section
       id="cinematic-hero"
       ref={containerRef}
-      // The closed closet sits on the same yellow as the pinned backdrop, so the strip below it is not a different colour.
-      className={`relative transition-colors duration-500 ${doorOpened ? '' : 'bg-dark-purple'}`}
-      style={{ height: `${HERO_SCROLL_VH}vh`, backgroundColor: doorOpened ? '#355f43' : undefined }}
+      className="relative transition-colors duration-500"
+      style={{ height: `${HERO_SCROLL_VH}vh`, backgroundColor: doorOpened ? '#355f43' : '#faf8f1' }}
     >
       <div className="sticky top-0 isolate h-[100svh] w-full overflow-hidden">
         <HeroBackdrop />
@@ -93,7 +92,7 @@ function CinematicHeroDesktop({ onDoorOpenChange }: CinematicClosetHeroProps) {
         <canvas
           ref={canvasRef}
           className="absolute inset-0 z-20 h-full w-full pointer-events-none"
-          style={{ transformOrigin: '50% 50%', opacity: 0 }}
+          style={{ transformOrigin: '50% 50%', opacity: 0, mixBlendMode: 'multiply' }}
           aria-hidden="true"
         />
 

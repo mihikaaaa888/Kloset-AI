@@ -403,9 +403,7 @@ function ShareGrid({
               </span>
             )}
           </div>
-          <p className="text-2xs uppercase tracking-widest text-text-muted mt-3.5">
-            {s.kind === 'item' ? 'Piece' : `Outfit · ${s.payload.pieces.length} pieces`}
-          </p>
+          {s.kind === 'item' && <p className="text-2xs uppercase tracking-widest text-text-muted mt-3.5">Piece</p>}
           <h3 className="font-display text-lg leading-snug text-text-primary mt-1 truncate">{s.payload.title}</h3>
           <p className="text-xs text-text-muted mt-1 truncate">
             {s.direction === 'received' ? 'From' : 'To'} <span className="capitalize text-text-primary">{s.otherName}</span> · {timeAgo(s.createdAt)}

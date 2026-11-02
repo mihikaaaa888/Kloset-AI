@@ -113,7 +113,6 @@ export function CompleteTheLook({ suggestion }: { suggestion: OutfitSuggestion }
   return (
     <div className="border-t border-text-primary/10 pt-5">
       <p className="text-xs font-medium uppercase tracking-widest text-butter-yellow mb-1">Complete the look</p>
-      <p className="text-sm text-text-muted mb-4">Your Kloset doesn&apos;t have these yet — here&apos;s what would finish it.</p>
       <div className="space-y-5">
         {missing.map((role) => (
           <MissingPiece key={role} role={role} suggestion={suggestion} />

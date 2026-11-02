@@ -18,7 +18,6 @@ import {
 } from '@/lib/imageStorage'
 import { getPhotoUrl } from '@/lib/wardrobeService'
 import { analyzeImage, analyzeImageFromUrl } from '@/lib/analyzeImage'
-import { refineGarmentImage, removeImageBackground } from '@/lib/backgroundRemoval'
 import { parseOutfitPhoto } from '@/lib/fashionParsing'
 import { deleteWithUndo, finalizeScope } from '@/store/undoStore'
 import type { ClothingAnalysis } from '@/lib/analyzeImage'
@@ -123,6 +122,10 @@ function blankDraft(): ItemDraft {
     brand: '',
     notes: '',
   }
+}
+
+function draftForDetectedPiece(category?: ClothingCategory, name?: string): ItemDraft {
+  return { ...blankDraft(), category: category ?? '', name: name ?? '' }
 }
 
 function itemToDraft(item: ClothingItem): ItemDraft {
@@ -260,27 +263,22 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
     try {
       const processed: QueuedImage[] = []
       for (const file of valid) {
-        setImageProcessingStep('Loading the on-device clothing scanner…')
+        setImageProcessingStep('Finding and labeling pieces…')
         const compressed = await compressImage(file)
-        const parsed = await parseOutfitPhoto(compressed)
-        if (parsed.containsPerson && parsed.garments.length === 0) {
-          throw new Error('We couldn’t safely isolate clothing from this photo. Try a clearer, full-body image; the original photo was not saved or analyzed.')
-        }
+        // Segmentation is best-effort: even if the local model is unavailable,
+        // preserve the uploaded image so the user can still add it manually.
+        const parsed = await parseOutfitPhoto(compressed).catch(() => ({ garments: [], containsPerson: false }))
         let pieces: Array<{ blob: Blob; category?: ClothingCategory; name?: string }> = parsed.garments.length > 0
           ? parsed.garments
-          : [{ blob: await removeImageBackground(parsed.safeFallback).catch(() => parsed.safeFallback), category: undefined, name: undefined }]
+          : [{ blob: compressed, category: undefined, name: undefined }]
         if (editItem && pieces.length > 1) {
           pieces = [pieces.find((piece) => piece.category === editItem.category) ?? pieces[0]]
         }
         for (const piece of pieces) {
-          setImageProcessingStep('Refining garment edges…')
-          const refinedBlob = parsed.garments.length > 0
-            ? await refineGarmentImage(piece.blob) ?? piece.blob
-            : piece.blob
-          setImageProcessingStep('Saving garment…')
-          const imageId = await saveImage(refinedBlob)
-          const url = URL.createObjectURL(refinedBlob)
-          processed.push({ imageId, previewUrl: url, blob: refinedBlob, detectedCategory: piece.category, detectedName: piece.name })
+          setImageProcessingStep('Saving labeled piece…')
+          const imageId = await saveImage(piece.blob)
+          const url = URL.createObjectURL(piece.blob)
+          processed.push({ imageId, previewUrl: url, blob: piece.blob, detectedCategory: piece.category, detectedName: piece.name })
           pendingMap.current.set(imageId, url)
         }
       }
@@ -302,7 +300,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
       setActiveImageId(first.imageId)
       setPreviewUrl(first.previewUrl)
       setLegacyImageUrl(null)
-      setDraft({ ...blankDraft(), category: first.detectedCategory ?? '', name: first.detectedName ?? '' })
+      setDraft(draftForDetectedPiece(first.detectedCategory, first.detectedName))
 
       setUploadBatch(processed.length > 1 ? processed : [])
       setBatchIdx(0)
@@ -587,7 +585,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
       setPreviewUrl(next.previewUrl)
       setLegacyImageUrl(null)
       priorImageId.current = null
-      setDraft(blankDraft())
+      setDraft(draftForDetectedPiece(next.detectedCategory, next.detectedName))
       setErrors({})
       setImageError(null)
       setAiApplied(false)
@@ -610,7 +608,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
       setActiveImageId(next.imageId)
       setPreviewUrl(next.previewUrl)
       setLegacyImageUrl(null)
-      setDraft(blankDraft())
+      setDraft(draftForDetectedPiece(next.detectedCategory, next.detectedName))
       setErrors({})
       setImageError(null)
       setAiApplied(false)

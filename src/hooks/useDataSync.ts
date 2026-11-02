@@ -3,14 +3,13 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useUserStore } from '@/store/userStore'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { fetchProfile, upsertProfile } from '@/lib/profileService'
-import { fetchWardrobe, backfillPhotos, removeBackgroundsFromExistingPhotos, updateItem } from '@/lib/wardrobeService'
-import { usePhotoCleanupStore } from '@/store/photoCleanupStore'
+import { fetchWardrobe, backfillPhotos, updateItem } from '@/lib/wardrobeService'
 import { isPendingDelete } from '@/store/undoStore'
 import { SAMPLE_PHOTOS } from '@/lib/sampleData'
 import type { ClothingItem } from '@/types'
 
-const photoCleanupInFlight = new Set<string>()
-const photoCleanupAttempted = new Set<string>()
+const photoBackfillInFlight = new Set<string>()
+const photoBackfillAttempted = new Set<string>()
 
 // Loads the authenticated user's profile and wardrobe from Supabase into local stores.
 // Runs once per login. Clears local stores on logout.
@@ -20,7 +19,6 @@ export function useDataSync() {
   const clearProfile = useUserStore((s) => s.clearProfile)
   const markLoaded = useUserStore((s) => s.markLoaded)
   const setItems = useWardrobeStore((s) => s.setItems)
-  const clearPhotoCleanup = usePhotoCleanupStore((s) => s.clear)
   const prevUserIdRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -28,9 +26,8 @@ export function useDataSync() {
       if (prevUserIdRef.current) {
         clearProfile()
         setItems([])
-        photoCleanupAttempted.delete(prevUserIdRef.current)
+        photoBackfillAttempted.delete(prevUserIdRef.current)
         prevUserIdRef.current = null
-        clearPhotoCleanup()
       }
       return
     }
@@ -64,14 +61,14 @@ export function useDataSync() {
       if (items) setItems(items.filter((i) => !isPendingDelete(`wardrobe:${i.id}`)))
       markLoaded(userId)
       addSamplePhotos(userId)
-      startExistingPhotoCleanup(userId, items ?? useWardrobeStore.getState().items)
+      startPhotoBackfill(userId, items ?? useWardrobeStore.getState().items)
       console.log('[sync] profile ready', {
         onboardingComplete: !!useUserStore.getState().profile?.onboardingComplete,
       })
     }
 
     sync()
-  }, [user, setProfile, clearProfile, markLoaded, setItems, clearPhotoCleanup])
+  }, [user, setProfile, clearProfile, markLoaded, setItems])
 
   // Pieces added on another device (say, photos from the phone) only arrive on a
   // fetch, so re-pull the wardrobe whenever this tab comes back into view.
@@ -87,7 +84,7 @@ export function useDataSync() {
       if (!remote || prevUserIdRef.current !== userId) return
       setItems(mergeWithUnsaved(remote, useWardrobeStore.getState().items))
       console.log('[sync] wardrobe refreshed', { items: remote.length })
-      startExistingPhotoCleanup(userId, remote)
+      startPhotoBackfill(userId, remote)
     }
 
     document.addEventListener('visibilitychange', refresh)
@@ -99,36 +96,18 @@ export function useDataSync() {
   }, [user, setItems])
 }
 
-function startExistingPhotoCleanup(userId: string, wardrobe: ClothingItem[]) {
-  if (photoCleanupInFlight.has(userId) || photoCleanupAttempted.has(userId)) return
-  photoCleanupInFlight.add(userId)
-  photoCleanupAttempted.add(userId)
+function startPhotoBackfill(userId: string, wardrobe: ClothingItem[]) {
+  if (photoBackfillInFlight.has(userId) || photoBackfillAttempted.has(userId)) return
+  photoBackfillInFlight.add(userId)
+  photoBackfillAttempted.add(userId)
 
   void (async () => {
     try {
       await backfillPhotos(userId, wardrobe)
-      const latest = await fetchWardrobe(userId)
-      const items = latest ?? wardrobe
-      const candidates = items.filter((item) =>
-        item.imageSource === 'local' &&
-        !!item.imageId &&
-        !(item.imageStoragePath?.toLowerCase().endsWith('.png') ||
-          (!item.imageStoragePath && item.imageUrl?.startsWith('data:image/png')))
-      )
-      if (candidates.length === 0) return
-
-      const cleanup = usePhotoCleanupStore.getState()
-      cleanup.start(candidates.length)
-      await removeBackgroundsFromExistingPhotos(userId, candidates, (done, total, failed) => {
-        usePhotoCleanupStore.getState().update(done, total, failed)
-      })
-      usePhotoCleanupStore.getState().finish()
-      window.setTimeout(() => usePhotoCleanupStore.getState().clear(), 12_000)
     } catch (error) {
-      console.error('[sync] existing photo background cleanup failed', error)
-      usePhotoCleanupStore.getState().finish()
+      console.error('[sync] photo backfill failed', error)
     } finally {
-      photoCleanupInFlight.delete(userId)
+      photoBackfillInFlight.delete(userId)
     }
   })()
 }
