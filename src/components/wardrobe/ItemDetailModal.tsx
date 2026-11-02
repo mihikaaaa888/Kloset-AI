@@ -12,7 +12,7 @@ interface ItemDetailModalProps {
   onClose: () => void
   onEdit: () => void
   onDelete: () => void
-  onIncrementWorn: () => void
+  onIncrementWorn: (date: string) => void
   onSend: () => void
   deleteLabel?: string
 }
@@ -36,6 +36,19 @@ export function ItemDetailModal({
 }: ItemDetailModalProps) {
   const imageUrl = useItemImage(item)
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null)
+  const [wearDate, setWearDate] = useState(todayDateInput())
+  const [showWearDate, setShowWearDate] = useState(false)
+  const [lastWearDate, setLastWearDate] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!item) return
+    try {
+      const logs = JSON.parse(localStorage.getItem('kloset-wear-log-dates') ?? '{}') as Record<string, string[]>
+      setLastWearDate(logs[item.id]?.at(-1) ?? null)
+    } catch {
+      setLastWearDate(null)
+    }
+  }, [item?.id])
 
   useEffect(() => { setNaturalSize(null) }, [imageUrl])
 
@@ -161,7 +174,7 @@ export function ItemDetailModal({
               <span className="flex items-center justify-end gap-3">
                 <span className="tabular-nums">{item.timesWorn}</span>
                 <button
-                  onClick={onIncrementWorn}
+                  onClick={() => { setWearDate(todayDateInput()); setShowWearDate((showing) => !showing) }}
                   className="flex items-center gap-1 text-2xs uppercase tracking-widest font-semibold text-butter-yellow hover:underline underline-offset-4"
                 >
                   <Plus size={12} strokeWidth={1.5} />
@@ -169,6 +182,22 @@ export function ItemDetailModal({
                 </button>
               </span>
             </DetailRow>
+            {showWearDate && (
+              <div className="flex flex-wrap items-center justify-end gap-3 border-b border-text-primary/10 py-4">
+                <label htmlFor="wear-date" className="mr-auto text-xs text-text-muted">Date worn</label>
+                <input id="wear-date" type="date" value={wearDate} max={todayDateInput()} onChange={(event) => setWearDate(event.target.value)} className="rounded-lg border border-text-primary/15 bg-surface px-3 py-2 text-sm text-text-primary" />
+                <button type="button" disabled={!wearDate} onClick={() => {
+                  const logs = (() => { try { return JSON.parse(localStorage.getItem('kloset-wear-log-dates') ?? '{}') as Record<string, string[]> } catch { return {} as Record<string, string[]> } })()
+                  const itemLogs = [...(logs[item.id] ?? []), wearDate].sort()
+                  logs[item.id] = itemLogs
+                  try { localStorage.setItem('kloset-wear-log-dates', JSON.stringify(logs)) } catch (error) { console.error('[item-detail] wear date could not be saved', error) }
+                  setLastWearDate(wearDate)
+                  onIncrementWorn(wearDate)
+                  setShowWearDate(false)
+                }} className="rounded-lg bg-text-primary px-3 py-2 text-xs text-surface disabled:opacity-40">Save</button>
+              </div>
+            )}
+            {!showWearDate && lastWearDate && <p className="border-b border-text-primary/10 py-2 text-right text-xs text-text-muted">Last worn {new Date(`${lastWearDate}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>}
           </dl>
 
           {item.notes && (
@@ -190,6 +219,12 @@ export function ItemDetailModal({
     </div>,
     document.body
   )
+}
+
+function todayDateInput() {
+  const today = new Date()
+  const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60_000)
+  return localDate.toISOString().slice(0, 10)
 }
 
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {

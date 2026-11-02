@@ -6,6 +6,8 @@ import { CATALOG_ITEMS } from '@/lib/catalogData'
 export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
+  /** Browser-only preview; omitted from chat API requests and persisted storage. */
+  imagePreviewUrl?: string
 }
 
 // A compact, representative slice of the shoppable catalog (not all 39+
@@ -147,7 +149,8 @@ function buildProfileSummary(profile: UserProfile | null): string {
 export async function sendChatMessage(
   messages: ChatMessage[],
   wardrobe: ClothingItem[],
-  profile: UserProfile | null
+  profile: UserProfile | null,
+  imageDataUrl?: string
 ): Promise<string> {
   const wardrobeSummary = buildWardrobeSummary(wardrobe)
   const wardrobeGapsSummary = buildWardrobeGapsSummary(wardrobe)
@@ -159,6 +162,7 @@ export async function sendChatMessage(
 
   const body = JSON.stringify({
     messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    ...(imageDataUrl ? { imageDataUrl } : {}),
     wardrobeSummary,
     wardrobeGapsSummary,
     profileSummary,

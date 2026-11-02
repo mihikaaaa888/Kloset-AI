@@ -409,25 +409,25 @@ function generateStylingTips(
   const roles = items.map((i) => i.role)
 
   if (roles.includes('top') && roles.includes('bottom')) {
-    tips.push('Try half-tucking the top for a relaxed but intentional look.')
+    tips.push('Half-tuck the top for an easy waistline.')
   }
   if (roles.includes('outerwear')) {
-    tips.push('Wear the outer layer open to let the outfit underneath do the talking.')
+    tips.push('Wear the outer layer open to show the look underneath.')
   }
   if (roles.includes('accessory')) {
-    tips.push('Less is more with accessories — one statement piece keeps the outfit sharp.')
+    tips.push('Choose one statement accessory.')
   }
   if (request.occasion === 'work' && roles.includes('top')) {
-    tips.push('Roll the sleeves once or twice for a polished-but-relaxed finish.')
+    tips.push('Roll the sleeves for an easy, polished finish.')
   }
   if (request.occasion === 'date-night') {
-    tips.push('Add a simple fragrance — the invisible accessory that completes any look.')
+    tips.push('Add a light fragrance for a finishing touch.')
   }
   if (request.weather === 'cold') {
-    tips.push('A fine-knit turtleneck underneath layers beautifully with what you have here.')
+    tips.push('Layer a fine knit underneath on colder days.')
   }
   if (request.mood === 'confident') {
-    tips.push('Posture and intention do as much as the clothes. Wear it like you mean it.')
+    tips.push('Stand tall; confidence completes the look.')
   }
 
   return tips.slice(0, 3)

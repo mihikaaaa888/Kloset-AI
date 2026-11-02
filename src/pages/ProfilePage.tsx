@@ -61,7 +61,6 @@ export function ProfilePage() {
   })
   const [avatarId, setAvatarId] = useState<string | null>(null)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
-  const [actionMessage, setActionMessage] = useState('')
   const [counts, setCounts] = useState({ pieces: 0, outfits: 0, costPerWear: 0 })
   const avatarInput = useRef<HTMLInputElement>(null)
 
@@ -72,7 +71,7 @@ export function ProfilePage() {
     return { total: summary.total + catalogItem.estimatedPrice, wears: summary.wears + item.timesWorn }
   }, { total: 0, wears: 0 }), [wardrobeItems])
   const costPerWear = pricedWears.wears ? Math.round(pricedWears.total / pricedWears.wears) : null
-  const mostWorn = wardrobeItems.reduce<ClothingItem | null>((best, item) => !best || item.timesWorn > best.timesWorn ? item : best, null)
+  const mostWornItems = wardrobeItems.filter((item) => item.timesWorn > 0).sort((a, b) => b.timesWorn - a.timesWorn).slice(0, 3)
   const neverWorn = wardrobeItems.filter((item) => item.timesWorn === 0).slice(0, 5)
   const weekDays = useMemo(getWeekDays, [])
 
@@ -149,10 +148,10 @@ export function ProfilePage() {
 
   return (
     <main className="min-h-screen bg-warm-cream pb-28 text-text-primary transition-colors duration-500 md:pb-12">
-      <header className="relative isolate min-h-[19rem] overflow-hidden bg-[#355E3B] pt-28 text-[#FFFDD0] lg:min-h-[22rem] lg:pt-32">
+      <header className="relative isolate flex min-h-[14rem] items-center overflow-hidden bg-[#355E3B] py-8 text-[#FFFDD0] sm:min-h-[16rem] lg:min-h-[17rem]">
         {coverItems.length > 0 ? <div className="absolute inset-0 -z-10 grid grid-cols-3 opacity-45 sm:grid-cols-5">{coverItems.map((item) => <CoverImage key={item.id} item={item} />)}</div> : null}
         <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[#17351f]/90 via-[#24482e]/75 to-[#355E3B]/45" />
-        <div className="mx-auto flex max-w-6xl items-center gap-5 px-4 pb-8 sm:px-6 sm:pb-10 lg:px-8">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-5 px-4 sm:px-6 lg:px-8">
           <button type="button" onClick={() => avatarInput.current?.click()} aria-label="Upload profile photo" className="group relative h-24 w-24 shrink-0 overflow-hidden rounded-full border border-[#FFFDD0]/50 bg-[#FFFDD0]/15 shadow-card sm:h-28 sm:w-28">
             {avatarUrl ? <img src={avatarUrl} alt="Profile" className="h-full w-full object-cover" /> : <span className="flex h-full w-full items-center justify-center font-display text-3xl">{getInitials(profile.name)}</span>}
             <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><Camera size={20} /></span>
@@ -167,30 +166,25 @@ export function ProfilePage() {
 
       <div className="mx-auto max-w-6xl space-y-10 px-4 pt-9 sm:px-6 lg:px-8 lg:pt-12">
         <section aria-labelledby="closet-stats-heading">
-          <SectionHeading id="closet-stats-heading" title="Your closet" caption="A little portrait of what you reach for." />
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:auto-rows-[minmax(8.5rem,auto)]">
-            <section className={clsx(CARD, 'relative min-h-64 overflow-hidden md:col-span-2 md:row-span-3')}>
-              <h3 className="absolute left-5 top-5 z-10 text-[10px] uppercase tracking-[0.2em] text-text-muted">Most worn</h3>
-              {mostWorn && mostWorn.timesWorn > 0 ? <MostWornFeature item={mostWorn} count={mostWorn.timesWorn} onOpen={() => navigate('/wardrobe')} /> : <div className="flex min-h-64 flex-col items-start justify-end p-6 sm:p-8"><p className="mb-2 font-display text-3xl">{wardrobeItems.length ? 'Your next favourite starts here.' : 'Your closet is ready.'}</p><p className="mb-5 max-w-sm text-sm text-text-muted">{wardrobeItems.length ? 'Log a wear when you reach for a piece to see it become your most worn.' : 'Add your first piece to start your style story.'}</p><button onClick={() => navigate('/wardrobe')} className="border-b border-text-primary/50 pb-1 text-sm">{wardrobeItems.length ? 'Log your first wear' : 'Add your first piece'} <span aria-hidden>↗</span></button></div>}
-            </section>
+          <SectionHeading id="closet-stats-heading" title="Your Kloset" />
+          <section className={clsx(CARD, 'relative overflow-hidden p-5 sm:p-6')}>
+              <h3 className="mb-4 font-sans text-base font-medium sm:text-lg">Most Worn</h3>
+              {mostWornItems.length > 0 ? <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">{mostWornItems.map((item) => <MostWornPiece key={item.id} item={item} onOpen={() => navigate('/wardrobe')} />)}</div> : <button onClick={() => navigate('/wardrobe')} className="text-sm underline underline-offset-4">Add a piece</button>}
+          </section>
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <StatTile label="Pieces" value={counts.pieces} action={counts.pieces === 0 ? 'Add your first piece' : undefined} onClick={() => navigate('/wardrobe')} />
             <StatTile label="Outfits" value={counts.outfits} action={counts.outfits === 0 ? 'Create an outfit' : undefined} onClick={() => navigate('/wardrobe?view=outfits')} />
-            <section className={clsx(CARD, 'flex min-h-32 flex-col justify-between p-5 md:col-start-3 md:row-start-3')}>
-              <p className="text-[10px] uppercase tracking-[0.2em] text-text-muted">Cost per wear</p>
-              <p className="font-display text-3xl tabular-nums">{costPerWear === null ? '—' : <CountedValue value={counts.costPerWear} prefix="₹" />}</p>
-              {costPerWear === null ? <button onClick={() => navigate('/discover')} className="self-start text-xs underline underline-offset-4">Browse shop to start tracking</button> : <p className="text-xs text-text-muted">Estimated from shop pieces in your closet.</p>}
-            </section>
+            <StatTile label="Cost per wear" value={costPerWear} prefix="₹" action={costPerWear === null ? 'Browse shop to start tracking' : undefined} onClick={() => navigate('/discover')} />
           </div>
 
           <section className={clsx(CARD, 'mt-3 p-5 sm:p-6')}>
-            <div className="mb-4 flex items-end justify-between gap-3"><div><h3 className="font-display text-2xl">Never worn</h3><p className="mt-1 text-xs text-text-muted">Give a quiet piece another life.</p></div><span className="text-xs text-text-muted">{neverWorn.length} shown</span></div>
-            {neverWorn.length ? <div className="flex gap-3 overflow-x-auto pb-1">{neverWorn.map((item) => <NeverWornPiece key={item.id} item={item} onAction={(action) => setActionMessage(`${action} is coming soon for ${item.name}.`)} />)}</div> : wardrobeItems.length === 0 ? <div className="py-4"><p className="mb-3 text-sm text-text-muted">Your closet is empty for now.</p><button onClick={() => navigate('/wardrobe')} className="text-xs underline underline-offset-4">Add your first piece</button></div> : <p className="py-4 text-sm text-text-muted">Everything has had a turn. Keep logging wears to update this list.</p>}
-            {actionMessage && <div className="mt-3 flex items-center justify-between gap-3 text-xs text-text-muted" role="status"><span>{actionMessage}</span><button onClick={() => setActionMessage('')} aria-label="Dismiss" className="p-1"><X size={14} /></button></div>}
+            <div className="mb-3"><h3 className="font-sans text-base font-medium sm:text-lg">Never worn</h3></div>
+            {neverWorn.length ? <div className="flex gap-3 overflow-x-auto pb-1">{neverWorn.map((item) => <NeverWornPiece key={item.id} item={item} />)}</div> : wardrobeItems.length === 0 ? <div className="py-4"><p className="mb-3 text-sm text-text-muted">Your closet is empty for now.</p><button onClick={() => navigate('/wardrobe')} className="text-xs underline underline-offset-4">Add your first piece</button></div> : <p className="py-4 text-sm text-text-muted">Everything has had a turn. Keep logging wears to update this list.</p>}
           </section>
         </section>
 
         <section aria-labelledby="week-heading">
-          <SectionHeading id="week-heading" title="This week" caption="A small ritual of getting dressed." />
+          <SectionHeading id="week-heading" title="Log outfit" />
           <div className={clsx(CARD, 'grid grid-cols-4 gap-2 p-3 sm:grid-cols-7 sm:gap-3 sm:p-5')}>
             {weekDays.map((date) => {
               const key = weekKey(date)
@@ -201,7 +195,7 @@ export function ProfilePage() {
         </section>
 
         <section aria-labelledby="dna-heading">
-          <SectionHeading id="dna-heading" title="Style DNA" caption="The colours and shapes your closet is made of." />
+          <SectionHeading id="dna-heading" title="Style DNA" />
           <div className={clsx(CARD, 'grid gap-7 p-5 sm:p-7 md:grid-cols-2')}>
             <div><p className="mb-4 text-[10px] uppercase tracking-[0.2em] text-text-muted">Your palette</p>{closetPalette.length ? <div className="flex flex-wrap gap-3">{closetPalette.map((colour) => <div key={colour} className="flex items-center gap-2 text-sm capitalize"><span className="h-7 w-7 rounded-full ring-1 ring-inset ring-text-primary/15" style={{ backgroundColor: colourNameToHex(colour) }} />{colour}</div>)}</div> : <div><p className="mb-2 text-sm text-text-muted">Add pieces with colour details to see your palette.</p><button onClick={() => navigate('/wardrobe')} className="text-xs underline underline-offset-4">Add a piece</button></div>}</div>
             <div><p className="mb-4 text-[10px] uppercase tracking-[0.2em] text-text-muted">Category mix</p>{categoryMix.length ? <div className="space-y-3">{categoryMix.map(([category, count]) => <div key={category} className="grid grid-cols-[6rem_1fr_2rem] items-center gap-3 text-xs"><span>{CATEGORY_LABELS[category]}</span><span className="h-1.5 overflow-hidden rounded-full bg-text-primary/8"><span className="block h-full rounded-full bg-butter-yellow" style={{ width: `${Math.max(8, (count / wardrobeItems.length) * 100)}%` }} /></span><span className="text-right tabular-nums text-text-muted">{count}</span></div>)}</div> : <div><p className="mb-2 text-sm text-text-muted">Your category mix will appear as you add pieces.</p><button onClick={() => navigate('/wardrobe')} className="text-xs underline underline-offset-4">Add a piece</button></div>}</div>
@@ -218,8 +212,8 @@ export function ProfilePage() {
   )
 }
 
-function SectionHeading({ id, title, caption }: { id: string; title: string; caption: string }) {
-  return <div className="mb-4"><h2 id={id} className="font-display text-3xl sm:text-4xl">{title}</h2><p className="mt-1 text-sm text-text-muted">{caption}</p></div>
+function SectionHeading({ id, title }: { id: string; title: string }) {
+  return <div className="mb-4"><h2 id={id} className="font-display text-3xl sm:text-4xl">{title}</h2></div>
 }
 
 function CountedValue({ value, prefix = '' }: { value: number; prefix?: string }) {
@@ -239,10 +233,10 @@ function CountedValue({ value, prefix = '' }: { value: number; prefix?: string }
   return <>{prefix}{shown.toLocaleString('en-IN')}</>
 }
 
-function StatTile({ label, value, action, onClick }: { label: string; value: number; action?: string; onClick: () => void }) {
+function StatTile({ label, value, prefix, action, onClick }: { label: string; value: number | null; prefix?: string; action?: string; onClick: () => void }) {
   return <button onClick={onClick} className={clsx(CARD, 'flex min-h-32 flex-col items-start justify-between p-5 text-left transition-colors hover:bg-text-primary/[0.02]')}>
     <span className="text-[10px] uppercase tracking-[0.2em] text-text-muted">{label}</span>
-    <span className="font-display text-4xl tabular-nums"><CountedValue value={value} /></span>
+    <span className="font-display text-4xl tabular-nums">{value === null ? '—' : <CountedValue value={value} prefix={prefix} />}</span>
     {action && <span className="text-xs underline underline-offset-4">{action}</span>}
   </button>
 }
@@ -252,18 +246,19 @@ function CoverImage({ item }: { item: ClothingItem }) {
   return <div className="relative min-h-full overflow-hidden">{url ? <img src={url} alt="" className="h-full w-full object-cover" /> : <div className="h-full w-full bg-[#355E3B]" />}<div className="absolute inset-0 bg-[#355E3B]/35" /></div>
 }
 
-function MostWornFeature({ item, count, onOpen }: { item: ClothingItem; count: number; onOpen: () => void }) {
+function MostWornPiece({ item, onOpen }: { item: ClothingItem; onOpen: () => void }) {
   const url = useItemImage(item)
-  return <button onClick={onOpen} className="group absolute inset-0 block w-full text-left">
-    {url ? <img src={url} alt={item.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" /> : <div className="h-full w-full bg-tile" />}
-    <div className="absolute inset-0 bg-gradient-to-t from-text-primary/90 via-text-primary/10 to-transparent" />
-    <div className="absolute bottom-0 left-0 right-0 p-5 text-warm-cream sm:p-7"><p className="mb-1 text-[10px] uppercase tracking-[0.2em] text-warm-cream/75">{CATEGORY_LABELS[item.category]} · Worn {count} times</p><h3 className="max-w-md font-display text-3xl sm:text-4xl">{item.name}</h3></div>
-  </button>
+  return <article className="min-w-0 overflow-hidden rounded-xl bg-tile/60">
+    <button type="button" onClick={onOpen} className="block aspect-[4/3] w-full overflow-hidden bg-tile" aria-label={`Open ${item.name}`}>
+      {url ? <img src={url} alt={item.name} className="h-full w-full object-cover transition-transform duration-300 hover:scale-[1.02]" /> : <div className="h-full w-full bg-tile" />}
+    </button>
+    <div className="p-3"><p className="truncate text-sm" title={item.name}>{item.name}</p><p className="mt-1 text-xs text-text-muted">Worn {item.timesWorn} {item.timesWorn === 1 ? 'time' : 'times'}</p></div>
+  </article>
 }
 
-function NeverWornPiece({ item, onAction }: { item: ClothingItem; onAction: (action: 'Rent' | 'Sell') => void }) {
+function NeverWornPiece({ item }: { item: ClothingItem }) {
   const url = useItemImage(item)
-  return <article className="w-36 shrink-0 sm:w-40"><div className="aspect-[4/5] overflow-hidden rounded-2xl bg-tile">{url ? <img src={url} alt={item.name} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center"><ImagePlus className="text-text-muted/50" /></div>}</div><p className="mt-2 truncate text-xs" title={item.name}>{item.name}</p><div className="mt-2 flex gap-3"><button onClick={() => onAction('Rent')} className="text-xs underline underline-offset-4">Rent</button><button onClick={() => onAction('Sell')} className="text-xs underline underline-offset-4">Sell</button></div></article>
+  return <article className="w-36 shrink-0 sm:w-40"><div className="aspect-[4/5] overflow-hidden rounded-2xl bg-tile">{url ? <img src={url} alt={item.name} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center"><ImagePlus className="text-text-muted/50" /></div>}</div><p className="mt-2 truncate text-xs" title={item.name}>{item.name}</p></article>
 }
 
 function WeekDay({ date, outfit, wardrobe, onClick }: { date: Date; outfit?: Outfit; wardrobe: ClothingItem[]; onClick: () => void }) {
@@ -271,7 +266,7 @@ function WeekDay({ date, outfit, wardrobe, onClick }: { date: Date; outfit?: Out
   const itemUrl = useItemImage(item)
   const imageUrl = itemUrl ?? outfit?.items.find((piece) => piece.snapshot?.imageUrl)?.snapshot?.imageUrl
   const today = weekKey(date) === weekKey(new Date())
-  return <button onClick={onClick} className="group min-w-0 text-center"><span className={clsx('mb-2 block text-[10px] uppercase tracking-widest', today ? 'text-butter-yellow' : 'text-text-muted')}>{date.toLocaleDateString('en', { weekday: 'short' })}</span><span className={clsx('relative mx-auto flex aspect-square w-full max-w-20 items-center justify-center overflow-hidden rounded-xl border border-text-primary/10 bg-tile transition-colors group-hover:border-text-primary/35', today && 'ring-1 ring-butter-yellow/50')}>{imageUrl ? <img src={imageUrl} alt={outfit?.name ?? ''} className="h-full w-full object-cover" /> : <Plus size={16} className="text-text-muted" />}</span><span className="mt-1.5 block truncate text-[10px] text-text-muted">{outfit ? outfit.name : '+ Log outfit'}</span></button>
+  return <button onClick={onClick} aria-label={`${date.toLocaleDateString('en', { weekday: 'long' })}${outfit ? `: ${outfit.name}` : ', log outfit'}`} className="group min-w-0 text-center"><span className={clsx('mb-2 block text-[10px] uppercase tracking-widest', today ? 'text-butter-yellow' : 'text-text-muted')}>{date.toLocaleDateString('en', { weekday: 'short' })}</span><span className={clsx('relative mx-auto flex aspect-square w-full max-w-20 items-center justify-center overflow-hidden rounded-xl border border-text-primary/10 bg-tile transition-colors group-hover:border-text-primary/35', today && 'ring-1 ring-butter-yellow/50')}>{imageUrl ? <img src={imageUrl} alt={outfit?.name ?? ''} className="h-full w-full object-cover" /> : <Plus size={16} className="text-text-muted" />}</span>{outfit && <span className="mt-1.5 block truncate text-[10px] text-text-muted">{outfit.name}</span>}</button>
 }
 
 function LogOutfitDialog({ day, outfits, onSelect, onClose, onCreate }: { day: string; outfits: Outfit[]; onSelect: (day: string, outfitId: string) => void; onClose: () => void; onCreate: () => void }) {

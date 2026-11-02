@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Send, RotateCcw, Plus, Check, ExternalLink } from 'lucide-react'
+import { Send, RotateCcw, Plus, Check, ExternalLink, ImagePlus, X } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { clsx } from 'clsx'
 import { sendChatMessage, type ChatMessage } from '@/lib/chatService'
@@ -141,11 +141,17 @@ export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
 
   const [input, setInput] = useState(initialPrompt ?? '')
   const [loading, setLoading] = useState(false)
+  const [attachedImage, setAttachedImage] = useState<File | null>(null)
+  const [attachedPreview, setAttachedPreview] = useState<string | null>(null)
   const [addedCatalogIds, setAddedCatalogIds] = useState<Set<string>>(
     () => new Set(items.map((i) => i.catalogId).filter(Boolean) as string[])
   )
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const previewUrlsRef = useRef(new Set<string>())
+
+  useEffect(() => () => previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url)), [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -159,17 +165,22 @@ export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
   }, [initialPrompt])
 
   const send = async (text?: string) => {
-    const content = (text ?? input).trim()
-    if (!content || loading) return
+    const typedContent = (text ?? input).trim()
+    const imageFile = attachedImage
+    const content = typedContent || (imageFile ? 'Please check my outfit in this photo and suggest any improvements.' : '')
+    if ((!content && !imageFile) || loading) return
 
-    const userMsg: ChatMessage = { role: 'user', content }
+    const userMsg: ChatMessage = { role: 'user', content, ...(attachedPreview ? { imagePreviewUrl: attachedPreview } : {}) }
     const next = [...messages, userMsg]
     setMessages(next)
     setInput('')
+    setAttachedImage(null)
+    setAttachedPreview(null)
     setLoading(true)
 
     try {
-      const reply = await sendChatMessage(next, items, profile)
+      const imageDataUrl = imageFile ? await imageFileToDataUrl(imageFile) : undefined
+      const reply = await sendChatMessage(next, items, profile, imageDataUrl)
       setMessages((prev) => [...prev, { role: 'assistant', content: reply }])
     } catch (e) {
       console.error('[chat] send failed', e)
@@ -279,6 +290,18 @@ export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
           </button>
         )}
         <div className="flex gap-2 items-end">
+          <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (file) {
+              if (attachedPreview) { URL.revokeObjectURL(attachedPreview); previewUrlsRef.current.delete(attachedPreview) }
+              const preview = URL.createObjectURL(file)
+              previewUrlsRef.current.add(preview)
+              setAttachedImage(file)
+              setAttachedPreview(preview)
+            }
+            event.target.value = ''
+          }} />
+          <button type="button" onClick={() => imageInputRef.current?.click()} disabled={loading} aria-label="Upload outfit photo" title="Upload outfit photo" className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border border-text-primary/15 text-text-muted transition-colors hover:text-text-primary disabled:opacity-40"><ImagePlus size={17} /></button>
           <textarea
             ref={inputRef}
             value={input}
@@ -292,11 +315,11 @@ export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
           />
           <button
             onClick={() => send()}
-            disabled={!input.trim() || loading}
+            disabled={(!input.trim() && !attachedImage) || loading}
             aria-label="Send message"
             className={clsx(
               'w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-200 flex-shrink-0',
-              input.trim() && !loading
+              (input.trim() || attachedImage) && !loading
                 ? 'bg-dark-purple text-butter-yellow hover:bg-deep-purple'
                 : 'bg-text-primary/10 text-text-primary/30 cursor-not-allowed'
             )}
@@ -304,8 +327,9 @@ export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
             <Send size={16} />
           </button>
         </div>
+        {attachedPreview && <div className="relative mb-2 ml-1 w-fit"><img src={attachedPreview} alt="Outfit photo attached" className="h-20 w-16 rounded-lg object-cover" /><button type="button" onClick={() => { URL.revokeObjectURL(attachedPreview); previewUrlsRef.current.delete(attachedPreview); setAttachedPreview(null); setAttachedImage(null) }} aria-label="Remove attached photo" className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-text-primary text-surface"><X size={13} /></button></div>}
         <p className="text-2xs text-text-muted mt-2">
-          Kaia has access to your wardrobe and style preferences.
+          Share an outfit photo with Kaia for a quick style check.
         </p>
       </div>
     </div>
@@ -523,6 +547,7 @@ function MessageBubble({
               : 'bg-surface text-text-primary shadow-card rounded-bl-md'
           )}
         >
+          {isUser && message.imagePreviewUrl && <img src={message.imagePreviewUrl} alt="Outfit shared for review" className="mb-2 max-h-56 max-w-full rounded-xl object-contain" />}
           <MessageContent text={text} shopQueries={shopQueries} />
         </div>
       </div>
@@ -568,6 +593,27 @@ function MessageBubble({
       )}
     </div>
   )
+}
+
+async function imageFileToDataUrl(file: File): Promise<string> {
+  const objectUrl = URL.createObjectURL(file)
+  try {
+    const image = new Image()
+    image.src = objectUrl
+    await image.decode()
+    const scale = Math.min(1, 1440 / Math.max(image.naturalWidth, image.naturalHeight))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(image.naturalWidth * scale)
+    canvas.height = Math.round(image.naturalHeight * scale)
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Could not prepare this image.')
+    context.fillStyle = '#fff'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL('image/jpeg', 0.82)
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
 }
 
 // Resolves a [[SHOP: ...]] tag into real product pages via the Exa-backed

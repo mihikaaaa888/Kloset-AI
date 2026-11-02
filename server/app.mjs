@@ -484,12 +484,23 @@ async function callGroq(apiKey, systemPrompt, recentMessages) {
 // a role in the messages array, and requires the array to start with a user
 // turn — both handled here rather than forcing the Groq-shaped call site to
 // know about it.
-async function callClaude(apiKey, systemPrompt, recentMessages) {
+async function callClaude(apiKey, systemPrompt, recentMessages, imageDataUrl = null) {
   const anthropic = new Anthropic({ apiKey })
 
   const firstUserIdx = recentMessages.findIndex((m) => m.role === 'user')
-  const claudeMessages = (firstUserIdx <= 0 ? recentMessages : recentMessages.slice(firstUserIdx))
-    .map((m) => ({ role: m.role, content: m.content }))
+  const relevantMessages = firstUserIdx <= 0 ? recentMessages : recentMessages.slice(firstUserIdx)
+  let lastUserIdx = -1
+  relevantMessages.forEach((message, index) => { if (message.role === 'user') lastUserIdx = index })
+  const parsedImage = imageDataUrl?.match(/^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/)
+  const claudeMessages = relevantMessages.map((m, index) => ({
+    role: m.role,
+    content: imageDataUrl && parsedImage && index === lastUserIdx
+      ? [
+          { type: 'text', text: m.content },
+          { type: 'image', source: { type: 'base64', media_type: parsedImage[1], data: parsedImage[2] } },
+        ]
+      : m.content,
+  }))
 
   if (claudeMessages.length === 0) return null
 
@@ -513,6 +524,11 @@ app.post('/api/chat', async (req, res) => {
   const profileSummary = cap(rawBody.profileSummary, MAX_SUMMARY_CHARS)
   const stylePreferencesSummary = cap(rawBody.stylePreferencesSummary, MAX_SUMMARY_CHARS)
   const shopSummary = cap(rawBody.shopSummary, MAX_SUMMARY_CHARS)
+  const imageDataUrl = typeof rawBody.imageDataUrl === 'string' ? rawBody.imageDataUrl : null
+  const parsedImage = imageDataUrl?.match(/^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/)
+  if (imageDataUrl && (imageDataUrl.length > 8_000_000 || !parsedImage)) {
+    return res.status(400).json({ error: 'Please choose a smaller JPG, PNG, or WebP outfit photo.' })
+  }
   // Name + category only — enough for the outfit check to know that
   // "Blue jeans" is a bottom, whatever slot the model labels it as.
   const wardrobeItems = Array.isArray(rawBody.wardrobeItems)
@@ -564,6 +580,7 @@ CRITICAL RULES:
 - You have NO live inventory access and have not "found," "seen," or "spotted" any specific external item. Describe the piece only by its colour and item type (the same words as the tag) plus the personal reasoning — don't invent fabric, fit details, or features the real listing might contradict. E.g. correct: "Tan loafers would warm up your white-and-denim look." Wrong: "Buttery soft Italian-leather loafers with a cushioned sole."
 - Don't invent specific prices, stock, or exact product names for external pieces
 - Keep responses concise (2–4 sentences for simple questions, more for outfit requests)
+- When an outfit photo is attached, review only what is visible: name the key pieces, give one or two specific styling suggestions, and be kind and body-neutral
 - When building an outfit, list pieces clearly
 - Be encouraging, warm, and fashion-forward`
 
@@ -585,8 +602,17 @@ CRITICAL RULES:
 
   // Groq first, Claude as the fallback — used for the first draft and for
   // the rewrite if the draft breaks the outfit rules.
-  const generate = async (msgs) => {
+  const generate = async (msgs, attachedImage = null) => {
     let lastError = null
+    if (attachedImage) {
+      if (!claudeKey) return { reply: 'Photo outfit checks need vision support, which is not configured right now. You can still ask me styling questions by text.', source: 'vision-unavailable' }
+      try {
+        return { reply: await callClaude(claudeKey, systemPrompt, msgs, attachedImage), source: 'claude-vision' }
+      } catch (e) {
+        console.error('[chat] Claude vision error:', e?.message ?? e)
+        return { reply: null, source: null, lastError: e }
+      }
+    }
     if (groqKey) {
       try {
         const reply = await callGroq(groqKey, systemPrompt, msgs)
@@ -614,12 +640,12 @@ CRITICAL RULES:
   }
 
   const started = Date.now()
-  let { reply, source, lastError } = await generate(recentMessages)
+  let { reply, source, lastError } = await generate(recentMessages, imageDataUrl)
 
   // One rewrite at most — bounds latency, and a second draft almost always
   // fixes what it's told about. If it still slips, the user gets it anyway
   // rather than an error.
-  if (reply) {
+  if (reply && !imageDataUrl) {
     const problems = findOutfitProblems(reply, wardrobeItems)
     // A rewrite is a second model call; skip it when the first one was slow, or the
     // whole request overruns Netlify's 10s function limit and the phone gets nothing.

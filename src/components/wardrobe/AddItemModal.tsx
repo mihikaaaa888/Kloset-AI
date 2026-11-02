@@ -778,7 +778,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
             </div>
           ) : photoTab === 'browse' ? (
             <ImageSearchBrowser
-              defaultQuery={[draft.subcategory, draft.category, 'clothing'].filter(Boolean).join(' ')}
+              defaultQuery={buildSingleItemQuery(draft.category, draft.subcategory)}
               onSelect={(url) => {
                 setPreviewUrl(url)
                 setLegacyImageUrl(url)
@@ -1093,6 +1093,20 @@ interface PexelsPhoto {
   photographer: string
 }
 
+const BROWSE_ITEM_QUERIES = [
+  ['Tops', 'single shirt top blouse on plain background product photo'],
+  ['Bottoms', 'single trousers pants skirt on plain background product photo'],
+  ['Dresses', 'single dress on plain background product photo'],
+  ['Outerwear', 'single jacket coat blazer on plain background product photo'],
+  ['Shoes', 'single pair of shoes product photo plain background'],
+  ['Accessories', 'single bag jewellery accessory product photo plain background'],
+] as const
+
+function buildSingleItemQuery(category?: string, subcategory?: string) {
+  const item = subcategory || (category === 'tops' ? 'top' : category === 'bottoms' ? 'bottoms' : category === 'dresses' ? 'dress' : category === 'outerwear' ? 'jacket' : category === 'shoes' ? 'shoes' : category === 'accessories' ? 'accessory' : 'clothing item')
+  return `single ${item} product photo isolated plain background`
+}
+
 function ImageSearchBrowser({
   defaultQuery,
   onSelect,
@@ -1154,6 +1168,14 @@ function ImageSearchBrowser({
 
   return (
     <div className="space-y-3">
+      <div>
+        <p className="mb-2 text-xs text-text-muted">Browse individual pieces — clothing, shoes, bags, and accessories.</p>
+        <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Browse item categories">
+          {BROWSE_ITEM_QUERIES.map(([label, itemQuery]) => (
+            <button key={label} type="button" onClick={() => { setQuery(itemQuery); search(itemQuery, 1) }} className="shrink-0 rounded-full border border-text-primary/15 px-3 py-1.5 text-xs text-text-muted transition-colors hover:border-text-primary/35 hover:text-text-primary">{label}</button>
+          ))}
+        </div>
+      </div>
       {/* Search bar */}
       <div className="flex gap-2">
         <div className="relative flex-1">

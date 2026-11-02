@@ -107,48 +107,48 @@ function buildStylingTips(outfit: ClothingItem[], weather: CurrentWeather | null
     const relaxedTop = /relaxed|oversized|loose/i.test(top.fit ?? top.name)
     const relaxedBottom = /relaxed|oversized|wide|loose/i.test(bottom.fit ?? bottom.name)
     if (relaxedTop && relaxedBottom) {
-      tips.push(`With the relaxed ${top.name} and ${bottom.name}, try a front tuck or roll the sleeves to give the silhouette a little shape.`)
+      tips.push('Add shape with a half-tuck or rolled sleeves.')
     } else if (relaxedTop) {
-      tips.push(`Balance the relaxed ${top.name} with a clean waistline: try a half-tuck or show a slim belt with ${bottom.name}.`)
+      tips.push('Balance the relaxed top with a half-tuck or slim belt.')
     } else if (relaxedBottom) {
-      tips.push(`Let the shape of ${bottom.name} stand out; a neat tuck with ${top.name} keeps the proportions intentional.`)
+      tips.push('Define the waist to balance the relaxed silhouette.')
     } else {
-      tips.push(`Try a small front tuck with ${top.name} to create a clear waistline above ${bottom.name}.`)
+      tips.push('Try a small front tuck to define the waist.')
     }
   } else if (dresses.length) {
-    tips.push(`Let ${dresses[0].name} be the focal point; keep the silhouette clean and add one considered finishing detail.`)
+    tips.push('Let the dress lead; add one simple finishing detail.')
   } else if (tops.length) {
-    tips.push(`Try a cuff or relaxed half-tuck with ${tops[0].name} to add shape without changing the easy feel.`)
+    tips.push('Try a cuff or relaxed half-tuck to add shape.')
   } else if (bottoms.length) {
-    tips.push(`Keep the top half simple so ${bottoms[0].name} remains the focus; a defined waist helps finish the look.`)
+    tips.push('Keep the top simple and define the waist.')
   }
 
   if (printed.length && solid.length) {
-    tips.push(`Let the print on ${printed[0].name} lead and keep ${solid[0].name} simple; repeat one print colour in a small accessory if you have one.`)
+    tips.push('Let the print lead; keep accessories simple.')
   } else if (sharedColour) {
-    tips.push(`Repeat ${sharedColour.colour} once in your bag, belt, or jewellery to make the palette feel connected.`)
+    tips.push(`Repeat ${sharedColour.colour} in one small accessory.`)
   } else if (printed.length) {
-    tips.push(`Keep accessories pared back around ${printed[0].name}, and let its pattern do the talking.`)
+    tips.push('Keep accessories pared back around the print.')
   } else if (accessories.length) {
-    tips.push(`Use ${accessories[0].name} as the finishing point; keep the other accessories quiet so it reads as intentional.`)
+    tips.push('Let one accessory be the finishing touch.')
   } else if (shoes.length) {
-    tips.push(`Echo one colour from ${shoes[0].name} in a bag or jewellery detail for a pulled-together finish.`)
+    tips.push('Echo a shoe colour in one small detail.')
   } else {
-    tips.push('Add one third piece you already own—a belt, scarf, or light layer—to make the look feel finished.')
+    tips.push('Add a belt, scarf, or light layer to finish the look.')
   }
 
   if (outerwear.length) {
-    tips.push(`Wear ${outerwear[0].name} open to show the layers underneath; push the sleeves back slightly for an easy finish.`)
+    tips.push('Wear the outer layer open; push the sleeves back.')
   } else if (weather?.condition === 'rainy') {
-    tips.push('For the wet weather, choose a light layer and shoes with a grippy sole; keep a scarf or bag tucked under cover.')
+    tips.push('Choose a light rain layer and shoes with grip.')
   } else if (weather?.condition === 'cold' || weather?.condition === 'cool') {
-    tips.push('For the cooler weather, add a warm layer and keep it open indoors so the outfit still has dimension.')
+    tips.push('Add a warm layer; wear it open indoors.')
   } else if (weather?.condition === 'hot') {
-    tips.push('For the heat, keep layers light and choose one breathable finishing piece rather than stacking heavy accessories.')
+    tips.push('Keep layers light and choose breathable accessories.')
   } else if (accessories.length) {
-    tips.push(`A small styling change—like rolling a cuff beside ${accessories[0].name}—keeps the details feeling considered.`)
+    tips.push('Roll a cuff for an easy, considered finish.')
   } else {
-    tips.push('Finish with one simple detail, such as a rolled cuff or a slim belt, rather than adding several competing accents.')
+    tips.push('Finish with a rolled cuff or slim belt.')
   }
 
   return tips.slice(0, 3)
