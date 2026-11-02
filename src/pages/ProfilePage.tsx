@@ -151,16 +151,16 @@ export function ProfilePage() {
       <header className="relative isolate flex min-h-[14rem] items-center overflow-hidden bg-[#355E3B] py-8 text-[#FFFDD0] sm:min-h-[16rem] lg:min-h-[17rem]">
         {coverItems.length > 0 ? <div className="absolute inset-0 -z-10 grid grid-cols-3 opacity-45 sm:grid-cols-5">{coverItems.map((item) => <CoverImage key={item.id} item={item} />)}</div> : null}
         <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[#17351f]/90 via-[#24482e]/75 to-[#355E3B]/45" />
-        <div className="mx-auto flex w-full max-w-6xl items-center gap-5 px-4 sm:px-6 lg:px-8">
-          <button type="button" onClick={() => avatarInput.current?.click()} aria-label="Upload profile photo" className="group relative h-24 w-24 shrink-0 overflow-hidden rounded-full border border-[#FFFDD0]/50 bg-[#FFFDD0]/15 shadow-card sm:h-28 sm:w-28">
-            {avatarUrl ? <img src={avatarUrl} alt="Profile" className="h-full w-full object-cover" /> : <span className="flex h-full w-full items-center justify-center font-display text-3xl">{getInitials(profile.name)}</span>}
+        <div className="mx-auto flex w-full max-w-6xl translate-y-3 items-center gap-5 px-4 sm:translate-y-4 sm:px-6 lg:px-8">
+          <button type="button" onClick={() => avatarInput.current?.click()} aria-label="Upload profile photo" className="group relative h-12 w-12 shrink-0 translate-y-3 overflow-hidden rounded-full border border-[#FFFDD0]/50 bg-[#FFFDD0]/15 shadow-card sm:h-16 sm:w-16 sm:translate-y-4">
+            {avatarUrl ? <img src={avatarUrl} alt="Profile" className="h-full w-full object-cover" /> : <span className="flex h-full w-full items-center justify-center font-display text-lg sm:text-xl">{getInitials(profile.name)}</span>}
             <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><Camera size={20} /></span>
           </button>
           <input ref={avatarInput} type="file" accept="image/*" className="hidden" onChange={(event) => { void handleAvatar(event.target.files?.[0]); event.target.value = '' }} />
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 translate-y-3 sm:translate-y-4">
             <h1 className="truncate font-display text-4xl leading-none sm:text-6xl">{profile.name}</h1>
           </div>
-          <button onClick={handleEditProfile} aria-label="Edit profile" title="Edit profile" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#FFFDD0]/40 text-[#FFFDD0] transition-colors hover:bg-[#FFFDD0] hover:text-[#355E3B]"><Pencil size={16} /></button>
+          <button onClick={handleEditProfile} aria-label="Edit profile" title="Edit profile" className="flex h-10 w-10 shrink-0 translate-y-3 items-center justify-center rounded-full border border-[#FFFDD0]/40 text-[#FFFDD0] transition-colors hover:bg-[#FFFDD0] hover:text-[#355E3B] sm:translate-y-4"><Pencil size={16} /></button>
         </div>
       </header>
 
