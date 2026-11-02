@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { clsx } from 'clsx'
 
 import { ClothingCard } from '@/components/wardrobe/ClothingCard'
+import { useItemImage } from '@/hooks/useItemImage'
 import { AddItemModal } from '@/components/wardrobe/AddItemModal'
 import { ItemDetailModal } from '@/components/wardrobe/ItemDetailModal'
 import { MyOutfits } from '@/components/saved/MyOutfits'
@@ -509,18 +510,28 @@ function MainClosetPicker({ open, items, selectedIds, onToggle, onClose, onSave,
         ) : (
           <div className="max-h-[52dvh] divide-y divide-text-primary/10 overflow-y-auto">
             {visibleItems.map((item) => (
-              <label key={item.id} className="flex cursor-pointer items-center gap-3 py-3">
-                <input type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => onToggle(item.id)} className="h-4 w-4 accent-butter-yellow" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm text-text-primary">{item.name}</span>
-                  <span className="mt-0.5 block text-2xs uppercase tracking-widest text-text-muted">{CATEGORY_LABEL[item.category]}{item.colour.length ? ` · ${item.colour.join(', ')}` : ''}</span>
-                </span>
-              </label>
+              <MainClosetPickerRow key={item.id} item={item} selected={selectedIds.includes(item.id)} onToggle={() => onToggle(item.id)} />
             ))}
           </div>
         )}
       </div>
     </Modal>
+  )
+}
+
+function MainClosetPickerRow({ item, selected, onToggle }: { item: ClothingItem; selected: boolean; onToggle: () => void }) {
+  const imageUrl = useItemImage(item)
+  return (
+    <label className="flex cursor-pointer items-center gap-3 py-3">
+      <input type="checkbox" checked={selected} onChange={onToggle} className="h-4 w-4 shrink-0 accent-butter-yellow" />
+      <span className="flex h-16 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-tile">
+        {imageUrl ? <img src={imageUrl} alt="" className="h-full w-full object-cover" /> : <Shirt size={20} strokeWidth={1} className="text-text-muted/60" />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm text-text-primary">{item.name}</span>
+        <span className="mt-0.5 block text-2xs uppercase tracking-widest text-text-muted">{CATEGORY_LABEL[item.category]}{item.colour.length ? ` · ${item.colour.join(', ')}` : ''}</span>
+      </span>
+    </label>
   )
 }
 

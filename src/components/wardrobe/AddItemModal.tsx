@@ -891,12 +891,6 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
             </div>
           )}
 
-          {!displayUrl && photoTab === 'upload' && !imageProcessing && (
-            <p className="text-xs text-text-muted mt-2">
-              Outfit scanning runs on this device. When PhotoRoom is configured, only each isolated garment cutout is sent to refine its edges; faces and the full photo are not sent.
-            </p>
-          )}
-
           {/* AI auto-fill banner */}
           {aiApplied && (
             <div className="mt-3 flex items-start gap-2.5 px-3 py-2.5 rounded-2xl bg-text-primary/8 border border-text-primary/15">

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronDown } from 'lucide-react'
 
 import { SavedOutfitCard } from '@/components/saved/SavedOutfitCard'
+import { LogOutfitWeek } from '@/components/saved/LogOutfitWeek'
 import { SavedOutfitDetailModal } from '@/components/saved/SavedOutfitDetailModal'
 import { CreateOutfitModal } from '@/components/saved/CreateOutfitModal'
 import { ShareSheet } from '@/components/friends/ShareSheet'
@@ -147,6 +148,8 @@ export function MyOutfits() {
           ))}
         </div>
       )}
+
+      {!showRecycleBin && <LogOutfitWeek outfits={savedOutfits} wardrobe={wardrobeItems} onCreate={() => setCreating(true)} />}
 
       <SavedOutfitDetailModal
         outfit={selectedOutfit}
