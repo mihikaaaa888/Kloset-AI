@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { MoreHorizontal } from 'lucide-react'
 import { colourNameToHex, isLightColour } from '@/lib/colourUtils'
 import { CategoryGlyph } from '@/components/wardrobe/categoryVisuals'
 import { formatINR } from '@/lib/shopping'
@@ -10,14 +10,32 @@ interface ShopItemCardProps {
   mode: 'buy' | 'rent'
   inWardrobe: boolean
   onAdd: () => void
+  onRemove: () => void
+  onCompletePiece?: () => void
 }
 
-/** Product tile with a compact add control over the top-right of its photo. */
-export function ShopItemCard({ item, mode, inWardrobe, onAdd }: ShopItemCardProps) {
+/** Product tile with its closet and styling actions grouped in one menu. */
+export function ShopItemCard({ item, mode, inWardrobe, onAdd, onRemove, onCompletePiece }: ShopItemCardProps) {
   const [imageFailed, setImageFailed] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
   const fallbackHex = item.colours[0] ? colourNameToHex(item.colours[0]) : '#EDE9E2'
   const fallbackText = isLightColour(fallbackHex) ? 'text-text-primary/35' : 'text-white/45'
   const href = mode === 'rent' ? item.rentUrl : item.shopUrl
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !menuRef.current?.contains(event.target)) setMenuOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') setMenuOpen(false) }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [menuOpen])
 
   return (
     <div className="group flex flex-col">
@@ -53,38 +71,36 @@ export function ShopItemCard({ item, mode, inWardrobe, onAdd }: ShopItemCardProp
             </div>
           )}
         </a>
-        {item.brand && (
-          <span className="absolute bottom-3 left-3 text-2xs uppercase tracking-widest text-text-primary bg-warm-cream/90 px-2 py-1">
-            {item.brand}
-          </span>
-        )}
-        {inWardrobe ? (
-          <span className="absolute top-3 left-3 text-2xs uppercase tracking-widest text-text-primary bg-warm-cream/90 px-2 py-1">
-            In your Kloset
-          </span>
-        ) : mode === 'buy' ? (
+        {inWardrobe && <span className="absolute left-3 top-3 bg-warm-cream/90 px-2 py-1 text-2xs uppercase tracking-widest text-text-primary">In your Kloset</span>}
+        <div ref={menuRef} className="absolute right-2 top-2 z-10">
           <button
             type="button"
-            onClick={onAdd}
-            aria-label={`Add ${item.name} to your Kloset`}
-            title="Add to Kloset"
-            className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-warm-cream/95 text-text-primary shadow-sm opacity-100 transition-all hover:bg-text-primary hover:text-warm-cream sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-label={`Actions for ${item.name}`}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            title="Piece actions"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-warm-cream/95 text-text-primary shadow-sm transition-colors hover:bg-text-primary hover:text-warm-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
           >
-            <Plus size={14} strokeWidth={1.6} />
+            <MoreHorizontal size={18} strokeWidth={1.7} />
           </button>
-        ) : null}
+          {menuOpen && <div role="menu" className="absolute right-0 top-full mt-1 w-44 border border-text-primary/10 bg-surface py-1 shadow-lifted">
+            {mode === 'buy' && <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); inWardrobe ? onRemove() : onAdd() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">{inWardrobe ? 'Remove from Kloset' : 'Add to Kloset'}</button>}
+            {onCompletePiece && <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onCompletePiece() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Complete a piece</button>}
+          </div>}
+        </div>
       </div>
 
       <div className="pt-3 flex flex-col gap-1">
         <p className="text-sm text-text-primary leading-snug">{item.name}</p>
-        <p className="text-sm font-semibold text-text-primary">
+        <p className="text-xs text-text-muted">
+          {item.brand ? <>{item.brand} · </> : null}
           {mode === 'rent' ? (
-            <>{formatINR(item.rentPricePerWeek)}<span className="font-normal text-text-muted"> / week</span></>
+            <>{formatINR(item.rentPricePerWeek)} / week</>
           ) : (
             <>{formatINR(item.estimatedPrice)}</>
           )}
         </p>
-
       </div>
     </div>
   )

@@ -75,6 +75,11 @@ export function deleteWithUndo(opts: {
   })
 }
 
+/** Offers an undo for an action that has already happened, such as adding a piece. */
+export function offerUndo(message: string, undo: () => void | Promise<void>) {
+  show({ id: crypto.randomUUID(), message, undo, keys: [] })
+}
+
 /** A short notice in the same spot, without an Undo button (used when a deletion fails). */
 export function notify(message: string) {
   show({ id: crypto.randomUUID(), message, keys: [] })
