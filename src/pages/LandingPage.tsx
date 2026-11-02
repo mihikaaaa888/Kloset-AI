@@ -33,7 +33,7 @@ export function LandingPage() {
 
   const handleCTA = () => {
     if (user && profile?.onboardingComplete) {
-      navigate('/wardrobe')
+      navigate('/wardrobe', { state: { fromBuildMyKloset: true } })
     } else if (user) {
       navigate('/onboarding')
     } else {

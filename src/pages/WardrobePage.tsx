@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { Plus, Search, Shirt, Compass, X, ChevronDown } from 'lucide-react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Plus, Search, Shirt, Compass, X, ChevronDown, ArrowLeft } from 'lucide-react'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { clsx } from 'clsx'
 
 import { ClothingCard } from '@/components/wardrobe/ClothingCard'
@@ -26,7 +26,9 @@ import type { ClothingItem, ClothingCategory } from '@/types'
 type KlosetView = 'pieces' | 'build' | 'outfits'
 
 export function WardrobePage() {
+  const location = useLocation()
   const navigate = useNavigate()
+  const showLandingBack = (location.state as { fromBuildMyKloset?: boolean } | null)?.fromBuildMyKloset === true
   const profile = useUserStore((s) => s.profile)
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -237,6 +239,8 @@ export function WardrobePage() {
           </div>
         ) : <>
         <div className="flex min-h-14 items-center justify-between gap-3 pb-4 pt-2">
+          <div className="flex min-w-0 items-center gap-2">
+          {showLandingBack && <button type="button" onClick={() => navigate('/')} aria-label="Back to home" className="inline-flex h-10 shrink-0 items-center gap-1.5 px-1 text-sm text-text-muted transition-colors hover:text-text-primary md:hidden"><ArrowLeft size={18} strokeWidth={1.5} /><span>Back</span></button>}
           <div ref={klosetMenuRef} className="relative min-w-0">
             <button
               type="button"
@@ -262,6 +266,7 @@ export function WardrobePage() {
                 </div>
               </form> : <button role="menuitem" onClick={() => setCreatingKloset(true)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5"><Plus size={15} /> New Kloset</button>}
             </div>}
+          </div>
           </div>
 
           {view === 'pieces' && <div className="flex shrink-0 items-center gap-2 sm:gap-3">
