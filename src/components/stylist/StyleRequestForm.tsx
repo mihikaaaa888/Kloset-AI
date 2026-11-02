@@ -35,9 +35,11 @@ interface StyleRequestFormProps {
 
 export function StyleRequestForm({ onSubmit, isLoading, onStepChange }: StyleRequestFormProps) {
   const [occasion, setOccasion] = useState<Occasion | null>(null)
+  const [otherOccasion, setOtherOccasion] = useState('')
   const [mood, setMood] = useState<Mood | null>(null)
   const [step, setStep] = useState(1)
   const [showMoreOccasions, setShowMoreOccasions] = useState(false)
+  const [showOtherOccasion, setShowOtherOccasion] = useState(false)
   const completionStarted = useRef(false)
   const weatherPromise = useRef<Promise<WeatherCondition> | null>(null)
 
@@ -47,12 +49,24 @@ export function StyleRequestForm({ onSubmit, isLoading, onStepChange }: StyleReq
   }, [])
 
   const finishQuiz = (selectedMood: Mood) => {
-    if (!occasion || completionStarted.current) return
+    const selectedOccasion = occasion ?? (otherOccasion.trim() ? inferOccasion(otherOccasion) : null)
+    if (!selectedOccasion || completionStarted.current) return
     completionStarted.current = true
     setMood(selectedMood)
     setStep(0)
     const detectedWeather = weatherPromise.current ?? getLocalWeather().then(({ condition }) => condition).catch(() => 'warm' as WeatherCondition)
-    void detectedWeather.then((weather) => onSubmit({ occasion, weather, mood: selectedMood }))
+    void detectedWeather.then((weather) => onSubmit({
+      occasion: selectedOccasion,
+      ...(otherOccasion.trim() ? { customOccasion: otherOccasion.trim() } : {}),
+      weather,
+      mood: selectedMood,
+    }))
+  }
+
+  const continueWithOtherOccasion = () => {
+    if (!otherOccasion.trim()) return
+    setOccasion(inferOccasion(otherOccasion))
+    setStep(2)
   }
 
   const commonOccasions = showMoreOccasions ? OCCASIONS : OCCASIONS.slice(0, 6)
@@ -72,11 +86,15 @@ export function StyleRequestForm({ onSubmit, isLoading, onStepChange }: StyleReq
           </div>
 
           {step === 1 && <>
-            <h2 className="mb-4 font-serif text-xl text-text-primary">What are you dressing for?</h2>
             <div className="flex flex-wrap gap-2">
               {commonOccasions.map((option) => <ChoiceChip key={option.value} selected={occasion === option.value} onClick={() => { setOccasion(option.value); setStep(2) }}>{option.label}</ChoiceChip>)}
               {OCCASIONS.length > 6 && <button type="button" aria-expanded={showMoreOccasions} onClick={() => setShowMoreOccasions((shown) => !shown)} className="px-2 py-2.5 text-sm text-text-muted underline decoration-text-primary/25 underline-offset-4 transition-colors hover:text-text-primary">{showMoreOccasions ? '− Less' : '+ More'}</button>}
+              <button type="button" aria-expanded={showOtherOccasion} onClick={() => setShowOtherOccasion((shown) => !shown)} className="px-2 py-2.5 text-sm text-text-muted underline decoration-text-primary/25 underline-offset-4 transition-colors hover:text-text-primary">+ Other</button>
             </div>
+            {showOtherOccasion && <form onSubmit={(event) => { event.preventDefault(); continueWithOtherOccasion() }} className="mt-4 flex max-w-lg flex-wrap gap-3">
+              <input autoFocus value={otherOccasion} onChange={(event) => setOtherOccasion(event.target.value)} maxLength={60} placeholder="What are you dressing for?" aria-label="Other occasion" className="min-w-56 flex-1 border-b border-text-primary/25 bg-transparent px-1 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-text-primary focus:outline-none" />
+              <button type="submit" disabled={!otherOccasion.trim()} className="border border-text-primary/25 px-4 py-2 text-sm text-text-primary transition-colors hover:border-text-primary/50 disabled:cursor-not-allowed disabled:opacity-40">Continue</button>
+            </form>}
           </>}
 
           {step === 2 && <>
@@ -90,6 +108,18 @@ export function StyleRequestForm({ onSubmit, isLoading, onStepChange }: StyleReq
       )}
     </div>
   )
+}
+
+function inferOccasion(value: string): Occasion {
+  const text = value.toLowerCase()
+  if (/work|office|meeting|interview/.test(text)) return 'work'
+  if (/date|dinner|evening|romantic/.test(text)) return 'date-night'
+  if (/wedding|party|gala|ceremony|celebration|event/.test(text)) return 'special-event'
+  if (/gym|workout|exercise|training/.test(text)) return 'gym'
+  if (/travel|flight|airport|trip|vacation/.test(text)) return 'travel'
+  if (/weekend|brunch|cosy|cozy|relax|home|coffee/.test(text)) return 'weekend'
+  if (/formal|black tie/.test(text)) return 'formal'
+  return 'casual'
 }
 
 function ChoiceChip({ children, selected, onClick }: { children: React.ReactNode; selected: boolean; onClick: () => void }) {

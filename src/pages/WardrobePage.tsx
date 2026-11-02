@@ -42,12 +42,10 @@ export function WardrobePage() {
   const [creatingKloset, setCreatingKloset] = useState(false)
   const [newKlosetName, setNewKlosetName] = useState('')
   const [showKlosetMenu, setShowKlosetMenu] = useState(false)
-  const [showStyleMenu, setShowStyleMenu] = useState(false)
   const [completeSelectionMode, setCompleteSelectionMode] = useState(false)
   const [showMainPicker, setShowMainPicker] = useState(false)
   const [mainPickerIds, setMainPickerIds] = useState<string[]>([])
   const klosetMenuRef = useRef<HTMLDivElement>(null)
-  const styleMenuRef = useRef<HTMLDivElement>(null)
 
   const [showAddModal, setShowAddModal] = useState(false)
   const [editItem, setEditItem] = useState<ClothingItem | undefined>()
@@ -72,24 +70,14 @@ export function WardrobePage() {
   }, [showKlosetMenu])
 
   useEffect(() => {
-    if (!showStyleMenu) return
-    const closeOnOutsideClick = (event: PointerEvent) => {
-      if (event.target instanceof Node && !styleMenuRef.current?.contains(event.target)) setShowStyleMenu(false)
-    }
-    document.addEventListener('pointerdown', closeOnOutsideClick)
-    return () => document.removeEventListener('pointerdown', closeOnOutsideClick)
-  }, [showStyleMenu])
-
-  useEffect(() => {
-    if (!completeSelectionMode && !showStyleMenu) return
+    if (!completeSelectionMode) return
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       setCompleteSelectionMode(false)
-      setShowStyleMenu(false)
     }
     window.addEventListener('keydown', handleEscape)
     return () => window.removeEventListener('keydown', handleEscape)
-  }, [completeSelectionMode, showStyleMenu])
+  }, [completeSelectionMode])
 
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {}
@@ -202,7 +190,6 @@ export function WardrobePage() {
 
   const openCompletePiece = (item: ClothingItem) => {
     setCompleteSelectionMode(false)
-    setShowStyleMenu(false)
     navigate('/stylist', { state: { mode: 'item', itemId: item.id } })
   }
 
@@ -281,21 +268,6 @@ export function WardrobePage() {
             <button onClick={() => setShowSearch((visible) => !visible)} aria-pressed={showSearch} aria-label="Search wardrobe" className="flex h-10 w-10 items-center justify-center text-text-primary transition-colors hover:bg-text-primary/5">
               {showSearch ? <X size={18} strokeWidth={1.4} /> : <Search size={18} strokeWidth={1.4} />}
             </button>
-            <div ref={styleMenuRef} className="relative">
-              <button
-                type="button"
-                aria-haspopup="menu"
-                aria-expanded={showStyleMenu}
-                onClick={() => setShowStyleMenu((visible) => !visible)}
-                className="inline-flex h-9 sm:h-10 items-center justify-center gap-1 border border-text-primary/25 px-2.5 sm:px-4 text-2xs font-medium text-text-primary transition-colors hover:border-text-primary/50"
-              >
-                <span>Style me</span><ChevronDown size={13} aria-hidden="true" />
-              </button>
-              {showStyleMenu && <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-52 border border-text-primary/10 bg-surface p-1.5 shadow-lifted">
-                <button role="menuitem" onClick={() => { setShowStyleMenu(false); setCompleteSelectionMode(false); navigate('/stylist', { state: { mode: 'wardrobe' } }) }} className="w-full px-3 py-2.5 text-left text-sm text-text-primary transition-colors hover:bg-text-primary/5">Style my wardrobe</button>
-                <button role="menuitem" onClick={() => { setShowStyleMenu(false); setCompleteSelectionMode(true) }} className="w-full px-3 py-2.5 text-left text-sm text-text-primary transition-colors hover:bg-text-primary/5">Complete a piece</button>
-              </div>}
-            </div>
             <button onClick={openAdd} className="inline-flex h-9 sm:h-10 items-center gap-1.5 bg-text-primary px-2.5 sm:px-5 text-2xs font-medium uppercase tracking-widest text-warm-cream transition-colors hover:bg-text-primary/90"><Plus size={14} strokeWidth={1.5} /> <span className="hidden sm:inline">Add piece</span><span className="sm:hidden">Add</span></button>
           </div>}
         </div>

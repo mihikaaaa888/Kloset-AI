@@ -25,7 +25,6 @@ import type { CatalogItem, ClothingCategory, ClothingItem } from '@/types'
 
 type ShopMode = 'buy' | 'rent'
 type SortMode = 'recommended' | 'price-low' | 'price-high' | 'name'
-const COMPLETE_PIECE_HINT_KEY = 'kloset:complete-piece-hint-dismissed'
 
 const CATEGORY_FILTERS: { value: ClothingCategory | 'all'; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -70,9 +69,6 @@ export function DiscoverPage() {
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [completeOpen, setCompleteOpen] = useState(false)
   const [completeAnchor, setCompleteAnchor] = useState<PieceAnchor | undefined>()
-  const [showCompleteHint, setShowCompleteHint] = useState(() => {
-    try { return localStorage.getItem(COMPLETE_PIECE_HINT_KEY) !== 'true' } catch { return true }
-  })
   const [addedThisSession, setAddedThisSession] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -194,8 +190,6 @@ export function DiscoverPage() {
   const openComplete = (anchor?: PieceAnchor) => {
     setCompleteAnchor(anchor)
     setCompleteOpen(true)
-    setShowCompleteHint(false)
-    try { localStorage.setItem(COMPLETE_PIECE_HINT_KEY, 'true') } catch { /* The flow still works when storage is unavailable. */ }
   }
   const toggleValue = (values: string[], value: string, setValues: (next: string[]) => void) => {
     setValues(values.includes(value) ? values.filter((entry) => entry !== value) : [...values, value])
@@ -293,8 +287,7 @@ export function DiscoverPage() {
             <h2 className="text-sm font-medium text-text-muted">Suggested for you</h2>
           </div>
           <div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-3">
-            {showCompleteHint && <p className="text-right text-xs text-text-muted sm:text-left">Pick something you own and we'll find what pairs with it.</p>}
-            <button onClick={() => openComplete()} title="Pick something you own and we'll find what pairs with it." className="inline-flex h-8 shrink-0 items-center gap-1.5 border border-text-primary/25 px-3 text-xs text-text-primary transition-colors hover:border-text-primary/50 hover:bg-text-primary/5">
+            <button onClick={() => openComplete()} className="inline-flex h-8 shrink-0 items-center gap-1.5 border border-text-primary/25 px-3 text-xs text-text-primary transition-colors hover:border-text-primary/50 hover:bg-text-primary/5">
               Complete a piece
             </button>
           </div>

@@ -180,9 +180,9 @@ export function StylistPage() {
                 ) : (
                   <>
                     <h1 className="font-display text-3xl lg:text-4xl font-medium text-text-primary leading-tight">
-                      {mode === 'item' ? 'Pick a piece to style.' : 'What are we styling today?'}
+                      {mode === 'item' ? 'Pick a piece to style' : 'What are you dressing for?'}
                     </h1>
-                    {(mode === 'item' || formStep === 1) && <p className="text-text-muted text-sm mt-2 leading-relaxed">{mode === 'item' ? 'Select an item from your Kloset and we\'ll build an outfit around it.' : 'Two quick questions'}</p>}
+                    {mode !== 'item' && formStep === 1 && <p className="text-text-muted text-sm mt-2 leading-relaxed">Two quick questions</p>}
                   </>
                 )}
               </div>

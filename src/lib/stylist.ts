@@ -27,6 +27,7 @@ export type Mood =
 
 export interface StyleRequest {
   occasion: Occasion
+  customOccasion?: string
   weather: WeatherCondition
   mood: Mood
   stylePreference?: StylePreference
@@ -422,7 +423,9 @@ function generateWhyItWorks(
     gym: 'Function-first without sacrificing intention. The pieces work hard so you can.',
     'special-event': 'The occasion deserves a look that will still feel right in photographs years from now. This is it.',
   }
-  const occasionLine = occasionLines[request.occasion] ?? ''
+  const occasionLine = request.customOccasion
+    ? `For ${request.customOccasion}, this look balances comfort and polish with pieces from your Kloset.`
+    : occasionLines[request.occasion] ?? ''
 
   const weatherBonus =
     request.weather === 'cold'
