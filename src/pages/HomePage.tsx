@@ -58,6 +58,10 @@ export function HomePage() {
 
 type CurrentWeather = { temperature: number; label: string; condition: WeatherCondition; code: number; dateKey: string }
 
+function stableHash(value: string): number {
+  return [...value].reduce((hash, character) => (Math.imul(hash, 31) + character.charCodeAt(0)) >>> 0, 7)
+}
+
 function weatherDescription(code: number): string {
   if (code === 0) return 'Clear sky'
   if (code === 1) return 'Mostly clear'
@@ -190,8 +194,23 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
     const dayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
     if ((!weather && !weatherError) || (weather && weather.dateKey !== dayKey) || items.length < 2) return
     let cancelled = false
-    const wardrobeKey = items.map((item) => item.id).sort().join(',')
-    const cacheKey = `kloset:daily-outfit:v3:${profile?.name ?? 'guest'}:${dayKey}:${wardrobeKey}`
+    const wardrobeSignature = items.map((item) => [
+      item.id,
+      item.category,
+      item.colour.join(','),
+      item.pattern,
+      item.formality ?? '',
+      item.fit ?? '',
+      item.occasions.join(','),
+      item.seasons.join(','),
+      item.timesWorn,
+      item.lastWorn ?? '',
+      item.isFavourite ? 'favourite' : '',
+    ].join(':')).sort().join('|')
+    const wardrobeKey = stableHash(wardrobeSignature).toString(36)
+    // Bump the cache version when recommendation rules change so today's rack
+    // is recalculated instead of preserving the older repetitive selection.
+    const cacheKey = `kloset:daily-outfit:v4:${profile?.id ?? profile?.name ?? 'guest'}:${dayKey}:${wardrobeKey}`
     try {
       const cached = localStorage.getItem(cacheKey)
       if (cached) {
@@ -207,7 +226,7 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
     }
 
     setRecommendationLoading(true)
-    const dailyAttempt = Math.floor(new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() / 86400000)
+    const dailyAttempt = stableHash(`${profile?.id ?? profile?.name ?? 'guest'}|${dayKey}|${wardrobeKey}`)
     void generateOutfit({ occasion: 'casual', weather: weather?.condition ?? 'warm', mood: 'relaxed' }, items, profile, dailyAttempt)
       .then(({ suggestion }) => {
         if (cancelled) return

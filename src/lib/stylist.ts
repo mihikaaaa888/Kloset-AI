@@ -186,6 +186,25 @@ function scoreItem(
   if (seasonMatch) score += 6
   else if (item.seasons.length === 0) score += 2
 
+  // Use garment descriptors to make the same closet read differently for a
+  // relaxed weekend and an evening occasion, even when an item has broad
+  // occasion tags.
+  const garmentDetails = [item.name, item.subcategory, item.fit, item.formality, item.material]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  const dressy = /formal|dress|evening|occasion|elegant|satin|silk|heel|blazer|tailored/.test(garmentDetails)
+  const relaxed = /casual|relaxed|cozy|cosy|soft|knit|sweat|sneaker|loose|comfortable/.test(garmentDetails)
+  if (['date-night', 'formal', 'special-event'].includes(request.occasion)) {
+    if (dressy) score += 5
+    if (relaxed && !dressy) score -= 2
+  } else if (['casual', 'weekend', 'travel'].includes(request.occasion)) {
+    if (relaxed) score += 4
+    if (dressy) score -= 2
+  } else if (request.occasion === 'work' && /professional|business|tailored|blazer/.test(garmentDetails)) {
+    score += 4
+  }
+
   // Colour harmony with already selected items
   for (const selected of alreadySelected) {
     for (const c1 of item.colour) {
@@ -199,13 +218,28 @@ function scoreItem(
   if (profile) {
     if (item.colour.some((c) => profile.favouriteColours.includes(c))) score += 5
     if (item.colour.some((c) => profile.avoidColours.includes(c))) score -= 15
-    score += affinityForLearnedTraits(learnedStyle, {
+    // Simply having many items with a trait doesn't prove that trait is a
+    // preference. Keep closet-wide frequency as a weak tie-breaker; explicit
+    // favourites and colour preferences carry the stronger signal.
+    score += Math.min(2, affinityForLearnedTraits(learnedStyle, {
       colours: item.colour,
       subcategory: item.subcategory,
       material: item.material,
       pattern: item.pattern,
       formality: item.formality,
-    })
+    }) * 0.2)
+  }
+  if (item.isFavourite) score += 2
+
+  // Gently rotate away from pieces worn very recently or very often, so
+  // favourites don't crowd out the rest of the closet.
+  score -= Math.min(item.timesWorn, 8) * 0.35
+  if (item.lastWorn) {
+    const daysSinceWear = (Date.now() - new Date(item.lastWorn).getTime()) / 86_400_000
+    if (Number.isFinite(daysSinceWear) && daysSinceWear >= 0) {
+      if (daysSinceWear < 7) score -= 4
+      else if (daysSinceWear < 21) score -= 2
+    }
   }
 
   // Style alignment
@@ -254,16 +288,18 @@ function pickBest(
     item,
     score: scoreItem(item, request, profile, learnedStyle, selected),
   }))
-  scored.sort((a, b) => b.score - a.score || a.item.timesWorn - b.item.timesWorn || a.item.id.localeCompare(b.item.id))
+  scored.sort((a, b) => b.score - a.score || a.item.timesWorn - b.item.timesWorn || (a.item.lastWorn ?? '').localeCompare(b.item.lastWorn ?? '') || a.item.id.localeCompare(b.item.id))
   if (scored[0].score <= -100) return null
 
-  // Rotate among the strongest, similarly suitable pieces so a single item
-  // cannot win every daily outfit just because its colour/style score is a bit higher.
+  // Rotate across every close-fit option, rather than a short prefix of the
+  // ranked list. Capping this list made pieces later in a large wardrobe
+  // effectively invisible to daily recommendations.
   const bestScore = scored[0].score
   const contenders = scored
-    .filter((candidate) => bestScore - candidate.score <= 5)
-    .slice(0, 4)
-  return contenders[Math.abs(attempt) % contenders.length].item
+    .filter((candidate) => bestScore - candidate.score <= 8)
+  const variationKey = `${attempt}|${request.occasion}|${category}`
+  const variationOffset = [...variationKey].reduce((total, character) => (total * 31 + character.charCodeAt(0)) >>> 0, 7)
+  return contenders[variationOffset % contenders.length].item
 }
 
 // ─── Text generation ──────────────────────────────────────────────────────────

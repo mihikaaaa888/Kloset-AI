@@ -91,8 +91,11 @@ export function StylistPage() {
 
   const handleFormSubmit = (request: StyleRequest) => {
     setCurrentRequest(request)
-    setAttempt(0)
-    runGeneration(request, 0)
+    // Give each fresh outfit request its own deterministic rotation seed;
+    // Try Another increments from it without resetting to the same first picks.
+    const initialAttempt = Math.floor(Math.random() * 1_000_000)
+    setAttempt(initialAttempt)
+    runGeneration(request, initialAttempt)
   }
 
   const handleTryAnother = () => {
