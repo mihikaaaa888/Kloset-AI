@@ -13,7 +13,6 @@ import { ShareSheet } from '@/components/friends/ShareSheet'
 import type { ShareTarget } from '@/lib/friendService'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
-import { CATEGORY_LABEL } from '@/components/wardrobe/categoryVisuals'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useKlosetStore } from '@/store/klosetStore'
 import { useUserStore } from '@/store/userStore'
@@ -524,12 +523,11 @@ function MainClosetPickerRow({ item, selected, onToggle }: { item: ClothingItem;
   return (
     <label className="flex cursor-pointer items-center gap-3 py-3">
       <input type="checkbox" checked={selected} onChange={onToggle} className="h-4 w-4 shrink-0 accent-butter-yellow" />
-      <span className="flex h-16 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-tile">
+      <span className="flex h-24 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-tile">
         {imageUrl ? <img src={imageUrl} alt="" className="h-full w-full object-cover" /> : <Shirt size={20} strokeWidth={1} className="text-text-muted/60" />}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm text-text-primary">{item.name}</span>
-        <span className="mt-0.5 block text-2xs uppercase tracking-widest text-text-muted">{CATEGORY_LABEL[item.category]}{item.colour.length ? ` · ${item.colour.join(', ')}` : ''}</span>
       </span>
     </label>
   )
