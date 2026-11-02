@@ -257,6 +257,32 @@
     width: min(18rem, calc(100vw - 2rem));
   }
 
+  /* Four or more recommendations become equal-sized cards in a two-column
+     grid. The tips panel is one grid cell, so it matches the recommendation
+     cards instead of being pushed off to the side of a horizontal strip. */
+  .daily-outfit-layout--many {
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+  }
+  .daily-outfit-items--many {
+    display: contents;
+  }
+  .daily-outfit-items--many .daily-outfit-piece {
+    width: auto;
+  }
+  .daily-outfit-layout--many .daily-outfit-tips {
+    grid-column: auto;
+    grid-row: auto;
+    width: auto;
+    height: auto;
+    min-height: 0;
+  }
+  .daily-outfit-layout--many .daily-outfit-ask {
+    grid-column: 1 / -1;
+  }
+
   @media (min-width: 1024px) {
     .daily-outfit-layout {
       width: max-content;
@@ -281,6 +307,17 @@
     }
     .daily-outfit-ask {
       grid-column: 1 / -1;
+    }
+    .daily-outfit-layout--many {
+      width: 100%;
+      min-width: 0;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      column-gap: 1rem;
+      row-gap: 1rem;
+    }
+    .daily-outfit-layout--many .daily-outfit-tips {
+      grid-column: 3;
+      grid-row: 1;
     }
   }
 }

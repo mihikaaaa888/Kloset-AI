@@ -178,6 +178,7 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
   const recommendedItems = recommendation?.length
     ? items.filter((item) => recommendation.includes(item.id))
     : []
+  const useRecommendationGrid = recommendedItems.length > 3
   const stylingTips = buildStylingTips(recommendedItems, weather)
 
   useEffect(() => {
@@ -266,8 +267,8 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
         })() : <><CloudOff size={18} className="text-deep-purple" /><span>{weatherError ? 'Weather unavailable — allow location access to see local conditions.' : 'Checking today’s weather…'}</span></>}
       </div>
       <div className="daily-outfit-shell mt-6">
-        <div className="daily-outfit-layout">
-          <div className="daily-outfit-items" aria-live="polite">
+        <div className={`daily-outfit-layout${useRecommendationGrid ? ' daily-outfit-layout--many' : ''}`}>
+          <div className={`daily-outfit-items${useRecommendationGrid ? ' daily-outfit-items--many' : ''}`} aria-live="polite">
           {recommendedItems.length ? (
             recommendedItems.map((item) => <RecommendationPiece key={item.id} item={item} />)
           ) : items.length < 2 ? (
