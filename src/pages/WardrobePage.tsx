@@ -247,7 +247,6 @@ export function WardrobePage() {
               onSaved={() => setView('outfits')}
               onBack={() => setView('outfits')}
               onAddPiece={openAdd}
-              onStyleMe={() => navigate('/stylist')}
               availableItems={closetItems}
             />
           </div>

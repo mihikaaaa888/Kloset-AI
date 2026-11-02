@@ -93,7 +93,7 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n
  * A free-form cork board: pin pieces from your Kloset, the shop, or inspiration
  * photos, then drag, resize and tilt them into an outfit.
  */
-export function BuildBoard({ onSaved, onBack, onAddPiece, onStyleMe, availableItems }: { onSaved: () => void; onBack: () => void; onAddPiece: () => void; onStyleMe: () => void; availableItems?: ClothingItem[] }) {
+export function BuildBoard({ onSaved, onBack, onAddPiece, availableItems }: { onSaved: () => void; onBack: () => void; onAddPiece: () => void; availableItems?: ClothingItem[] }) {
   const allWardrobe = useWardrobeStore((s) => s.items)
   const wardrobe = availableItems ?? allWardrobe
   const saveOutfit = useOutfitStore((s) => s.saveOutfit)
@@ -302,7 +302,6 @@ export function BuildBoard({ onSaved, onBack, onAddPiece, onStyleMe, availableIt
         </button>
         <input aria-label="Outfit title" value={outfitTitle} onChange={(event) => setOutfitTitle(event.target.value)} maxLength={60} className="w-full min-w-0 max-w-sm border-b border-transparent bg-transparent px-1 py-2 text-center font-display text-xl text-text-primary focus:border-text-primary/25 focus:outline-none sm:text-2xl" />
         <div className="flex items-center justify-self-end gap-2">
-          <button onClick={onStyleMe} className="h-10 border border-text-primary/25 px-2 text-xs text-text-primary transition-colors hover:bg-text-primary/5 sm:px-4">Style me</button>
           <button onClick={() => saving ? handleSave(saveOccasion) : setSaving(true)} className="h-10 bg-text-primary px-4 text-xs font-medium text-warm-cream transition-colors hover:bg-text-primary/90 sm:px-5">Save</button>
         </div>
       </header>
