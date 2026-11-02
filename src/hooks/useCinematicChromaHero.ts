@@ -70,7 +70,7 @@ interface CinematicChromaHeroState {
 // rather than leaving a spinner up forever.
 const LOAD_TIMEOUT_MS = 25_000
 // How long the page must sit still before an ajar door is finished off.
-const SNAP_IDLE_MS = 140
+const SNAP_IDLE_MS = 220
 // A single seek should be near-instant once the video is in memory.
 const SEEK_TIMEOUT_MS = 3_000
 
@@ -381,8 +381,8 @@ export function useCinematicChromaHero({
       // Small factors = slow, heavy, fluid motion.
       // Time-based easing stays consistent across 30/60/120 Hz displays and
       // responds quickly enough that the door feels attached to the scroll.
-      smoothedOpen += (openTarget - smoothedOpen) * (1 - Math.exp(-deltaSeconds / 0.12))
-      smoothedFade += (fadeTarget - smoothedFade) * (1 - Math.exp(-deltaSeconds / 0.14))
+      smoothedOpen += (openTarget - smoothedOpen) * (1 - Math.exp(-deltaSeconds / 0.24))
+      smoothedFade += (fadeTarget - smoothedFade) * (1 - Math.exp(-deltaSeconds / 0.24))
       introOpacity += ((isReadyFlag ? 1 : 0) - introOpacity) * (1 - Math.exp(-deltaSeconds / 0.1))
 
       if (duration && isFinite(duration)) {
@@ -395,7 +395,7 @@ export function useCinematicChromaHero({
       }
 
       const targetScale = (1 + smoothedOpen * (zoomTo - 1)) * (1 + smoothedFade * exitZoom)
-      currentScale += (targetScale - currentScale) * (1 - Math.exp(-deltaSeconds / 0.13))
+      currentScale += (targetScale - currentScale) * (1 - Math.exp(-deltaSeconds / 0.24))
       if (rackScene && innerRect) {
         const [left, top, right, bottom] = innerRect
         const zoomedLeft = 0.5 + (left - 0.5) * currentScale
