@@ -546,6 +546,60 @@ async function callGroq(apiKey, systemPrompt, recentMessages) {
   return data.choices?.[0]?.message?.content ?? null
 }
 
+// Kaia's image path uses Groq's multimodal model, so it works with the same
+// GROQ_API_KEY already required for garment analysis. Attach all photos to
+// the latest user turn and keep earlier turns as ordinary chat history.
+async function callGroqVision(apiKey, systemPrompt, recentMessages, imageDataUrls) {
+  const parsedImages = imageDataUrls.map((value) => value.match(/^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/))
+  if (!parsedImages.length || parsedImages.some((image) => !image)) {
+    throw new Error('Invalid image data supplied to Kaia vision')
+  }
+
+  let lastUserIdx = -1
+  recentMessages.forEach((message, index) => { if (message.role === 'user') lastUserIdx = index })
+  if (lastUserIdx < 0) throw new Error('No user message found for Kaia vision request')
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...recentMessages.map((message, index) => ({
+      role: message.role,
+      content: index === lastUserIdx
+        ? [
+            { type: 'text', text: message.content || 'Please review the attached outfit photo(s).' },
+            ...parsedImages.map((image) => ({
+              type: 'image_url',
+              image_url: { url: `data:${image[1]};base64,${image[2]}` },
+            })),
+          ]
+        : message.content,
+    })),
+  ]
+
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: process.env.GROQ_VISION_MODEL || VISION_MODEL_DEFAULT,
+      max_completion_tokens: 800,
+      reasoning_format: 'hidden',
+      messages,
+    }),
+    signal: AbortSignal.timeout(7500),
+  })
+
+  if (!response.ok) {
+    const error = new Error(`Groq vision ${response.status}: ${await response.text()}`)
+    error.status = response.status
+    throw error
+  }
+
+  const data = await response.json()
+  return data.choices?.[0]?.message?.content ?? null
+}
+
 // Fallback path when Groq is unavailable (down, erroring, or rate-limited).
 // Claude's Messages API takes the system prompt as its own field rather than
 // a role in the messages array, and requires the array to start with a user
@@ -677,13 +731,25 @@ CRITICAL RULES:
   const generate = async (msgs, attachedImages = []) => {
     let lastError = null
     if (attachedImages.length) {
-      if (!claudeKey) return { reply: 'Photo outfit checks need vision support, which is not configured right now. You can still ask me styling questions by text.', source: 'vision-unavailable' }
-      try {
-        return { reply: await callClaude(claudeKey, systemPrompt, msgs, attachedImages), source: 'claude-vision' }
-      } catch (e) {
-        console.error('[chat] Claude vision error:', e?.message ?? e)
-        return { reply: null, source: null, lastError: e }
+      if (groqKey) {
+        try {
+          const reply = await callGroqVision(groqKey, systemPrompt, msgs, attachedImages)
+          if (reply) return { reply, source: 'groq-vision' }
+          lastError = new Error('Groq vision returned an empty reply')
+        } catch (e) {
+          lastError = e
+          console.warn(`[chat] Groq vision error${e.status ? ` (${e.status})` : ''}: ${e.message}`)
+        }
       }
+      if (claudeKey) {
+        try {
+          return { reply: await callClaude(claudeKey, systemPrompt, msgs, attachedImages), source: 'claude-vision' }
+        } catch (e) {
+          lastError = e
+          console.error('[chat] Claude vision error:', e?.message ?? e)
+        }
+      }
+      return { reply: null, source: null, lastError }
     }
     if (groqKey) {
       try {
