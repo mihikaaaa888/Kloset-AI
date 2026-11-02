@@ -289,8 +289,8 @@ export function WardrobePage() {
             <div ref={addMenuRef} className="relative">
               <button type="button" aria-haspopup="menu" aria-expanded={showAddMenu} onClick={() => setShowAddMenu((visible) => !visible)} className="inline-flex h-9 sm:h-10 items-center gap-1.5 bg-text-primary px-2.5 sm:px-5 text-2xs font-medium uppercase tracking-widest text-warm-cream transition-colors hover:bg-text-primary/90"><Plus size={14} strokeWidth={1.5} /> Add <ChevronDown size={13} /></button>
               {showAddMenu && <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-48 border border-text-primary/10 bg-surface p-1 shadow-lifted">
-                <button role="menuitem" onClick={() => { setShowAddMenu(false); setView('outfits') }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Outfit</button>
                 <button role="menuitem" onClick={() => { setShowAddMenu(false); openAdd() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Upload item</button>
+                <button role="menuitem" onClick={() => { setShowAddMenu(false); setView('build') }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Create outfit</button>
               </div>}
             </div>
           </div>}
@@ -398,6 +398,7 @@ export function WardrobePage() {
         open={!!detailItem}
         onClose={() => setDetailItem(null)}
         onEdit={() => detailItem && handleEdit(detailItem)}
+        onStyle={() => detailItem && openCompletePiece(detailItem)}
         onDelete={() => detailItem && handleDelete(detailItem.id)}
         onIncrementWorn={() => detailItem && handleIncrementWorn(detailItem)}
         onSend={() => detailItem && setShareTarget({ kind: 'item', item: detailItem })}

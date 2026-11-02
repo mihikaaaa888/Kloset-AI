@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Pencil, Trash2, Plus, X, Send } from 'lucide-react'
+import { Pencil, Trash2, Plus, X, Send, Sparkles } from 'lucide-react'
 import { colourNameToHex, isLightColour } from '@/lib/colourUtils'
 import { useItemImage } from '@/hooks/useItemImage'
 import { CATEGORY_LABEL, CategoryGlyph } from '@/components/wardrobe/categoryVisuals'
@@ -11,6 +11,7 @@ interface ItemDetailModalProps {
   open: boolean
   onClose: () => void
   onEdit: () => void
+  onStyle: () => void
   onDelete: () => void
   onIncrementWorn: (date: string) => void
   onSend: () => void
@@ -29,6 +30,7 @@ export function ItemDetailModal({
   open,
   onClose,
   onEdit,
+  onStyle,
   onDelete,
   onIncrementWorn,
   onSend,
@@ -124,6 +126,13 @@ export function ItemDetailModal({
           </h2>
 
           <div className="mt-8">
+            <button
+              onClick={onStyle}
+              className="mb-3 flex w-full items-center justify-center gap-2 h-12 ring-1 ring-inset ring-text-primary/20 text-text-primary text-xs font-medium uppercase tracking-widest hover:ring-text-primary/50 transition-colors"
+            >
+              <Sparkles size={14} strokeWidth={1.5} />
+              Style this item
+            </button>
             <button
               onClick={onEdit}
               className="flex w-full items-center justify-center gap-2 h-12 bg-text-primary text-warm-cream text-xs font-medium uppercase tracking-widest hover:bg-text-primary/90 transition-colors"
