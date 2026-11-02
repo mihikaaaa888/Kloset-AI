@@ -70,6 +70,8 @@ export interface ClothingItem {
   name: string
   category: ClothingCategory
   subcategory?: string
+  neckline_closure?: string
+  construction?: string
   // imageId: IndexedDB key for the stored Blob (new path, survives refresh)
   imageId?: string
   // imageStoragePath: copy of the imageId photo in Supabase Storage, so other devices can show it

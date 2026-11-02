@@ -59,20 +59,16 @@ export function CompleteAPiece({ budget, profile, wardrobe, isInWardrobe, initia
     if (!anchor) return []
     const shopGroups = recommendForPiece(anchor, 'any', profile, 12)
     return COMPLEMENTS[anchor.category].map((category) => {
-      const closetMatches = wardrobe
-        .filter((item) => item.category === category && !(picked?.kind === 'kloset' && item.id === picked.item.id))
-        .sort((a, b) => Number(b.occasions.some((occasion) => anchor.occasions.includes(occasion))) - Number(a.occasions.some((occasion) => anchor.occasions.includes(occasion))))
-        .slice(0, 3)
       let shopMatches = shopGroups.find((group) => group.category === category)?.items ?? []
       if (underBudget) {
         const filterBudget = budget === 'any' ? 'low' : budget
         shopMatches = shopMatches.filter((item) => rentOnly ? fitsRentBudget(item, filterBudget) : fitsBuyBudget(item, filterBudget))
       }
       if (rentOnly) shopMatches = shopMatches.filter(isRentable)
-      shopMatches = shopMatches.filter((item) => !isInWardrobe(item.id)).slice(0, Math.max(0, 3 - closetMatches.length))
-      return { category, closetMatches, shopMatches }
-    }).filter((group) => group.closetMatches.length > 0 || group.shopMatches.length > 0)
-  }, [anchor, profile, wardrobe, picked, underBudget, rentOnly, budget, isInWardrobe])
+      shopMatches = shopMatches.filter((item) => !isInWardrobe(item.id)).slice(0, 3)
+      return { category, shopMatches }
+    }).filter((group) => group.shopMatches.length > 0)
+  }, [anchor, profile, underBudget, rentOnly, budget, isInWardrobe])
 
   useEffect(() => {
     if (picked?.kind !== 'upload') return
@@ -117,8 +113,7 @@ export function CompleteAPiece({ budget, profile, wardrobe, isInWardrobe, initia
           {groups.length === 0 ? <p className="py-6 text-center text-sm text-text-muted">No matches with these options. Try turning off a filter.</p> : groups.map((group) => <section key={group.category}>
             <h3 className="mb-2 text-xs font-medium text-text-primary">{SLOT_HEADINGS[group.category]}</h3>
             <div className="flex gap-3 overflow-x-auto pb-1 no-scrollbar">
-              {group.closetMatches.map((item) => <OutfitSuggestionCard key={`closet-${item.id}`} name={item.name} category={CATEGORY_LABELS[item.category]} image={<KlosetItemImage item={item} />} tag="My closet" added={addedToOutfit.includes(`closet:${item.id}`)} onAdd={() => addKey(`closet:${item.id}`)} />)}
-              {group.shopMatches.map((item) => <OutfitSuggestionCard key={`shop-${item.id}`} name={item.name} category={CATEGORY_LABELS[item.category]} image={<img src={item.imageUrl} alt="" className="h-full w-full object-cover" />} tag={rentOnly ? 'Rent' : 'Buy'} price={rentOnly ? `${formatINR(item.rentPricePerWeek)} / wk` : formatINR(item.estimatedPrice)} added={addedToOutfit.includes(`shop:${item.id}`)} onAdd={() => addKey(`shop:${item.id}`)} />)}
+              {group.shopMatches.map((item) => <OutfitSuggestionCard key={`shop-${item.id}`} name={item.name} category={CATEGORY_LABELS[item.category]} image={<img src={item.imageUrl} alt="" className="h-full w-full object-cover" />} tag={rentOnly ? 'Rent' : undefined} price={rentOnly ? `${formatINR(item.rentPricePerWeek)} / wk` : formatINR(item.estimatedPrice)} added={addedToOutfit.includes(`shop:${item.id}`)} onAdd={() => addKey(`shop:${item.id}`)} />)}
             </div>
           </section>)}
         </div>
@@ -149,9 +144,9 @@ function ShopPickCard({ item, selected, onClick }: { item: CatalogItem; selected
   </button>
 }
 
-function OutfitSuggestionCard({ name, category, image, tag, price, added, onAdd }: { name: string; category: string; image: React.ReactNode; tag: string; price?: string; added: boolean; onAdd: () => void }) {
+function OutfitSuggestionCard({ name, category, image, tag, price, added, onAdd }: { name: string; category: string; image: React.ReactNode; tag?: string; price?: string; added: boolean; onAdd: () => void }) {
   return <article className="w-36 shrink-0 sm:w-40">
-    <div className="relative mb-2 aspect-[4/3] overflow-hidden bg-tile">{image}<span className="absolute left-1.5 top-1.5 bg-warm-cream/90 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-text-primary">{tag}</span></div>
+    <div className="relative mb-2 aspect-[4/3] overflow-hidden bg-tile">{image}{tag && <span className="absolute left-1.5 top-1.5 bg-warm-cream/90 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-text-primary">{tag}</span>}</div>
     <p className="truncate text-xs text-text-primary" title={name}>{name}</p>
     <p className="truncate text-2xs text-text-muted">{category}{price ? ` · ${price}` : ''}</p>
     <button onClick={onAdd} disabled={added} className="mt-2 w-full border border-text-primary/20 px-2 py-1.5 text-2xs text-text-primary transition-colors hover:border-text-primary/50 disabled:bg-text-primary/5 disabled:text-text-muted">{added ? 'Added to outfit' : 'Add to outfit'}</button>

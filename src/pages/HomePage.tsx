@@ -22,7 +22,13 @@ export function HomePage() {
         <DailyOutfitCard
           items={items}
           profile={profile}
-          onAskStylist={() => navigate('/stylist', { state: { mode: 'wardrobe' } })}
+          onAskStylist={(outfitItemIds) => navigate('/stylist', {
+            state: {
+              mode: 'chat',
+              outfitItemIds,
+              initialPrompt: 'Can you check this outfit?',
+            },
+          })}
         />
 
         {/* ── Wardrobe empty state ── */}
@@ -161,7 +167,7 @@ function buildStylingTips(outfit: ClothingItem[], weather: CurrentWeather | null
 function DailyOutfitCard({ items, profile, onAskStylist }: {
   items: ClothingItem[]
   profile: Parameters<typeof generateOutfit>[2]
-  onAskStylist: () => void
+  onAskStylist: (itemIds: string[]) => void
 }) {
   const [weather, setWeather] = useState<CurrentWeather | null>(null)
   const [weatherError, setWeatherError] = useState(false)
@@ -286,7 +292,7 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
           </ul> : <p className="text-sm leading-relaxed text-text-muted">Outfit-specific tips will appear here with today’s look.</p>}
           </aside>
           <button
-          onClick={onAskStylist}
+          onClick={() => onAskStylist(recommendedItems.slice(0, 2).map((item) => item.id))}
           className="daily-outfit-ask mt-12 flex h-12 w-full items-center justify-between bg-[#355E3B] px-5 text-sm font-medium tracking-wide text-[#FFFDD0] transition-colors hover:bg-[#2B4E31] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#355E3B]"
         >
           <span>Ask stylist</span>

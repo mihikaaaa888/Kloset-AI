@@ -21,7 +21,7 @@ export const useChatStore = create<ChatStore>()(
     {
       name: 'kloset-chat',
       partialize: (state) => ({
-        messages: state.messages.map(({ imagePreviewUrl: _preview, ...message }) => message),
+        messages: state.messages.map(({ imagePreviewUrl: _preview, imagePreviewUrls: _previews, ...message }) => message),
       }),
     }
   )

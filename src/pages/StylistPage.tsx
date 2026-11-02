@@ -23,7 +23,7 @@ type PageState = 'mode-select' | 'item-pick' | 'form' | 'loading' | 'result'
 export function StylistPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const navState = (location.state ?? {}) as { mode?: StylistMode; itemId?: string }
+  const navState = (location.state ?? {}) as { mode?: StylistMode; itemId?: string; outfitItemIds?: string[]; initialPrompt?: string }
 
   const items = useWardrobeStore((s) => s.items)
   const profile = useUserStore((s) => s.profile)
@@ -159,7 +159,12 @@ export function StylistPage() {
         </div>
 
         {/* ── Mode: Chat ── */}
-        {mode === 'chat' && <StylistChat />}
+        {mode === 'chat' && (
+          <StylistChat
+            initialPrompt={navState.initialPrompt}
+            initialImageItemIds={navState.outfitItemIds}
+          />
+        )}
 
         {/* ── Mode: Wardrobe / Item ── */}
         {mode !== 'chat' && (

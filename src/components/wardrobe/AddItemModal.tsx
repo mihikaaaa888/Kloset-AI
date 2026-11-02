@@ -96,6 +96,8 @@ interface ItemDraft {
   name: string
   category: ClothingCategory | ''
   subcategory: string
+  neckline_closure: string
+  construction: string
   colour: string[]
   material: string
   pattern: Pattern | ''
@@ -112,6 +114,8 @@ function blankDraft(): ItemDraft {
     name: '',
     category: '',
     subcategory: '',
+    neckline_closure: '',
+    construction: '',
     colour: [],
     material: '',
     pattern: 'solid',
@@ -133,6 +137,8 @@ function itemToDraft(item: ClothingItem): ItemDraft {
     name: item.name,
     category: item.category,
     subcategory: item.subcategory ?? '',
+    neckline_closure: item.neckline_closure ?? '',
+    construction: item.construction ?? '',
     colour: item.colour,
     material: item.material ?? '',
     pattern: item.pattern,
@@ -185,6 +191,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
   // AI analysis state
   const [aiAnalyzing, setAiAnalyzing] = useState(false)
   const [aiApplied, setAiApplied] = useState(false)
+  const [lowConfidenceFields, setLowConfidenceFields] = useState<string[]>([])
 
   // Photo tab state
   const [photoTab, setPhotoTab] = useState<'upload' | 'url' | 'browse'>('upload')
@@ -215,6 +222,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
     setPreviewUrl(editItem?.imageUrl ?? null)
     setAiAnalyzing(false)
     setAiApplied(false)
+    setLowConfidenceFields([])
     setPhotoTab('upload')
     setUrlInput('')
     setUrlError(null)
@@ -324,6 +332,32 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
   // ── AI analysis ──────────────────────────────────────────────────────────────
   const applyAnalysis = useCallback((analysis: ClothingAnalysis, detectedCategory?: ClothingCategory, detectedName?: string) => {
+    const categoryConfidence = analysis.confidence?.category ?? 0
+    const groqCategory = analysis.category && VALID_CATEGORIES.has(analysis.category)
+      ? analysis.category as ClothingCategory
+      : undefined
+    const finalCategory = categoryConfidence >= 0.6
+      ? groqCategory
+      : (detectedCategory ?? groqCategory)
+    const lowFields = [
+      ...(categoryConfidence < 0.6 ? ['category'] : []),
+      ...(analysis.subcategory && (analysis.confidence?.subcategory ?? 0) < 0.6 ? ['subcategory'] : []),
+      ...(analysis.neckline_closure && (analysis.confidence?.neckline_closure ?? 0) < 0.6 ? ['neckline_closure'] : []),
+      ...(analysis.construction && (analysis.confidence?.construction ?? 0) < 0.6 ? ['construction'] : []),
+      ...(analysis.primaryColor && (analysis.confidence?.color ?? 0) < 0.6 ? ['colour'] : []),
+      ...(analysis.material && (analysis.confidence?.material ?? 0) < 0.6 ? ['material'] : []),
+    ]
+    setLowConfidenceFields(lowFields)
+
+    if (import.meta.env.DEV) {
+      console.info('[garment-category-debug]', {
+        localSegmentationCategory: detectedCategory ?? null,
+        groqCategory: groqCategory ?? null,
+        groqCategoryConfidence: categoryConfidence,
+        finalCategory: finalCategory ?? null,
+      })
+    }
+
     setDraft((prev) => {
       const next = { ...prev }
 
@@ -333,16 +367,11 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
       if (analysis.name && (!prev.name.trim() || (detectedName && prev.name === detectedName))) next.name = analysis.name
       else if (detectedName && !prev.name.trim()) next.name = detectedName
 
-      if (detectedCategory) {
-        next.category = detectedCategory === 'tops' && analysis.category === 'outerwear'
-          ? 'outerwear'
-          : detectedCategory
-        next.subcategory = analysis.subcategory || (detectedName && !['Top', 'Pants', 'Shoes'].includes(detectedName) ? detectedName : '')
-      } else if (analysis.category && VALID_CATEGORIES.has(analysis.category)) {
-        next.category = analysis.category as ClothingCategory
-        next.subcategory = ''
-      }
-      if (analysis.subcategory) next.subcategory = analysis.subcategory
+      if (finalCategory) next.category = finalCategory
+      if (analysis.category !== finalCategory || !analysis.subcategory) next.subcategory = ''
+      else next.subcategory = analysis.subcategory
+      next.neckline_closure = analysis.neckline_closure ?? ''
+      next.construction = analysis.construction ?? ''
 
       const colours = [analysis.primaryColor, ...(analysis.secondaryColors ?? [])]
         .filter((c): c is string => !!c && VALID_COLOURS.has(c))
@@ -376,6 +405,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
   const runAiAnalysis = useCallback(async (blob: Blob, detectedCategory?: ClothingCategory, detectedName?: string) => {
     setAiAnalyzing(true)
     setAiApplied(false)
+    setLowConfidenceFields([])
     try {
       const analysis = await analyzeImage(blob)
       if (analysis) {
@@ -395,6 +425,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
   const runAiAnalysisFromUrl = useCallback(async (url: string) => {
     setAiAnalyzing(true)
     setAiApplied(false)
+    setLowConfidenceFields([])
     try {
       const analysis = await analyzeImageFromUrl(url)
       if (analysis) {
@@ -561,6 +592,8 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
       name: draft.name.trim(),
       category: draft.category as ClothingCategory,
       subcategory: draft.subcategory || undefined,
+      neckline_closure: draft.neckline_closure || undefined,
+      construction: draft.construction || undefined,
       ...imageFields,
       colour: draft.colour,
       material: draft.material.trim() || undefined,
@@ -643,6 +676,10 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
   // ── Render ───────────────────────────────────────────────────────────────────
   const subcategoryOptions = draft.category ? SUBCATEGORIES[draft.category as ClothingCategory] : undefined
+  const isLowConfidence = (field: string) => lowConfidenceFields.includes(field)
+  const reviewFieldClass = (field: string) => isLowConfidence(field)
+    ? 'rounded-xl border border-amber-500/60 bg-amber-50/40 p-3'
+    : ''
 
   const batchLabel = isInBatch
     ? `Garment ${batchIdx + 1} of ${uploadBatch.length}`
@@ -866,7 +903,9 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
               <HangerIcon size={13} className="text-butter-yellow mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-butter-yellow">Auto-filled from your photo</p>
-                <p className="text-2xs text-text-muted mt-0.5">Review and adjust any fields before saving.</p>
+                <p className="text-2xs text-text-muted mt-0.5">
+                  {lowConfidenceFields.length ? 'Highlighted fields need your confirmation. You can still save as-is.' : 'Review and adjust any fields before saving.'}
+                </p>
               </div>
               <button
                 onClick={() => setAiApplied(false)}
@@ -900,8 +939,8 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
         </div>
 
         {/* ── Category ── */}
-        <div>
-          <SectionLabel error={errors.category}>Category *</SectionLabel>
+        <div className={reviewFieldClass('category')}>
+          <SectionLabel error={errors.category} review={isLowConfidence('category')}>Category *</SectionLabel>
           <div className="flex flex-wrap gap-2">
             {CATEGORIES.map((cat) => (
               <button
@@ -929,8 +968,8 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
         {/* ── Subcategory ── */}
         {subcategoryOptions && subcategoryOptions.length > 0 && (
-          <div>
-            <SectionLabel>Type</SectionLabel>
+          <div className={reviewFieldClass('subcategory')}>
+            <SectionLabel review={isLowConfidence('subcategory')}>Type</SectionLabel>
             <div className="flex flex-wrap gap-2">
               {subcategoryOptions.map((sub) => (
                 <SelectChip
@@ -944,9 +983,39 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
           </div>
         )}
 
+        {/* ── Garment construction details ── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className={reviewFieldClass('neckline_closure')}>
+            <SectionLabel review={isLowConfidence('neckline_closure')}>Neckline / closure</SectionLabel>
+            <select
+              value={draft.neckline_closure}
+              onChange={(e) => update('neckline_closure', e.target.value)}
+              className="w-full rounded-xl border border-text-primary/15 bg-surface px-3 py-2.5 text-sm text-text-primary"
+            >
+              <option value="">Not specified</option>
+              {['crew', 'v-neck', 'turtleneck', 'collared', 'quarter-zip', 'half-zip', 'full-zip', 'button-up', 'hooded', 'other'].map((value) => (
+                <option key={value} value={value}>{value.replace(/-/g, ' ')}</option>
+              ))}
+            </select>
+          </div>
+          <div className={reviewFieldClass('construction')}>
+            <SectionLabel review={isLowConfidence('construction')}>Construction</SectionLabel>
+            <select
+              value={draft.construction}
+              onChange={(e) => update('construction', e.target.value)}
+              className="w-full rounded-xl border border-text-primary/15 bg-surface px-3 py-2.5 text-sm text-text-primary"
+            >
+              <option value="">Not specified</option>
+              {['knit', 'fleece', 'jersey', 'woven', 'denim', 'other'].map((value) => (
+                <option key={value} value={value}>{value}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         {/* ── Colours ── */}
-        <div>
-          <SectionLabel>Colours</SectionLabel>
+        <div className={reviewFieldClass('colour')}>
+          <SectionLabel review={isLowConfidence('colour')}>Colours</SectionLabel>
           <div className="flex flex-wrap gap-3">
             {COLOUR_PALETTE.map((colour) => (
               <div key={colour.name} className="flex flex-col items-center gap-1">
@@ -1010,8 +1079,8 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
         </div>
 
         {/* ── Material ── */}
-        <div>
-          <SectionLabel>Material</SectionLabel>
+        <div className={reviewFieldClass('material')}>
+          <SectionLabel review={isLowConfidence('material')}>Material</SectionLabel>
           <TextInput
             placeholder="e.g. Cotton, Wool, Silk, Denim…"
             value={draft.material}
@@ -1075,10 +1144,11 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
   )
 }
 
-function SectionLabel({ children, error }: { children: React.ReactNode; error?: string }) {
+function SectionLabel({ children, error, review }: { children: React.ReactNode; error?: string; review?: boolean }) {
   return (
-    <p className={clsx('text-sm font-medium mb-3', error ? 'text-red-500' : 'text-text-primary')}>
+    <p className={clsx('text-sm font-medium mb-3 flex items-center gap-2', error ? 'text-red-500' : 'text-text-primary')}>
       {children}
+      {review && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">Please confirm</span>}
     </p>
   )
 }
