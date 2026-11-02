@@ -4,9 +4,10 @@ import { clsx } from 'clsx'
 import { useItemImage } from '@/hooks/useItemImage'
 import { compressImage } from '@/lib/imageStorage'
 import { analyzeImage } from '@/lib/analyzeImage'
-import { fitsBuyBudget, fitsRentBudget, isRentable, recommendForPiece, type BudgetId, type PieceAnchor } from '@/lib/shopping'
+import { fitsBuyBudget, recommendForPiece, type BudgetId, type PieceAnchor } from '@/lib/shopping'
 import { ALL_CATALOG_ITEMS } from '@/lib/catalogData'
 import { formatINR } from '@/lib/shopping'
+import { BudgetDropdown } from '@/components/shop/BudgetDropdown'
 import type { CatalogItem, ClothingCategory, ClothingItem, UserProfile } from '@/types'
 
 const CATEGORY_LABELS: Record<ClothingCategory, string> = {
@@ -34,6 +35,7 @@ type Picked =
 
 interface CompleteAPieceProps {
   budget: BudgetId
+  onBudgetChange: (budget: BudgetId) => void
   profile: UserProfile | null
   wardrobe: ClothingItem[]
   isInWardrobe: (catalogId: string) => boolean
@@ -47,11 +49,10 @@ const anchorFromCatalogItem = (item: CatalogItem): PieceAnchor => ({
   name: item.name, category: item.category, colours: item.colours, occasions: item.occasions, formality: item.formality, imageUrl: item.imageUrl,
 })
 
-export function CompleteAPiece({ budget, profile, wardrobe, isInWardrobe, initialAnchor }: CompleteAPieceProps) {
+export function CompleteAPiece({ budget, onBudgetChange, profile, wardrobe, isInWardrobe, initialAnchor }: CompleteAPieceProps) {
   const [source, setSource] = useState<PickerSource>('closet')
   const [picked, setPicked] = useState<Picked | null>(initialAnchor ? { kind: 'anchor', anchor: initialAnchor } : null)
-  const [underBudget, setUnderBudget] = useState(false)
-  const [rentOnly, setRentOnly] = useState(false)
+  const [rentComingSoon, setRentComingSoon] = useState(false)
   const [addedToOutfit, setAddedToOutfit] = useState<string[]>([])
   const anchor = useMemo(() => picked ? (picked.kind === 'kloset' ? anchorFromItem(picked.item) : picked.kind === 'catalog' ? anchorFromCatalogItem(picked.item) : picked.anchor) : null, [picked])
 
@@ -60,15 +61,11 @@ export function CompleteAPiece({ budget, profile, wardrobe, isInWardrobe, initia
     const shopGroups = recommendForPiece(anchor, 'any', profile, 12)
     return COMPLEMENTS[anchor.category].map((category) => {
       let shopMatches = shopGroups.find((group) => group.category === category)?.items ?? []
-      if (underBudget) {
-        const filterBudget = budget === 'any' ? 'low' : budget
-        shopMatches = shopMatches.filter((item) => rentOnly ? fitsRentBudget(item, filterBudget) : fitsBuyBudget(item, filterBudget))
-      }
-      if (rentOnly) shopMatches = shopMatches.filter(isRentable)
+      if (budget !== 'any') shopMatches = shopMatches.filter((item) => fitsBuyBudget(item, budget))
       shopMatches = shopMatches.filter((item) => !isInWardrobe(item.id)).slice(0, 3)
       return { category, shopMatches }
     }).filter((group) => group.shopMatches.length > 0)
-  }, [anchor, profile, underBudget, rentOnly, budget, isInWardrobe])
+  }, [anchor, profile, budget, isInWardrobe])
 
   useEffect(() => {
     if (picked?.kind !== 'upload') return
@@ -99,21 +96,23 @@ export function CompleteAPiece({ budget, profile, wardrobe, isInWardrobe, initia
         <div className="mb-4 flex items-start justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
             <div className="h-16 w-12 shrink-0 overflow-hidden bg-tile">{picked.kind === 'kloset' ? <KlosetItemImage item={picked.item} /> : <SelectedImage picked={picked} anchor={anchor} />}</div>
-            <div className="min-w-0"><p className="text-2xs uppercase tracking-widest text-text-muted">Completing</p><h2 className="truncate font-display text-xl text-text-primary">{anchor.name}</h2><p className="truncate text-xs text-text-muted">Outfit · {addedToOutfit.length} added</p></div>
+            <div className="min-w-0"><p className="text-2xs uppercase tracking-widest text-text-muted">Completing</p><h2 className="truncate font-display text-xl text-text-primary">{anchor.name}</h2></div>
           </div>
           <button onClick={closePanel} aria-label="Close suggestions" className="shrink-0 p-1 text-text-muted hover:text-text-primary"><X size={18} /></button>
         </div>
 
-        {groups.length > 0 && <div className="mb-4 flex flex-wrap gap-2" aria-label="Optional suggestion filters">
-          <button onClick={() => setUnderBudget((value) => !value)} aria-pressed={underBudget} className={clsx('rounded-full border px-3 py-1.5 text-xs transition-colors', underBudget ? 'border-text-primary bg-text-primary/8 text-text-primary' : 'border-text-primary/15 text-text-muted hover:border-text-primary/35')}>{underBudget ? 'Under budget · On' : 'Under budget'}</button>
-          <button onClick={() => setRentOnly((value) => !value)} aria-pressed={rentOnly} className={clsx('rounded-full border px-3 py-1.5 text-xs transition-colors', rentOnly ? 'border-text-primary bg-text-primary/8 text-text-primary' : 'border-text-primary/15 text-text-muted hover:border-text-primary/35')}>{rentOnly ? 'Rent only · On' : 'Rent only'}</button>
-        </div>}
+        <div className="mb-4 flex flex-wrap items-center gap-3" aria-label="Suggestion filters">
+          <BudgetDropdown value={budget} onChange={onBudgetChange} mode="buy" />
+          <button onClick={() => setRentComingSoon(true)} className="rounded-full border border-text-primary/15 px-3 py-1.5 text-xs text-text-muted transition-colors hover:border-text-primary/35">Rent only</button>
+        </div>
+
+        {rentComingSoon && <div role="status" className="mb-4 border border-text-primary/10 bg-text-primary/[0.03] px-4 py-3 text-center font-display text-lg text-text-primary">Coming soon</div>}
 
         <div className="space-y-5">
           {groups.length === 0 ? <p className="py-6 text-center text-sm text-text-muted">No matches with these options. Try turning off a filter.</p> : groups.map((group) => <section key={group.category}>
             <h3 className="mb-2 text-xs font-medium text-text-primary">{SLOT_HEADINGS[group.category]}</h3>
             <div className="flex gap-3 overflow-x-auto pb-1 no-scrollbar">
-              {group.shopMatches.map((item) => <OutfitSuggestionCard key={`shop-${item.id}`} name={item.name} category={CATEGORY_LABELS[item.category]} image={<img src={item.imageUrl} alt="" className="h-full w-full object-cover" />} tag={rentOnly ? 'Rent' : undefined} price={rentOnly ? `${formatINR(item.rentPricePerWeek)} / wk` : formatINR(item.estimatedPrice)} added={addedToOutfit.includes(`shop:${item.id}`)} onAdd={() => addKey(`shop:${item.id}`)} />)}
+              {group.shopMatches.map((item) => <OutfitSuggestionCard key={`shop-${item.id}`} name={item.name} category={CATEGORY_LABELS[item.category]} image={<img src={item.imageUrl} alt="" className="h-full w-full object-cover" />} price={formatINR(item.estimatedPrice)} added={addedToOutfit.includes(`shop:${item.id}`)} onAdd={() => addKey(`shop:${item.id}`)} />)}
             </div>
           </section>)}
         </div>

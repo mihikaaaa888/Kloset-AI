@@ -240,7 +240,7 @@ export function DiscoverPage() {
             <div className="mb-4 flex items-center justify-end">
               <button onClick={() => { setCompleteOpen(false); setCompleteAnchor(undefined) }} aria-label="Close complete-a-piece" className="p-1 text-text-muted hover:text-text-primary"><X size={18} /></button>
             </div>
-            <CompleteAPiece key={completeAnchor?.name ?? 'choose-piece'} budget={budget} profile={profile} wardrobe={wardrobeItems} isInWardrobe={isInWardrobe} initialAnchor={completeAnchor} />
+            <CompleteAPiece key={completeAnchor?.name ?? 'choose-piece'} budget={budget} onBudgetChange={setBudget} profile={profile} wardrobe={wardrobeItems} isInWardrobe={isInWardrobe} initialAnchor={completeAnchor} />
           </section>
         ) : <>
         <div className="flex items-center gap-4 border-b border-text-primary/10 py-3">
