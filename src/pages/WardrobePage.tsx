@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { Plus, Search, Shirt, Compass, X, ChevronDown } from 'lucide-react'
+import { Plus, Search, Shirt, Compass, X, ChevronDown, ChevronLeft } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { clsx } from 'clsx'
 
@@ -22,6 +22,7 @@ import { SAMPLE_WARDROBE_ITEMS } from '@/lib/sampleData'
 import { useAuth } from '@/contexts/AuthContext'
 import { insertItem, updateItem as dbUpdateItem, deleteItem as dbDeleteItem } from '@/lib/wardrobeService'
 import type { ClothingItem, ClothingCategory } from '@/types'
+import { CategoryGlyph } from '@/components/wardrobe/categoryVisuals'
 
 type KlosetView = 'pieces' | 'build' | 'outfits'
 
@@ -54,6 +55,8 @@ export function WardrobePage() {
   const [detailItem, setDetailItem] = useState<ClothingItem | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
+  // My Kloset opens on the folder overview; tapping a folder shows its pieces.
+  const [showFolders, setShowFolders] = useState(true)
   const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null)
   const activeCollection = collections.find((collection) => collection.id === activeCollectionId) ?? collections[0]
   const isMainCollection = activeCollectionId === 'main'
@@ -293,9 +296,12 @@ export function WardrobePage() {
               {showSearch ? <X size={18} strokeWidth={1.4} /> : <Search size={18} strokeWidth={1.4} />}
             </button>
             <div ref={addMenuRef} className="relative">
-              <button type="button" aria-haspopup="menu" aria-expanded={showAddMenu} onClick={() => setShowAddMenu((visible) => !visible)} className="inline-flex h-9 sm:h-10 items-center gap-1.5 bg-text-primary px-2.5 sm:px-5 text-2xs font-medium uppercase tracking-widest text-warm-cream transition-colors hover:bg-text-primary/90"><Plus size={14} strokeWidth={1.5} /> Add <ChevronDown size={13} /></button>
+              {/* "Add" uploads a piece straight away; the arrow holds "Create outfit". */}
+              <div className="inline-flex h-9 sm:h-10 items-stretch bg-text-primary text-warm-cream">
+                <button type="button" onClick={() => { setShowAddMenu(false); openAdd() }} className="inline-flex items-center gap-1.5 pl-2.5 pr-2 sm:pl-5 sm:pr-3 text-2xs font-medium uppercase tracking-widest transition-colors hover:bg-white/10"><Plus size={14} strokeWidth={1.5} /> Add</button>
+                <button type="button" aria-haspopup="menu" aria-expanded={showAddMenu} aria-label="More ways to add" onClick={() => setShowAddMenu((visible) => !visible)} className="flex items-center border-l border-warm-cream/25 px-2 sm:px-2.5 transition-colors hover:bg-white/10"><ChevronDown size={13} /></button>
+              </div>
               {showAddMenu && <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-48 border border-text-primary/10 bg-surface p-1 shadow-lifted">
-                <button role="menuitem" onClick={() => { setShowAddMenu(false); openAdd() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Upload item</button>
                 <button role="menuitem" onClick={() => { setShowAddMenu(false); setView('build') }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Create outfit</button>
               </div>}
             </div>
@@ -338,15 +344,15 @@ export function WardrobePage() {
           </button>
         </div>}
 
-        {/* Category filter */}
-        {closetItems.length > 0 && (
-          <div className="mb-4 -mx-4 overflow-x-auto px-4 no-scrollbar sm:mx-0 sm:px-0">
-            <div role="group" aria-label="Filter pieces by category" className="flex w-max min-w-full gap-2 py-1">
-              {[['all', 'All'], ['tops', 'Tops'], ['bottoms', 'Bottoms'], ['dresses', 'Dresses'], ['outerwear', 'Outerwear'], ['shoes', 'Shoes'], ['accessories', 'Accessories']].filter(([category]) => category === 'all' || (categoryCounts[category] ?? 0) > 0).map(([category, label]) => {
-                const selected = activeCategory === category
-                return <button key={category} onClick={() => setActiveCategory(category as ClothingCategory | 'all')} aria-pressed={selected} className={clsx('shrink-0 rounded-full border px-3.5 py-1.5 text-xs transition-colors', selected ? 'border-text-primary bg-text-primary text-warm-cream' : 'border-text-primary/15 bg-surface/60 text-text-muted hover:border-text-primary/35 hover:text-text-primary')}>{label}</button>
-              })}
-            </div>
+        {/* Inside a folder: a way back to the folder overview */}
+        {closetItems.length > 0 && !showFolders && !searchQuery.trim() && !completeSelectionMode && (
+          <div className="mb-5 flex items-center gap-2">
+            <button type="button" onClick={() => setShowFolders(true)} className="-ml-2 inline-flex h-10 items-center gap-1 px-2 text-sm text-text-muted transition-colors hover:text-text-primary">
+              <ChevronLeft size={17} strokeWidth={1.5} /> Folders
+            </button>
+            <span className="text-text-primary/20" aria-hidden="true">/</span>
+            <h2 className="text-sm font-medium text-text-primary">{FOLDER_LABEL[activeCategory]}</h2>
+            <span className="text-sm text-text-muted tabular-nums">{filteredItems.length}</span>
           </div>
         )}
 
@@ -360,7 +366,14 @@ export function WardrobePage() {
           <NoResultsState query={searchQuery} category={activeCategory} onClear={() => {
             setSearchQuery('')
             setActiveCategory('all')
+            setShowFolders(true)
           }} />
+        ) : showFolders && !searchQuery.trim() && !completeSelectionMode ? (
+          <FolderGrid
+            items={closetItems}
+            categoryCounts={categoryCounts}
+            onOpen={(category) => { setActiveCategory(category); setShowFolders(false) }}
+          />
         ) : (
           <>
             {completeSelectionMode && <div className="mb-4 flex min-h-10 items-center justify-between border-y border-text-primary/15 py-2 text-sm text-text-primary" role="status">
@@ -560,6 +573,77 @@ function NoResultsState({ query, category, onClear }: { query: string; category:
       >
         Clear filters
       </button>
+    </div>
+  )
+}
+
+// ─── Folders ────────────────────────────────────────────────────────────────
+
+const FOLDER_ORDER: (ClothingCategory | 'all')[] = ['all', 'tops', 'bottoms', 'dresses', 'outerwear', 'shoes', 'accessories']
+const FOLDER_LABEL: Record<string, string> = {
+  all: 'All pieces', tops: 'Tops', bottoms: 'Bottoms', dresses: 'Dresses',
+  outerwear: 'Outerwear', shoes: 'Shoes', accessories: 'Accessories',
+}
+
+// New on every page load (website or app), so each visit shows different covers,
+// but stable while the page stays open so covers don't reshuffle on every render.
+const COVER_SEED = Math.floor(Math.random() * 2 ** 31)
+
+function coverScore(id: string): number {
+  let h = COVER_SEED
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 2654435761)
+  return (h ^ (h >>> 16)) >>> 0
+}
+
+/** Four pieces for a folder's cover, preferring ones with photos. */
+function pickCover(items: ClothingItem[]): ClothingItem[] {
+  const hasPhoto = (i: ClothingItem) => !!(i.imageUrl || i.imageId || i.imageStoragePath)
+  return [...items]
+    .sort((a, b) => Number(hasPhoto(b)) - Number(hasPhoto(a)) || coverScore(a.id) - coverScore(b.id))
+    .slice(0, 4)
+}
+
+function FolderGrid({ items, categoryCounts, onOpen }: {
+  items: ClothingItem[]
+  categoryCounts: Record<string, number>
+  onOpen: (category: ClothingCategory | 'all') => void
+}) {
+  const folders = FOLDER_ORDER.filter((category) => category === 'all' || (categoryCounts[category] ?? 0) > 0)
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 sm:gap-5">
+      {folders.map((category) => {
+        const inFolder = category === 'all' ? items : items.filter((item) => item.category === category)
+        return <FolderCard key={category} category={category} items={inFolder} onClick={() => onOpen(category)} />
+      })}
+    </div>
+  )
+}
+
+function FolderCard({ category, items, onClick }: { category: ClothingCategory | 'all'; items: ClothingItem[]; onClick: () => void }) {
+  const cover = useMemo(() => pickCover(items), [items])
+  const label = FOLDER_LABEL[category]
+  return (
+    <button type="button" onClick={onClick} aria-label={`${label}, ${items.length} ${items.length === 1 ? 'piece' : 'pieces'}`} className="group w-full text-left">
+      <div className="grid aspect-[16/10] w-full grid-cols-2 grid-rows-2 gap-px overflow-hidden bg-text-primary/10 ring-1 ring-inset ring-text-primary/10 transition-shadow group-hover:shadow-lifted">
+        {[0, 1, 2, 3].map((slot) => (
+          <FolderCoverTile key={cover[slot]?.id ?? `empty-${slot}`} item={cover[slot]} category={category === 'all' ? cover[slot]?.category ?? 'tops' : category} />
+        ))}
+      </div>
+      <div className="mt-3 flex items-baseline justify-between gap-3">
+        <span className="text-sm font-medium uppercase tracking-widest text-text-primary">{label}</span>
+        <span className="text-xs text-text-muted tabular-nums">{items.length} {items.length === 1 ? 'piece' : 'pieces'}</span>
+      </div>
+    </button>
+  )
+}
+
+function FolderCoverTile({ item, category }: { item?: ClothingItem; category: string }) {
+  const url = useItemImage(item)
+  return (
+    <div className="flex items-center justify-center overflow-hidden bg-surface">
+      {url
+        ? <img src={url} alt="" loading="lazy" className="h-full w-full object-contain p-2 transition-transform duration-500 group-hover:scale-[1.03]" />
+        : <CategoryGlyph category={category} size={36} className={item ? 'text-text-muted' : 'text-text-primary/15'} />}
     </div>
   )
 }
