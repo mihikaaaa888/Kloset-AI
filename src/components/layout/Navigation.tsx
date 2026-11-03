@@ -90,17 +90,7 @@ export function Navigation() {
         <nav className="mx-auto max-w-7xl px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 lg:h-20">
 
-            <div className="flex items-center gap-1">
-            {hasTabBar && (
-              <button
-                onClick={() => setDrawerOpen(true)}
-                className="w-11 h-11 -ml-2.5 flex items-center justify-center rounded-full text-text-primary transition-colors hover:bg-text-primary/5"
-                aria-label="Open menu"
-                aria-expanded={drawerOpen}
-              >
-                <Menu size={22} />
-              </button>
-            )}
+            <div className="flex items-center">
             {hasTabBar ? (
               // Signed in: a home icon to today's outfit replaces the logo and the "Home" tab.
               <NavLink
@@ -109,7 +99,7 @@ export function Navigation() {
                 aria-label="Today's outfit"
                 title="Today's outfit"
                 className={({ isActive }) => clsx(
-                  'w-11 h-11 flex items-center justify-center rounded-full transition-colors hover:bg-text-primary/5',
+                  'w-11 h-11 -ml-2.5 flex items-center justify-center rounded-full transition-colors hover:bg-text-primary/5',
                   isActive ? 'text-butter-yellow' : 'text-text-primary'
                 )}
               >
@@ -124,6 +114,7 @@ export function Navigation() {
             )}
             </div>
 
+            <div className="flex items-center gap-4 lg:gap-6">
             {/* Desktop nav */}
             <div className="hidden md:flex items-center gap-7 lg:gap-9">
               {(user && profile?.onboardingComplete ? authNavItems.filter((item) => item.to !== '/home') : publicNavItems).map((item) => {
@@ -152,7 +143,20 @@ export function Navigation() {
               )}
             </div>
 
-            <div className="flex items-center md:hidden">
+            {/* Account menu (Profile, Settings, Log out), top right */}
+            {hasTabBar && (
+              <button
+                onClick={() => setDrawerOpen(true)}
+                className="w-11 h-11 -mr-2.5 flex items-center justify-center rounded-full text-text-primary transition-colors hover:bg-text-primary/5"
+                aria-label="Open menu"
+                aria-expanded={drawerOpen}
+              >
+                <Menu size={22} />
+              </button>
+            )}
+            </div>
+
+            <div className={clsx('flex items-center md:hidden', hasTabBar && 'hidden')}>
             {/* Mobile menu button */}
             <button
               onClick={() => setMobileOpen((v) => !v)}
@@ -173,7 +177,7 @@ export function Navigation() {
       {drawerOpen && hasTabBar && (
         <div className="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-label="Account menu">
           <div className="absolute inset-0 bg-scrim/40 backdrop-blur-sm animate-fade-in" onClick={() => setDrawerOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-warm-cream shadow-lifted animate-slide-in-left" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+          <aside className="absolute inset-y-0 right-0 flex w-72 max-w-[85vw] flex-col bg-warm-cream shadow-lifted animate-drawer-in-right" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
             <div className="flex h-16 lg:h-20 items-center justify-between border-b border-text-primary/10 px-6">
               <span className="font-brand text-xl tracking-tight text-text-primary">Kloset</span>
               <button onClick={() => setDrawerOpen(false)} aria-label="Close menu" className="-mr-2.5 flex h-11 w-11 items-center justify-center rounded-full text-text-primary hover:bg-text-primary/5">
@@ -247,7 +251,8 @@ export function Navigation() {
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
           <div className="flex items-stretch px-1">
-            {authNavItems.map((item) => (
+            {/* Home lives in the top bar's home icon, so the tab bar leaves it out. */}
+            {authNavItems.filter((item) => item.to !== '/home').map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}

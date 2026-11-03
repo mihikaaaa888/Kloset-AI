@@ -92,7 +92,7 @@ export default {
         'fade-up': 'fadeUp 0.6s ease-out forwards',
         'fade-in': 'fadeIn 0.4s ease-out forwards',
         'slide-in-right': 'slideInRight 0.4s ease-out forwards',
-        'slide-in-left': 'slideInLeft 0.3s cubic-bezier(0.32, 0.72, 0, 1) forwards',
+        'drawer-in-right': 'drawerInRight 0.3s cubic-bezier(0.32, 0.72, 0, 1) forwards',
         'slide-up': 'slideUp 0.35s cubic-bezier(0.32, 0.72, 0, 1) forwards',
         'scroll-cue': 'scrollCue 2.2s cubic-bezier(0.65, 0, 0.35, 1) infinite',
       },
@@ -105,8 +105,8 @@ export default {
           '0%': { opacity: '0' },
           '100%': { opacity: '1' },
         },
-        slideInLeft: {
-          '0%': { transform: 'translateX(-100%)' },
+        drawerInRight: {
+          '0%': { transform: 'translateX(100%)' },
           '100%': { transform: 'translateX(0)' },
         },
         slideInRight: {
