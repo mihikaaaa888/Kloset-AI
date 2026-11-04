@@ -6,7 +6,10 @@ import { InteractiveRackHero } from '@/components/hero/InteractiveRackHero'
 // re-encode must ship under a new filename. Both are 720p; the closet video has a
 // keyframe every 4 frames so scroll-scrubbing can land on any frame quickly.
 const VIDEO_SRC = '/videos/closet-hero-v2.mp4'
-const HERO_SCROLL_VH = 300 // shorter runway lets the next section appear sooner after the closet opens
+// The door opens on its own (DOOR_OPEN_SECONDS after the video loads), so the
+// runway only has to hold the exit: about half a screen of scroll to fade the closet out.
+const HERO_SCROLL_VH = 150
+const DOOR_OPEN_SECONDS = 1
 // The cabinet's inner opening in the closet video, as
 // [left, top, right, bottom] fractions of the frame — measured from the
 // fully-open frame. The interactive rack is revealed through this area.
@@ -63,8 +66,8 @@ function CinematicHeroDesktop({ onDoorOpenChange }: CinematicClosetHeroProps) {
     // Closet keeps zooming (to ~2x its open size) while it fades, so it
     // exits past the camera once the door has finished opening.
     exitZoom: 1,
-    // Most of the runway is the door opening; the last 25% is the exit.
-    openFraction: 0.75,
+    // Opens by itself in 1s; scrolling only drives the exit.
+    autoOpenSeconds: DOOR_OPEN_SECONDS,
     enabled: true,
     onOpenChange: handleOpenChange,
   })

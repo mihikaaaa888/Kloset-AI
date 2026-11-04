@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ChevronDown } from 'lucide-react'
+import { Plus } from 'lucide-react'
 
 import { SavedOutfitCard } from '@/components/saved/SavedOutfitCard'
-import { LogOutfitWeek } from '@/components/saved/LogOutfitWeek'
 import { SavedOutfitDetailModal } from '@/components/saved/SavedOutfitDetailModal'
 import { CreateOutfitModal } from '@/components/saved/CreateOutfitModal'
 import { ShareSheet } from '@/components/friends/ShareSheet'
@@ -25,7 +24,6 @@ export function MyOutfits() {
 
   const [selectedOutfit, setSelectedOutfit] = useState<Outfit | null>(null)
   const [creating, setCreating] = useState(false)
-  const [showCreateMenu, setShowCreateMenu] = useState(false)
   const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null)
   const showRecycleBin = searchParams.get('recycle') === '1'
   const clearRecycleBinView = () => {
@@ -101,21 +99,13 @@ export function MyOutfits() {
   return (
     <>
       <div className="mb-5 flex justify-end border-b border-text-primary/10 pb-4">
-        {!showRecycleBin && <div className="relative">
-          <button
-            type="button"
-            aria-haspopup="menu"
-            aria-expanded={showCreateMenu}
-            onClick={() => setShowCreateMenu((visible) => !visible)}
-            className="inline-flex items-center gap-2 py-2 text-xs font-medium uppercase tracking-widest text-text-primary hover:text-text-muted"
-          >
-            Create outfit <ChevronDown size={14} />
-          </button>
-          {showCreateMenu && <div role="menu" className="absolute right-0 top-full z-30 mt-2 w-56 border border-text-primary/10 bg-surface p-1 shadow-lifted">
-            <button role="menuitem" onClick={() => { setShowCreateMenu(false); navigate('/wardrobe?view=build') }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Build it myself</button>
-            <button role="menuitem" onClick={() => { setShowCreateMenu(false); navigate('/stylist') }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Let the stylist do it</button>
-          </div>}
-        </div>}
+        {!showRecycleBin && <button
+          type="button"
+          onClick={() => navigate('/wardrobe?view=build')}
+          className="inline-flex items-center gap-2 py-2 text-xs font-medium uppercase tracking-widest text-text-primary hover:text-text-muted"
+        >
+          <Plus size={14} /> Create outfit
+        </button>}
       </div>
 
       {resolvedOutfits.length === 0 ? (
@@ -148,8 +138,6 @@ export function MyOutfits() {
           ))}
         </div>
       )}
-
-      {!showRecycleBin && <LogOutfitWeek outfits={savedOutfits} wardrobe={wardrobeItems} onCreate={() => setCreating(true)} />}
 
       <SavedOutfitDetailModal
         outfit={selectedOutfit}

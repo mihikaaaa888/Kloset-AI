@@ -155,7 +155,7 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const previewUrlsRef = useRef(new Set<string>())
   const preloadedItemIdsRef = useRef('')
-  const initialImageItemIdsKey = initialImageItemIds.slice(0, 2).join('|')
+  const initialImageItemIdsKey = initialImageItemIds.join('|')
 
   useEffect(() => () => previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url)), [])
 
@@ -237,8 +237,12 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
     setLoading(true)
 
     try {
-      const imageDataUrls = imageFiles.length ? await Promise.all(imageFiles.map(imageFileToDataUrl)) : undefined
-      const reply = await sendChatMessage(next, items, profile, imageDataUrls)
+      const prepared = imageFiles.length ? await prepareImagesForKaia(imageFiles) : null
+      // Tell Kaia how the collage is numbered; the bubble on screen keeps what was typed.
+      const outgoing = prepared?.note
+        ? next.map((m, i) => i === next.length - 1 ? { ...m, content: [m.content.trim(), prepared.note].filter(Boolean).join('\n\n') } : m)
+        : next
+      const reply = await sendChatMessage(outgoing, items, profile, prepared?.dataUrls)
       setMessages((prev) => [...prev, { role: 'assistant', content: reply }])
     } catch (e) {
       console.error('[chat] send failed', e)
@@ -255,9 +259,7 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
 
   const attachImageFiles = (files: File[]) => {
     if (!files.length) return
-    const remaining = Math.max(0, 3 - attachedImages.length)
-    const selected = files.slice(0, remaining)
-    if (files.length > remaining) setAttachmentNotice('Kaia can review up to three photos in one message.')
+    const selected = files
     if (selected.length) {
       const previews = selected.map((file) => {
         const preview = URL.createObjectURL(file)
@@ -626,8 +628,8 @@ function MessageBubble({
           <div className="flex max-w-[88%] flex-col items-end gap-2">
             {!!(message.imagePreviewUrls ?? (message.imagePreviewUrl ? [message.imagePreviewUrl] : [])).length && (
               <div className="flex flex-wrap justify-end gap-2">
-                {(message.imagePreviewUrls ?? (message.imagePreviewUrl ? [message.imagePreviewUrl] : [])).map((url, index) => (
-                  <img key={`${url}-${index}`} src={url} alt={`Outfit photo ${index + 1} shared for review`} className="max-h-56 max-w-[min(100%,14rem)] rounded-2xl object-contain" />
+                {(message.imagePreviewUrls ?? (message.imagePreviewUrl ? [message.imagePreviewUrl] : [])).map((url, index, all) => (
+                  <img key={`${url}-${index}`} src={url} alt={`Outfit photo ${index + 1} shared for review`} className={clsx('rounded-2xl object-contain', all.length > 3 ? 'max-h-28 max-w-[7rem]' : 'max-h-56 max-w-[min(100%,14rem)]')} />
                 ))}
               </div>
             )}
@@ -684,6 +686,68 @@ function MessageBubble({
       )}
     </div>
   )
+}
+
+// Groq's vision model accepts at most 3 images per message (the server enforces
+// the same cap). Up to 3 photos go as they are; more are packed into up to 3
+// numbered collage sheets so Kaia sees every piece, however many there are.
+const MAX_KAIA_IMAGES = 3
+const SHEET_WIDTH = 1440
+
+async function prepareImagesForKaia(files: File[]): Promise<{ dataUrls: string[]; note: string | null }> {
+  if (files.length <= MAX_KAIA_IMAGES) {
+    return { dataUrls: await Promise.all(files.map(imageFileToDataUrl)), note: null }
+  }
+  const perSheet = Math.ceil(files.length / MAX_KAIA_IMAGES)
+  const groups: File[][] = []
+  for (let i = 0; i < files.length; i += perSheet) groups.push(files.slice(i, i + perSheet))
+  const dataUrls = await Promise.all(groups.map((group, g) => buildContactSheet(group, g * perSheet)))
+  return {
+    dataUrls,
+    note: `(I've shared ${files.length} photos, combined into ${groups.length} collage image${groups.length === 1 ? '' : 's'}. Each photo is numbered 1–${files.length} in its top-left corner — please look at every one.)`,
+  }
+}
+
+async function buildContactSheet(files: File[], startIndex: number): Promise<string> {
+  const cols = Math.ceil(Math.sqrt(files.length))
+  const rows = Math.ceil(files.length / cols)
+  const tile = Math.floor(SHEET_WIDTH / cols)
+  const canvas = document.createElement('canvas')
+  canvas.width = tile * cols
+  canvas.height = tile * rows
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Could not prepare these images.')
+  context.fillStyle = '#fff'
+  context.fillRect(0, 0, canvas.width, canvas.height)
+
+  const pad = Math.max(4, Math.round(tile * 0.03))
+  const labelSize = Math.max(16, Math.round(tile * 0.09))
+  await Promise.all(files.map(async (file, i) => {
+    const objectUrl = URL.createObjectURL(file)
+    try {
+      const image = new Image()
+      image.src = objectUrl
+      await image.decode()
+      const x = (i % cols) * tile
+      const y = Math.floor(i / cols) * tile
+      const scale = Math.min((tile - pad * 2) / image.naturalWidth, (tile - pad * 2) / image.naturalHeight)
+      const w = image.naturalWidth * scale
+      const h = image.naturalHeight * scale
+      context.drawImage(image, x + (tile - w) / 2, y + (tile - h) / 2, w, h)
+      context.fillStyle = '#2B2B2B'
+      context.fillRect(x + pad, y + pad, labelSize * 1.6, labelSize * 1.3)
+      context.fillStyle = '#fff'
+      context.font = `600 ${labelSize}px sans-serif`
+      context.textAlign = 'center'
+      context.textBaseline = 'middle'
+      context.fillText(String(startIndex + i + 1), x + pad + labelSize * 0.8, y + pad + labelSize * 0.65)
+    } catch {
+      // An unreadable photo leaves a blank tile instead of failing the whole message.
+    } finally {
+      URL.revokeObjectURL(objectUrl)
+    }
+  }))
+  return canvas.toDataURL('image/jpeg', 0.82)
 }
 
 async function imageFileToDataUrl(file: File): Promise<string> {

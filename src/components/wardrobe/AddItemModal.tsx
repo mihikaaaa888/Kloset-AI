@@ -907,7 +907,9 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-butter-yellow">Auto-filled from your photo</p>
                 <p className="text-2xs text-text-muted mt-0.5">
-                  {lowConfidenceFields.length ? 'Highlighted fields need your confirmation. You can still save as-is.' : 'Review and adjust any fields before saving.'}
+                  {editItem
+                    ? (lowConfidenceFields.length ? 'Highlighted fields need your confirmation. You can still save as-is.' : 'Review and adjust any fields before saving.')
+                    : 'Colour, fit, season and other details are saved automatically.'}
                 </p>
               </div>
               <button
@@ -969,6 +971,11 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
           )}
         </div>
 
+        {/* New uploads show only name, category and notes. Type, colours, pattern,
+            fit, formality, material, seasons, occasions and brand are still filled
+            in from the photo analysis and saved with the piece (Kaia and the outfit
+            engine use them); they're only shown when editing an existing piece. */}
+        {!!editItem && <>
         {/* ── Subcategory ── */}
         {subcategoryOptions && subcategoryOptions.length > 0 && (
           <div className={reviewFieldClass('subcategory')}>
@@ -1121,24 +1128,24 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
           </div>
         </div>
 
-        {/* ── Brand + Notes ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <SectionLabel>Brand (optional)</SectionLabel>
-            <TextInput
-              placeholder="e.g. Zara, COS, Uniqlo…"
-              value={draft.brand}
-              onChange={(e) => update('brand', e.target.value)}
-            />
-          </div>
-          <div>
-            <SectionLabel>Notes (optional)</SectionLabel>
-            <TextInput
-              placeholder="Any notes about this piece…"
-              value={draft.notes}
-              onChange={(e) => update('notes', e.target.value)}
-            />
-          </div>
+        <div>
+          <SectionLabel>Brand (optional)</SectionLabel>
+          <TextInput
+            placeholder="e.g. Zara, COS, Uniqlo…"
+            value={draft.brand}
+            onChange={(e) => update('brand', e.target.value)}
+          />
+        </div>
+        </>}
+
+        {/* ── Notes ── */}
+        <div>
+          <SectionLabel>Notes (optional)</SectionLabel>
+          <TextInput
+            placeholder="Any notes about this piece…"
+            value={draft.notes}
+            onChange={(e) => update('notes', e.target.value)}
+          />
         </div>
 
 

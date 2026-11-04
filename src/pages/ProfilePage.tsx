@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Archive, Camera, ChevronRight, Cog, ImagePlus, LogOut, Pencil,
   X, type LucideIcon,
@@ -33,7 +33,14 @@ export function ProfilePage() {
   const savedOutfits = useOutfitStore((state) => state.savedOutfits)
   const clearOutfits = useOutfitStore((state) => state.clearOutfits)
   const { user, signOut } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // The nav menu's "Settings" links here with ?settings=1.
+  useEffect(() => {
+    if (searchParams.get('settings') !== '1') return
+    setSettingsOpen(true)
+    setSearchParams((params) => { params.delete('settings'); return params }, { replace: true })
+  }, [searchParams, setSearchParams])
   const [dangerOpen, setDangerOpen] = useState(false)
   const [avatarId, setAvatarId] = useState<string | null>(null)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)

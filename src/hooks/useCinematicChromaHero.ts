@@ -51,6 +51,12 @@ interface UseCinematicChromaHeroOptions {
    * a one-way intro, not a persistent portal.
    */
   openFraction?: number
+  /**
+   * When set, the door opens on its own over this many seconds once the video
+   * is ready, instead of following the scroll. Scrolling then only drives the
+   * exit (the closet fading out), across the whole runway.
+   */
+  autoOpenSeconds?: number
   /** Disables the whole rAF/WebGL pipeline (reduced motion, mobile fallback, etc). */
   enabled?: boolean
   /** Called once each time the door finishes opening (true) or starts closing again (false) — not per frame. */
@@ -201,6 +207,7 @@ export function useCinematicChromaHero({
   zoomTo = 2.6,
   exitZoom = 1,
   openFraction = 0.6,
+  autoOpenSeconds,
   enabled = true,
   onOpenChange,
   onOpeningChange,
@@ -251,6 +258,8 @@ export function useCinematicChromaHero({
     // keep the opened rack visible while they scroll back through the hero.
     // Re-arm the door only after they return close to the top of the runway.
     let hasExitedHero = false
+    // Auto-open mode: when the door started opening (performance.now()), 0 until ready.
+    let autoOpenStart = 0
 
     canvas.style.opacity = '0'
     if (content) content.style.opacity = '0'
@@ -367,11 +376,14 @@ export function useCinematicChromaHero({
       // Stage 1 (0 → openFraction of the runway): door opens, camera zooms
       // in. Stage 2 (openFraction → 1): the closet fades out completely,
       // revealing the page underneath — a one-way intro, not a persistent portal.
-      const openProgress = Math.min(1, rawProgress / openFraction)
-      // Ease the scroll input at both ends so the doors start and settle
-      // gently instead of matching the wheel's acceleration one-to-one.
+      const autoOpen = !!autoOpenSeconds
+      if (autoOpen && isReadyFlag && !autoOpenStart) autoOpenStart = now
+      const openProgress = autoOpen
+        ? (autoOpenStart ? Math.min(1, (now - autoOpenStart) / (autoOpenSeconds * 1000)) : 0)
+        : Math.min(1, rawProgress / openFraction)
+      // Ease at both ends so the doors start and settle gently.
       const openTarget = openProgress * openProgress * (3 - 2 * openProgress)
-      const fadeTarget = Math.max(0, (rawProgress - openFraction) / (1 - openFraction))
+      const fadeTarget = autoOpen ? rawProgress : Math.max(0, (rawProgress - openFraction) / (1 - openFraction))
 
       // Lerp every target toward its scroll-derived value each frame instead
       // of snapping straight to it — this is what makes the door motion read
@@ -381,7 +393,9 @@ export function useCinematicChromaHero({
       // Small factors = slow, heavy, fluid motion.
       // Time-based easing stays consistent across 30/60/120 Hz displays and
       // responds quickly enough that the door feels attached to the scroll.
-      smoothedOpen += (openTarget - smoothedOpen) * (1 - Math.exp(-deltaSeconds / 0.24))
+      // Auto-open is already a smooth timed curve; lerping it again would push it past its duration.
+      if (autoOpen) smoothedOpen = openTarget
+      else smoothedOpen += (openTarget - smoothedOpen) * (1 - Math.exp(-deltaSeconds / 0.24))
       smoothedFade += (fadeTarget - smoothedFade) * (1 - Math.exp(-deltaSeconds / 0.24))
       introOpacity += ((isReadyFlag ? 1 : 0) - introOpacity) * (1 - Math.exp(-deltaSeconds / 0.1))
 
@@ -489,7 +503,7 @@ export function useCinematicChromaHero({
     let lastScrollY = window.scrollY
     let scrollDirection = 1
     const snapDoor = () => {
-      if (cancelled || hasExitedHero) return
+      if (cancelled || hasExitedHero || autoOpenSeconds) return
       const rect = container.getBoundingClientRect()
       const scrollable = rect.height - (canvas.clientHeight || window.innerHeight)
       if (scrollable <= 0) return
@@ -608,7 +622,7 @@ export function useCinematicChromaHero({
       gl.deleteBuffer(positionBuffer)
       gl.deleteTexture(texture)
     }
-  }, [containerRef, videoRef, src, canvasRef, contentRef, rackSceneRef, innerRect, zoomTo, exitZoom, openFraction, enabled])
+  }, [containerRef, videoRef, src, canvasRef, contentRef, rackSceneRef, innerRect, zoomTo, exitZoom, openFraction, autoOpenSeconds, enabled])
 
   return state
 }
