@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, type ReactNode, type Ref } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -11,6 +11,10 @@ interface ModalProps {
   footer?: ReactNode
   variant?: 'dialog' | 'sheet'
   maxWidth?: string
+  /** The scrolling body, for callers that need to jump back to the top. */
+  scrollRef?: Ref<HTMLDivElement>
+  /** Stacking class; confirmations raise it to sit above full-screen views. */
+  layer?: string
 }
 
 export function Modal({
@@ -21,6 +25,8 @@ export function Modal({
   footer,
   variant = 'dialog',
   maxWidth = 'max-w-lg',
+  scrollRef,
+  layer = 'z-50',
 }: ModalProps) {
   useEffect(() => {
     if (!open) return
@@ -38,7 +44,7 @@ export function Modal({
 
   const content =
     variant === 'sheet' ? (
-      <div className="fixed inset-0 z-50 flex flex-col justify-end">
+      <div className={clsx('fixed inset-0 flex flex-col justify-end', layer)}>
         <div
           className="absolute inset-0 bg-scrim/40 backdrop-blur-sm animate-fade-in"
           onClick={onClose}
@@ -59,7 +65,7 @@ export function Modal({
               </button>
             </div>
           )}
-          <div className="overflow-y-auto flex-1">{children}</div>
+          <div ref={scrollRef} className="overflow-y-auto flex-1">{children}</div>
           {footer && (
             <div
               className="flex-shrink-0 border-t border-text-primary/10 px-6 pt-4 pb-4"
@@ -71,7 +77,7 @@ export function Modal({
         </div>
       </div>
     ) : (
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
+      <div className={clsx('fixed inset-0 flex items-end sm:items-center justify-center sm:p-4', layer)}>
         <div
           className="absolute inset-0 bg-scrim/40 backdrop-blur-sm animate-fade-in"
           onClick={onClose}
@@ -95,7 +101,7 @@ export function Modal({
               </button>
             </div>
           )}
-          <div className="overflow-y-auto flex-1">{children}</div>
+          <div ref={scrollRef} className="overflow-y-auto flex-1">{children}</div>
           {footer && (
             <div
               className="flex-shrink-0 border-t border-text-primary/10 px-6 pt-4 pb-4"

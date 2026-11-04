@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Check, ImagePlus, MessageCircle, Send, Trash2, UserPlus, X } from 'lucide-react'
+import { ArrowLeft, Check, ImagePlus, MessageCircle, Send, Smile, Trash2, UserPlus, X } from 'lucide-react'
 import { clsx } from 'clsx'
 
 import { useAuth } from '@/contexts/AuthContext'
@@ -23,6 +23,7 @@ import {
   sendShare,
   type FriendMessage,
 } from '@/lib/friendService'
+import { compressImage } from '@/lib/imageStorage'
 import { deleteWithUndo, isPendingDelete, notify } from '@/store/undoStore'
 import type { ClothingItem, Connection, Share, SharedPiece } from '@/types'
 
@@ -202,7 +203,11 @@ function FriendsChat({ friends, myId, initialFriendId, shares, images, onOpenSha
   const [sending, setSending] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [error, setError] = useState('')
+  const [emojiOpen, setEmojiOpen] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)
+  const draftRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const stickToBottom = useRef(true)
   const activeFriend = friends.find((friend) => friend.otherId === activeId)
 
   useEffect(() => {
@@ -229,34 +234,57 @@ function FriendsChat({ friends, myId, initialFriendId, shares, images, onOpenSha
     return () => window.clearInterval(timer)
   }, [activeId, loadMessages, onRefresh])
 
+  // The list scrolls inside a fixed-height chat. Follow new messages unless the reader has scrolled up to look back.
+  useEffect(() => { stickToBottom.current = true }, [activeId])
+  useEffect(() => {
+    const el = listRef.current
+    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
+  }, [messages, loadingMessages, activeId])
+
+  const insertEmoji = (emoji: string) => {
+    const input = draftRef.current
+    const start = input?.selectionStart ?? draft.length
+    const end = input?.selectionEnd ?? draft.length
+    setDraft((d) => (d.slice(0, start) + emoji + d.slice(end)).slice(0, 2000))
+    requestAnimationFrame(() => { input?.focus(); input?.setSelectionRange(start + emoji.length, start + emoji.length) })
+  }
+
   const send = async (event: React.FormEvent) => {
     event.preventDefault()
     const body = draft.trim()
     if (!body || !activeId || sending) return
     setSending(true)
     try {
+      stickToBottom.current = true
       await sendFriendMessage(activeId, myId, body)
       setDraft('')
+      setEmojiOpen(false)
       await loadMessages()
     } catch (err) { setError((err as Error).message) }
     finally { setSending(false) }
   }
 
-  const sendPhoto = async (file?: File) => {
-    if (!file || !activeId || !myId || uploadingPhoto) return
-    if (!file.type.startsWith('image/')) { setError('Choose an image to share.'); return }
+  const sendPhotos = async (files: File[]) => {
+    if (!files.length || !activeId || !myId || uploadingPhoto) return
+    const images = files.filter((f) => f.type.startsWith('image/')).slice(0, MAX_PHOTOS_PER_SEND)
+    if (!images.length) { setError('Choose an image to share.'); return }
+    if (files.length > MAX_PHOTOS_PER_SEND) setError(`Only the first ${MAX_PHOTOS_PER_SEND} photos were sent.`)
+    else setError('')
     setUploadingPhoto(true)
-    setError('')
+    stickToBottom.current = true
     try {
-      const imageUrl = await readFileAsDataUrl(file)
-      const now = new Date().toISOString()
-      const item: ClothingItem = {
-        id: crypto.randomUUID(), name: file.name.replace(/\.[^.]+$/, '') || 'Photo from chat', category: 'tops',
-        imageUrl, imageSource: 'local', colour: [], pattern: 'other', seasons: [], occasions: [],
-        isFavourite: false, timesWorn: 0, createdAt: now, updatedAt: now,
+      for (const file of images) {
+        // Resize + re-encode first so a 10 MB camera shot doesn't cost 10 MB of data on both phones.
+        const imageUrl = await readFileAsDataUrl(await compressImage(file))
+        const now = new Date().toISOString()
+        const item: ClothingItem = {
+          id: crypto.randomUUID(), name: file.name.replace(/\.[^.]+$/, '') || 'Photo from chat', category: 'tops',
+          imageUrl, imageSource: 'local', colour: [], pattern: 'other', seasons: [], occasions: [],
+          isFavourite: false, timesWorn: 0, createdAt: now, updatedAt: now,
+        }
+        const ids = await sendShare({ kind: 'item', item }, [activeId], myId, '')
+        await sendFriendMessage(activeId, myId, `[[KLOSET_SHARE:${ids[0]}]]`)
       }
-      const ids = await sendShare({ kind: 'item', item }, [activeId], myId, '')
-      await sendFriendMessage(activeId, myId, `[[KLOSET_SHARE:${ids[0]}]]`)
       await onRefresh()
       await loadMessages()
       window.dispatchEvent(new Event(FRIENDS_CHANGED_EVENT))
@@ -267,31 +295,33 @@ function FriendsChat({ friends, myId, initialFriendId, shares, images, onOpenSha
     }
   }
 
-  return <section className="grid min-h-[min(70vh,44rem)] overflow-hidden border border-text-primary/10 bg-surface md:grid-cols-[17rem_1fr] md:rounded-2xl">
-    <aside className={clsx('min-h-[min(70vh,44rem)] border-b border-text-primary/10 md:border-b-0 md:border-r', mobileConversationOpen ? 'hidden md:block' : 'block')}>
-      <header className="flex items-center justify-between border-b border-text-primary/10 px-4 py-4">
+  return <section className="grid h-[min(80vh,56rem)] grid-rows-[minmax(0,1fr)] overflow-hidden border border-text-primary/10 bg-surface md:grid-cols-[17rem_minmax(0,1fr)] md:rounded-2xl">
+    <aside className={clsx('min-h-0 flex-col border-b border-text-primary/10 md:border-b-0 md:border-r', mobileConversationOpen ? 'hidden md:flex' : 'flex')}>
+      <header className="flex shrink-0 items-center justify-between border-b border-text-primary/10 px-4 py-4">
         <h2 className="font-display text-2xl text-text-primary">Messages</h2>
         <span className="text-xs text-text-muted">{friends.length}</span>
       </header>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
       {friends.length ? friends.map((friend) => <button key={friend.id} onClick={() => { setActiveId(friend.otherId); setMobileConversationOpen(true) }} className={clsx('flex w-full items-center gap-3 border-b border-text-primary/5 px-4 py-3.5 text-left transition-colors', activeId === friend.otherId ? 'bg-text-primary/5' : 'hover:bg-text-primary/[0.03]')}>
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-butter-yellow/50 font-display text-text-primary">{friend.otherName.charAt(0).toUpperCase()}</span><span className="min-w-0"><span className="block truncate text-sm font-medium text-text-primary">{friend.otherName}</span><span className="block truncate text-xs text-text-muted">{friend.otherEmail}</span></span>
       </button>) : <p className="px-4 py-3 text-sm text-text-muted">Add a friend to start chatting.</p>}
+      </div>
     </aside>
-    <div className={clsx('min-h-[min(70vh,44rem)] flex-col', mobileConversationOpen ? 'flex' : 'hidden md:flex')}>
+    <div className={clsx('min-h-0 min-w-0 flex-col', mobileConversationOpen ? 'flex' : 'hidden md:flex')}>
       {activeFriend ? <>
-        <header className="flex items-center gap-3 border-b border-text-primary/10 px-4 py-3.5 sm:px-5">
+        <header className="flex shrink-0 items-center gap-3 border-b border-text-primary/10 px-4 py-3.5 sm:px-5">
           <button type="button" onClick={() => setMobileConversationOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full text-text-primary hover:bg-text-primary/5 md:hidden" aria-label="Back to messages"><ArrowLeft size={19}/></button>
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-butter-yellow/50 font-display text-text-primary">{activeFriend.otherName.charAt(0).toUpperCase()}</span>
           <div className="min-w-0"><p className="truncate font-medium text-text-primary">{activeFriend.otherName}</p><p className="truncate text-xs text-text-muted">{activeFriend.otherEmail}</p></div>
         </header>
         {error && <p role="alert" className="mx-4 mt-3 text-xs text-red-700">{error}</p>}
-        <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-3 py-4 sm:px-5" aria-live="polite">
+        <div ref={listRef} onScroll={(e) => { const el = e.currentTarget; stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80 }} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 py-4 sm:px-5" aria-live="polite">
           {loadingMessages ? <p className="m-auto text-sm text-text-muted">Loading messages…</p> : messages.length ? messages.map((message) => {
             const sharedId = message.body.match(/^\[\[KLOSET_SHARE:([^\]]+)\]\]$/)?.[1]
             const shared = sharedId ? shares.find((share) => share.id === sharedId) : null
-            return <div key={message.id} className={clsx('max-w-[88%] rounded-2xl px-3 py-3 text-sm sm:max-w-[75%]', message.senderId === myId ? 'ml-auto bg-text-primary text-warm-cream' : 'mr-auto bg-text-primary/5 text-text-primary')}>
-              {shared ? <button type="button" onClick={() => onOpenShare(shared)} className="block w-full overflow-hidden rounded-xl bg-surface text-left text-text-primary">
-                <div className={clsx('grid aspect-[1.45] gap-px overflow-hidden bg-text-primary/10', shared.payload.pieces.length > 1 ? 'grid-cols-2' : 'grid-cols-1')}>
+            return <div key={message.id} className={clsx('max-w-[88%] shrink-0 rounded-2xl px-3 py-3 text-sm sm:max-w-[75%]', message.senderId === myId ? 'ml-auto bg-text-primary text-warm-cream' : 'mr-auto bg-text-primary/5 text-text-primary')}>
+              {shared ? <button type="button" onClick={() => onOpenShare(shared)} className="block w-56 max-w-full overflow-hidden rounded-xl bg-surface text-left text-text-primary sm:w-64">
+                <div className={clsx('grid aspect-[4/5] gap-px overflow-hidden bg-text-primary/10', shared.payload.pieces.length > 1 ? 'grid-cols-2' : 'grid-cols-1')}>
                   {shared.payload.pieces.slice(0, 4).map((piece, index) => <PieceImage key={`${shared.id}-${index}`} piece={piece} images={images} glyphSize={28} />)}
                 </div>
                 <div className="px-3 py-2.5"><p className="truncate font-medium">{shared.payload.title}</p><p className="mt-0.5 text-xs text-text-muted">{shared.kind === 'outfit' ? 'Outfit' : 'Photo'} · tap to view</p>{shared.message && <p className="mt-1 text-xs text-text-muted">{shared.message}</p>}</div>
@@ -300,10 +330,12 @@ function FriendsChat({ friends, myId, initialFriendId, shares, images, onOpenSha
             </div>
           }) : <div className="m-auto max-w-xs text-center"><MessageCircle size={24} className="mx-auto mb-3 text-text-muted/50"/><p className="text-sm text-text-muted">No messages yet. Say hello to {activeFriend.otherName}.</p></div>}
         </div>
-        <form onSubmit={send} className="flex items-center gap-2 border-t border-text-primary/10 p-3 sm:p-4">
-          <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => { void sendPhoto(event.target.files?.[0]); event.currentTarget.value = '' }} />
-          <button type="button" onClick={() => photoInputRef.current?.click()} disabled={uploadingPhoto || sending} aria-label="Upload a photo or outfit" title="Upload a photo or outfit" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-text-primary hover:bg-text-primary/5 disabled:opacity-40"><ImagePlus size={20}/></button>
-          <input value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={2000} placeholder="Message…" aria-label="Message" className="min-w-0 flex-1 rounded-full border border-text-primary/15 bg-transparent px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-text-primary/30"/>
+        <form onSubmit={send} className="relative flex shrink-0 items-center gap-1.5 border-t border-text-primary/10 p-3 sm:gap-2 sm:p-4">
+          <input ref={photoInputRef} type="file" accept="image/*" multiple className="hidden" onChange={(event) => { void sendPhotos(Array.from(event.target.files ?? [])); event.currentTarget.value = '' }} />
+          <button type="button" onClick={() => photoInputRef.current?.click()} disabled={uploadingPhoto || sending} aria-label="Attach photos" title="Attach photos" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-text-primary hover:bg-text-primary/5 disabled:opacity-40"><ImagePlus size={20}/></button>
+          <button type="button" onClick={() => setEmojiOpen((o) => !o)} aria-label="Add an emoji" aria-expanded={emojiOpen} title="Emoji" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-text-primary hover:bg-text-primary/5"><Smile size={20}/></button>
+          {emojiOpen && <EmojiPicker onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />}
+          <input ref={draftRef} value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={2000} placeholder="Message…" aria-label="Message" className="min-w-0 flex-1 rounded-full border border-text-primary/15 bg-transparent px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-text-primary/30"/>
           <button disabled={!draft.trim() || sending || uploadingPhoto} aria-label="Send message" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-text-primary text-warm-cream disabled:opacity-40"><Send size={16}/></button>
           {uploadingPhoto && <span className="sr-only">Uploading photo…</span>}
         </form>
@@ -312,7 +344,28 @@ function FriendsChat({ friends, myId, initialFriendId, shares, images, onOpenSha
   </section>
 }
 
-function readFileAsDataUrl(file: File): Promise<string> {
+const MAX_PHOTOS_PER_SEND = 5
+
+const EMOJIS = ['😀','😂','🥹','😍','🥰','😘','😎','🤩','🤔','😅','😭','😮','🙌','👏','👍','🙏','🔥','✨','💖','💯','🎉','👗','👖','👕','🧥','👠','👟','👜','🕶️','💍','🧣','🧢','👀','💅','🛍️','🌸','☀️','🌙','❤️','🖤','🤍','💛','💚','💙']
+
+/** A small emoji grid above the composer; closes on pick-outside or Escape. */
+function EmojiPicker({ onPick, onClose }: { onPick: (emoji: string) => void; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const away = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node) && !(e.target as Element).closest('[aria-label="Add an emoji"]')) onClose() }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('mousedown', away)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc) }
+  }, [onClose])
+  return (
+    <div ref={ref} role="dialog" aria-label="Emoji" className="absolute bottom-full left-3 z-20 mb-2 grid w-72 max-w-[calc(100%-1.5rem)] grid-cols-8 gap-0.5 rounded-2xl border border-text-primary/10 bg-surface p-2 shadow-lifted sm:left-4">
+      {EMOJIS.map((emoji) => <button key={emoji} type="button" onClick={() => onPick(emoji)} className="flex h-8 w-8 items-center justify-center rounded-lg text-lg hover:bg-text-primary/5">{emoji}</button>)}
+    </div>
+  )
+}
+
+function readFileAsDataUrl(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Could not read this photo.'))
