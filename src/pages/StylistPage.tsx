@@ -160,7 +160,7 @@ export function StylistPage() {
               </button>
             ))}
           </nav>
-          <button type="button" onClick={() => selectMode('chat')} aria-label="Ask Kaia" title="Ask Kaia" className={clsx('flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-text-primary/5 hover:text-text-primary', mode === 'chat' && 'bg-text-primary/8 text-text-primary')}>
+          <button type="button" onClick={() => selectMode('chat')} aria-label="Ask Kaia" title="Ask Kaia" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-text-primary/5 hover:text-text-primary">
             <MessageCircle size={18} strokeWidth={1.7} />
           </button>
         </div>}

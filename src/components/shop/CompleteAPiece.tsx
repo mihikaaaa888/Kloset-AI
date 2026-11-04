@@ -91,7 +91,7 @@ export function CompleteAPiece({ budget, onBudgetChange, customBudgetAmount, onC
         {source === 'closet' && wardrobe.length === 0 && <p className="mb-4 text-sm text-text-muted">Your closet is empty. Add a piece or choose one from Shop.</p>}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
           <PhotoUploadTile onReady={(previewUrl, uploadAnchor) => setPicked({ kind: 'upload', previewUrl, anchor: uploadAnchor })} />
-          {source === 'closet' ? wardrobe.map((item) => <ClosetPickCard key={item.id} item={item} selected={picked?.kind === 'kloset' && picked.item.id === item.id} onClick={() => { console.log('[complete-a-piece] picked from Kloset', item.id); setPicked({ kind: 'kloset', item }) }} />) : availableShopItems(profile).map((item) => <ShopPickCard key={item.id} item={item} selected={picked?.kind === 'catalog' && picked.item.id === item.id} onClick={() => setPicked({ kind: 'catalog', item })} />)}
+          {source === 'closet' ? wardrobe.map((item) => <ClosetPickCard key={item.id} item={item} selected={false} onClick={() => { console.log('[complete-a-piece] picked from Kloset', item.id); setPicked({ kind: 'kloset', item }) }} />) : availableShopItems(profile).map((item) => <ShopPickCard key={item.id} item={item} selected={false} onClick={() => setPicked({ kind: 'catalog', item })} />)}
         </div>
       </section>}
 
