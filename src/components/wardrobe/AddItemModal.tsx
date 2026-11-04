@@ -267,7 +267,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
         try {
           blob = await removeImageBackground(compressed)
         } catch (error) {
-          console.warn('[AddItemModal] PhotoRoom background removal failed; keeping the original photo.', error)
+          console.warn('[AddItemModal] remove.bg background removal failed; keeping the original photo.', error)
           backgroundFailure = error instanceof Error ? error.message : 'unknown error'
         }
         setImageProcessingStep('Saving photo…')
@@ -848,7 +848,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
           {!displayUrl && photoTab === 'upload' && !imageProcessing && (
             <p className="text-xs text-text-muted mt-2">
-              The background is removed by PhotoRoom, so the photo is sent to their service for processing. Use a photo of just the garment if you’d rather not share a photo of yourself.
+              The background is removed by remove.bg, so the photo is sent to their service for processing. Use a photo of just the garment if you’d rather not share a photo of yourself.
             </p>
           )}
 

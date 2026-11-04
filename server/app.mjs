@@ -36,7 +36,7 @@ app.get('/api/health', (_req, res) => {
     hasGroqKey: !!process.env.GROQ_API_KEY,
     hasClaudeKey: !!process.env.CLAUDE_API_KEY,
     hasExaKey: !!process.env.EXA_API_KEY,
-    hasPhotoRoomKey: !!process.env.PHOTOROOM_API_KEY,
+    hasRemoveBgKey: !!process.env.REMOVEBG_API_KEY,
     timestamp: new Date().toISOString(),
   })
 })
@@ -219,13 +219,13 @@ app.post('/api/analyze-image-url', async (req, res) => {
   }
 })
 
-// Remove an image's background through PhotoRoom. The API key stays on the server;
+// Remove an image's background through remove.bg. The API key stays on the server;
 // callers send only the image bytes.
-async function photoRoomSegment(req, res) {
+async function removeBgSegment(req, res) {
   const { imageData, mediaType } = req.body ?? {}
-  const apiKey = process.env.PHOTOROOM_API_KEY
+  const apiKey = process.env.REMOVEBG_API_KEY
 
-  if (!apiKey) return res.status(503).json({ error: 'PhotoRoom is not configured.' })
+  if (!apiKey) return res.status(503).json({ error: 'remove.bg is not configured.' })
   if (!imageData || typeof imageData !== 'string') {
     return res.status(400).json({ error: 'imageData (base64 string) is required' })
   }
@@ -241,28 +241,30 @@ async function photoRoomSegment(req, res) {
 
     const form = new FormData()
     form.append('image_file', new Blob([imageBytes], { type: mediaType }), `garment.${mediaType.split('/')[1]}`)
-    const response = await fetch('https://sdk.photoroom.com/v1/segment', {
+    form.append('size', 'auto')
+    const response = await fetch('https://api.remove.bg/v1.0/removebg', {
       method: 'POST',
-      headers: { 'x-api-key': apiKey },
+      headers: { 'X-Api-Key': apiKey },
       body: form,
     })
     if (!response.ok) {
-      console.error(`[photoroom] ${response.status}:`, (await response.text()).slice(0, 500))
-      // 402 = the plan's image quota is used up; say so instead of a generic failure.
-      if (response.status === 402) return res.status(402).json({ error: 'PhotoRoom has run out of image credits.' })
-      return res.status(502).json({ error: 'PhotoRoom could not process this image.' })
+      console.error(`[removebg] ${response.status}:`, (await response.text()).slice(0, 500))
+      // 402 = out of credits, 403 = bad key; say so instead of a generic failure.
+      if (response.status === 402) return res.status(402).json({ error: 'remove.bg has run out of credits.' })
+      if (response.status === 403) return res.status(502).json({ error: 'remove.bg rejected the API key.' })
+      return res.status(502).json({ error: 'remove.bg could not process this image.' })
     }
 
     const output = Buffer.from(await response.arrayBuffer())
     return res.json({ imageData: output.toString('base64'), mediaType: response.headers.get('content-type') || 'image/png' })
   } catch (e) {
-    console.error('[photoroom] error:', e?.message ?? e)
-    return res.status(502).json({ error: 'PhotoRoom could not be reached.' })
+    console.error('[removebg] error:', e?.message ?? e)
+    return res.status(502).json({ error: 'remove.bg could not be reached.' })
   }
 }
 // remove-background is the older name; kept so existing clients keep working.
-app.post('/api/refine-garment-image', photoRoomSegment)
-app.post('/api/remove-background', photoRoomSegment)
+app.post('/api/refine-garment-image', removeBgSegment)
+app.post('/api/remove-background', removeBgSegment)
 
 // ─── Live web shopping search (Exa) ───────────────────────────────────────────
 

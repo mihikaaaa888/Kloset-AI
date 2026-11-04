@@ -14,12 +14,12 @@ function blobToBase64(blob: Blob): Promise<string> {
   })
 }
 
-// Set once the server says PhotoRoom has no key, so later photos skip the doomed request.
-let photoRoomUnconfigured = false
+// Set once the server says remove.bg has no key, so later photos skip the doomed request.
+let removeBgUnconfigured = false
 
-/** Send an image to the server's PhotoRoom endpoint; throws with a reason a person can read. */
-async function callPhotoRoom(image: Blob): Promise<Blob> {
-  if (photoRoomUnconfigured) throw new Error('PhotoRoom isn’t set up on the server.')
+/** Send an image to the server's remove.bg endpoint; throws with a reason a person can read. */
+async function callRemoveBg(image: Blob): Promise<Blob> {
+  if (removeBgUnconfigured) throw new Error('remove.bg isn’t set up on the server.')
   let response: Response
   try {
     response = await fetch(apiUrl('/api/remove-background'), {
@@ -31,15 +31,15 @@ async function callPhotoRoom(image: Blob): Promise<Blob> {
     throw new Error('couldn’t reach the server')
   }
   if (response.status === 503) {
-    photoRoomUnconfigured = true
-    throw new Error('PhotoRoom isn’t set up on the server.')
+    removeBgUnconfigured = true
+    throw new Error('remove.bg isn’t set up on the server.')
   }
   const result = await response.json().catch(() => ({})) as { imageData?: string; mediaType?: string; error?: string }
-  if (!response.ok || !result.imageData) throw new Error(result.error ?? 'PhotoRoom returned no image.')
+  if (!response.ok || !result.imageData) throw new Error(result.error ?? 'remove.bg returned no image.')
 
   const bytes = Uint8Array.from(atob(result.imageData), (character) => character.charCodeAt(0))
   return new Blob([bytes], { type: result.mediaType || 'image/png' })
 }
 
-/** Remove a photo's background through PhotoRoom (the server holds the key). Throws if it can't. */
-export const removeImageBackground = callPhotoRoom
+/** Remove a photo's background through remove.bg (the server holds the key). Throws if it can't. */
+export const removeImageBackground = callRemoveBg
