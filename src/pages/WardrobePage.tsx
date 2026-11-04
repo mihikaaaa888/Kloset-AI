@@ -52,7 +52,7 @@ export function WardrobePage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [showAddMenu, setShowAddMenu] = useState(false)
   const [addPhotoTab, setAddPhotoTab] = useState<'upload' | 'browse'>('upload')
-  const [cameraFile, setCameraFile] = useState<File | null>(null)
+  const [selectedUploadFiles, setSelectedUploadFiles] = useState<File[] | null>(null)
   const [editItem, setEditItem] = useState<ClothingItem | undefined>()
   const [detailItem, setDetailItem] = useState<ClothingItem | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -109,7 +109,10 @@ export function WardrobePage() {
   }, [closetItems])
 
   const filteredItems = useMemo(() => {
-    let result = activeCategory === 'all' ? closetItems : closetItems.filter((i) => i.category === activeCategory)
+    // Search spans the entire Kloset even when a category folder was open.
+    let result = searchQuery.trim() || activeCategory === 'all'
+      ? closetItems
+      : closetItems.filter((i) => i.category === activeCategory)
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       result = result.filter(
@@ -213,14 +216,14 @@ export function WardrobePage() {
 
   const openAdd = () => {
     setEditItem(undefined)
-    setCameraFile(null)
+    setSelectedUploadFiles(null)
     setAddPhotoTab('upload')
     setShowAddModal(true)
   }
 
   const openAddBrowse = () => {
     setEditItem(undefined)
-    setCameraFile(null)
+    setSelectedUploadFiles(null)
     setAddPhotoTab('browse')
     setShowAddModal(true)
   }
@@ -231,6 +234,7 @@ export function WardrobePage() {
   }
 
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  const uploadInputRef = useRef<HTMLInputElement>(null)
 
   const openCompletePiece = (item: ClothingItem) => {
     setCompleteSelectionMode(false)
@@ -314,14 +318,14 @@ export function WardrobePage() {
               {showSearch ? <X size={18} strokeWidth={1.4} /> : <Search size={18} strokeWidth={1.4} />}
             </button>
             <div ref={addMenuRef} className="relative">
-              {/* "Add" uploads a piece straight away; the arrow holds "Create outfit". */}
+              {/* Both the Add button and arrow open the add options menu. */}
               <div className="inline-flex h-9 sm:h-10 items-stretch bg-text-primary text-warm-cream">
                 <button type="button" aria-haspopup="menu" aria-expanded={showAddMenu} onClick={() => setShowAddMenu((visible) => !visible)} className="inline-flex items-center gap-1.5 pl-2.5 pr-2 sm:pl-5 sm:pr-3 text-2xs font-medium uppercase tracking-widest transition-colors hover:bg-white/10"><Plus size={14} strokeWidth={1.5} /> Add</button>
                 <button type="button" aria-haspopup="menu" aria-expanded={showAddMenu} aria-label="More ways to add" onClick={() => setShowAddMenu((visible) => !visible)} className="flex items-center border-l border-warm-cream/25 px-2 sm:px-2.5 transition-colors hover:bg-white/10"><ChevronDown size={13} /></button>
               </div>
               {showAddMenu && <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-48 border border-text-primary/10 bg-surface p-1 shadow-lifted">
                 <button role="menuitem" onClick={takePhoto} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Take photo</button>
-                <button role="menuitem" onClick={() => { setShowAddMenu(false); openAdd() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Upload</button>
+                <button role="menuitem" onClick={() => { setShowAddMenu(false); uploadInputRef.current?.click() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Upload</button>
                 <button role="menuitem" onClick={() => { setShowAddMenu(false); openAddBrowse() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Browse</button>
                 <div className="my-1 border-t border-text-primary/10" />
                 <button role="menuitem" onClick={() => { setShowAddMenu(false); setView('build') }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Create outfit</button>
@@ -385,7 +389,7 @@ export function WardrobePage() {
           <EmptySubsetState closetName={activeCollection?.name ?? 'this Kloset'} mainKlosetName={mainKlosetName} onAddFromMain={openMainPicker} onAddPiece={openAdd} />
         ) :
         filteredItems.length === 0 ? (
-          <NoResultsState query={searchQuery} category={activeCategory} onClear={() => {
+          <NoResultsState query={searchQuery} category={searchQuery.trim() ? 'all' : activeCategory} onClear={() => {
             setSearchQuery('')
             setActiveCategory('all')
             setShowFolders(true)
@@ -431,11 +435,28 @@ export function WardrobePage() {
 
       <AddItemModal
         open={showAddModal}
-        onClose={() => { setShowAddModal(false); setEditItem(undefined); setCameraFile(null) }}
+        onClose={() => { setShowAddModal(false); setEditItem(undefined); setSelectedUploadFiles(null) }}
         onSave={handleSaveItem}
         editItem={editItem}
         initialTab={addPhotoTab}
-        initialFile={cameraFile}
+        initialFiles={selectedUploadFiles}
+      />
+      <input
+        ref={uploadInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        aria-label="Choose clothing photos from your photo library"
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? [])
+          event.target.value = ''
+          if (!files.length) return
+          setSelectedUploadFiles(files)
+          setAddPhotoTab('upload')
+          setEditItem(undefined)
+          setShowAddModal(true)
+        }}
       />
       <input
         ref={cameraInputRef}
@@ -448,7 +469,7 @@ export function WardrobePage() {
           const file = event.target.files?.[0] ?? null
           event.target.value = ''
           if (!file) return
-          setCameraFile(file)
+          setSelectedUploadFiles([file])
           setAddPhotoTab('upload')
           setEditItem(undefined)
           setShowAddModal(true)
@@ -620,10 +641,10 @@ function NoResultsState({ query, category, onClear }: { query: string; category:
 
 // ─── Folders ────────────────────────────────────────────────────────────────
 
-const FOLDER_ORDER: (ClothingCategory | 'all')[] = ['all', 'tops', 'bottoms', 'dresses', 'outerwear', 'shoes', 'accessories']
+const FOLDER_ORDER: (ClothingCategory | 'all')[] = ['tops', 'bottoms', 'dresses', 'outerwear', 'shoes', 'accessories', 'all']
 const FOLDER_LABEL: Record<string, string> = {
   all: 'All pieces', tops: 'Tops', bottoms: 'Bottoms', dresses: 'Dresses',
-  outerwear: 'Outerwear', shoes: 'Shoes', accessories: 'Accessories',
+  outerwear: 'Woolens', shoes: 'Shoes', accessories: 'Accessories',
 }
 
 // New on every page load (website or app), so each visit shows different covers,

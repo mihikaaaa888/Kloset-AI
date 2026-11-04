@@ -79,7 +79,7 @@ const SLOT_LABEL: Record<string, string> = {
   top: 'Top',
   bottom: 'Bottom',
   dress: 'Dress',
-  outerwear: 'Layer',
+  outerwear: 'Woolens',
   shoes: 'Shoes',
   accessory: 'Accessory',
 }
@@ -418,9 +418,6 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
             </button>
           </div>
         </div>
-        <p className="text-2xs text-text-muted mt-2">
-          Share an outfit photo with Kaia for a quick style check.
-        </p>
       </div>
     </div>
   )

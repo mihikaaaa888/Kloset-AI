@@ -29,7 +29,7 @@ export function StylistPage() {
   const profile = useUserStore((s) => s.profile)
   const { saveOutfit, isOutfitSaved } = useOutfitStore()
 
-  const [mode, setMode] = useState<StylistMode>(navState.mode ?? 'wardrobe')
+  const [mode, setMode] = useState<StylistMode>(navState.mode ?? 'chat')
   const [pageState, setPageState] = useState<PageState>(() => {
     if (navState.mode === 'chat') return 'mode-select'
     if (navState.mode === 'item') return 'item-pick'
@@ -126,6 +126,13 @@ export function StylistPage() {
   }
 
   const resetToForm = () => {
+    if (mode === 'item') {
+      setPinnedItem(null)
+      setPageState('item-pick')
+      setSuggestion(null)
+      setError(null)
+      return
+    }
     setPageState('form')
     setSuggestion(null)
     setError(null)
@@ -142,7 +149,7 @@ export function StylistPage() {
       )}>
 
         {/* ── Mode tabs ── */}
-        <div className="mb-8 flex items-start justify-between gap-4">
+        {mode !== 'chat' && <div className="mb-8 flex items-start justify-between gap-4">
           <nav className="flex min-w-0 items-center gap-6 overflow-x-auto" role="tablist" aria-label="Stylist mode">
             {([
               { id: 'wardrobe', label: 'Style my wardrobe' },
@@ -156,7 +163,7 @@ export function StylistPage() {
           <button type="button" onClick={() => selectMode('chat')} aria-label="Ask Kaia" title="Ask Kaia" className={clsx('flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-text-primary/5 hover:text-text-primary', mode === 'chat' && 'bg-text-primary/8 text-text-primary')}>
             <MessageCircle size={18} strokeWidth={1.7} />
           </button>
-        </div>
+        </div>}
 
         {/* ── Mode: Chat ── */}
         {mode === 'chat' && (
@@ -185,7 +192,7 @@ export function StylistPage() {
                 ) : (
                   <>
                     <h1 className="font-display text-3xl lg:text-4xl font-medium text-text-primary leading-tight">
-                      {mode === 'item' ? 'Pick a piece to style' : 'What are you dressing for?'}
+                    {mode === 'item' ? 'Pick a piece to style' : 'What are you dressing for?'}
                     </h1>
                     {mode !== 'item' && formStep === 1 && <p className="text-text-muted text-sm mt-2 leading-relaxed">Two quick questions</p>}
                   </>
@@ -248,7 +255,6 @@ export function StylistPage() {
 // ─── Item picker ──────────────────────────────────────────────────────────────
 
 function ItemPicker({ items, onSelect }: { items: ClothingItem[]; onSelect: (item: ClothingItem) => void }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activeCategory, setActiveCategory] = useState<string>('all')
 
   const categories = ['all', ...Array.from(new Set(items.map((i) => i.category)))]
@@ -264,7 +270,7 @@ function ItemPicker({ items, onSelect }: { items: ClothingItem[]; onSelect: (ite
             onClick={() => setActiveCategory(cat)}
             className={clsx('text-tab flex-shrink-0', activeCategory === cat && 'text-tab-active')}
           >
-            {cat === 'all' ? 'All' : cat.charAt(0).toUpperCase() + cat.slice(1)}
+            {cat === 'all' ? 'All' : cat === 'outerwear' ? 'Woolens' : cat.charAt(0).toUpperCase() + cat.slice(1)}
           </button>
         ))}
       </div>
@@ -274,23 +280,11 @@ function ItemPicker({ items, onSelect }: { items: ClothingItem[]; onSelect: (ite
           <ItemPickCard
             key={item.id}
             item={item}
-            selected={selectedId === item.id}
-            onClick={() => setSelectedId(item.id)}
+            selected={false}
+            onClick={() => onSelect(item)}
           />
         ))}
       </div>
-
-      <Button
-        onClick={() => {
-          const item = items.find((i) => i.id === selectedId)
-          if (item) onSelect(item)
-        }}
-        disabled={!selectedId}
-        size="lg"
-        className="w-full"
-      >
-        Style this item
-      </Button>
     </div>
   )
 }
@@ -350,14 +344,9 @@ function PinnedItemBanner({ item, onClear }: { item: ClothingItem; onClear: () =
       <div className="flex-1 min-w-0">
         <p className="text-2xs text-text-muted uppercase tracking-widest mb-0.5">Building around</p>
         <p className="text-sm font-semibold text-text-primary truncate">{item.name}</p>
-        <p className="text-xs text-text-muted mt-0.5">{item.category} · {item.colour.join(', ')}</p>
+        <p className="text-xs text-text-muted mt-0.5">{item.category === 'outerwear' ? 'Woolens' : item.category} · {item.colour.join(', ')}</p>
       </div>
-      <button
-        onClick={onClear}
-        className="text-xs text-text-muted underline underline-offset-4 hover:text-text-primary transition-colors flex-shrink-0"
-      >
-        Change
-      </button>
+      <button onClick={onClear} aria-label="Choose a different item" title="Choose a different item" className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-text-muted hover:bg-text-primary/5 hover:text-text-primary transition-colors"><ArrowLeft size={17} strokeWidth={1.5} /></button>
     </div>
   )
 }

@@ -120,6 +120,25 @@ language sql stable security definer set search_path = public as $$
   order by fr.created_at desc;
 $$;
 
+-- ── friend_messages ───────────────────────────────────────────────────────────
+-- Direct messages are available only between accepted friends.
+create table if not exists public.friend_messages (
+  id uuid primary key default uuid_generate_v4(),
+  sender_id uuid not null references auth.users(id) on delete cascade,
+  recipient_id uuid not null references auth.users(id) on delete cascade,
+  body text not null check (char_length(trim(body)) between 1 and 2000),
+  created_at timestamptz not null default now(),
+  check (sender_id <> recipient_id)
+);
+create index if not exists friend_messages_thread_idx on public.friend_messages(sender_id, recipient_id, created_at);
+alter table public.friend_messages enable row level security;
+drop policy if exists "Friends can read messages" on public.friend_messages;
+create policy "Friends can read messages" on public.friend_messages for select
+  using (auth.uid() in (sender_id, recipient_id) and public.are_friends(sender_id, recipient_id));
+drop policy if exists "Friends can send messages" on public.friend_messages;
+create policy "Friends can send messages" on public.friend_messages for insert
+  with check (auth.uid() = sender_id and public.are_friends(sender_id, recipient_id));
+
 -- ── shares ────────────────────────────────────────────────────────────────────
 -- A piece or outfit sent to a friend. `payload` is a snapshot taken at send
 -- time (item fields + storage paths for photos), so it stays viewable even if

@@ -6,12 +6,14 @@ import { BUDGET_BANDS, type BudgetId } from '@/lib/shopping'
 interface BudgetDropdownProps {
   value: BudgetId
   onChange: (value: BudgetId) => void
+  customAmount?: number
+  onCustomAmountChange?: (amount: number) => void
   /** Rent mode shows weekly rental ranges instead of purchase prices. */
   mode: 'buy' | 'rent'
 }
 
 /** H&M-style text dropdown — "BUDGET: ANY ▾" that opens a plain list, no boxes. */
-export function BudgetDropdown({ value, onChange, mode }: BudgetDropdownProps) {
+export function BudgetDropdown({ value, onChange, mode, customAmount, onCustomAmountChange }: BudgetDropdownProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const listId = useId()
@@ -81,6 +83,10 @@ export function BudgetDropdown({ value, onChange, mode }: BudgetDropdownProps) {
           })}
         </ul>
       )}
+      {value === 'custom' && onCustomAmountChange && <label className="mt-2 flex items-center gap-2 text-xs text-text-muted">
+        <span>Maximum {mode === 'rent' ? 'weekly' : 'item'} budget</span>
+        <span>₹</span><input type="number" min="1" value={customAmount ?? ''} onChange={(event) => onCustomAmountChange(Number(event.target.value))} className="w-24 border-b border-text-primary/20 bg-transparent px-1 py-1 text-text-primary focus:outline-none" />
+      </label>}
     </div>
   )
 }

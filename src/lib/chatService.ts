@@ -34,7 +34,7 @@ const SLOT_HEADINGS: Record<ClothingCategory, string> = {
   tops: 'Top',
   bottoms: 'Bottom',
   dresses: 'Dress',
-  outerwear: 'Outerwear',
+  outerwear: 'Woolens',
   shoes: 'Shoes',
   accessories: 'Accessory',
 }

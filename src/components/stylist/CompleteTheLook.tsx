@@ -9,7 +9,7 @@ import type { ClothingCategory } from '@/types'
 type MissingRole = 'top' | 'bottom' | 'outerwear' | 'shoes'
 
 const ROLE_NOUN: Record<MissingRole, string> = { top: 'top', bottom: 'trousers', outerwear: 'jacket', shoes: 'shoes' }
-const ROLE_LABEL: Record<MissingRole, string> = { top: 'A top', bottom: 'A bottom', outerwear: 'A layer', shoes: 'Shoes' }
+const ROLE_LABEL: Record<MissingRole, string> = { top: 'A top', bottom: 'A bottom', outerwear: 'Woolens', shoes: 'Shoes' }
 const ROLE_CATEGORY: Record<MissingRole, ClothingCategory> = { top: 'tops', bottom: 'bottoms', outerwear: 'outerwear', shoes: 'shoes' }
 const OCCASION_WORD: Record<string, string> = {
   work: 'work', casual: 'casual', 'date-night': 'evening', formal: 'formal', weekend: 'weekend',

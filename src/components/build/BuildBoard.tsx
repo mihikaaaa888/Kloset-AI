@@ -33,7 +33,7 @@ const FILTERS: { id: Filter; label: string; category: ClothingCategory; query: s
   { id: 'tops', label: 'Tops', category: 'tops', query: 'blouse top flat lay' },
   { id: 'bottoms', label: 'Bottoms', category: 'bottoms', query: 'jeans trousers flat lay' },
   { id: 'dresses', label: 'Dresses', category: 'dresses', query: 'dress on hanger' },
-  { id: 'outerwear', label: 'Outerwear', category: 'outerwear', query: 'coat jacket on hanger' },
+  { id: 'outerwear', label: 'Woolens', category: 'outerwear', query: 'coat jacket on hanger' },
   { id: 'shoes', label: 'Shoes', category: 'shoes', query: 'shoes product photo' },
   { id: 'bags', label: 'Bags', category: 'accessories', query: 'handbag product photo' },
   { id: 'accessories', label: 'Accessories', category: 'accessories', query: 'jewelry sunglasses minimal' },

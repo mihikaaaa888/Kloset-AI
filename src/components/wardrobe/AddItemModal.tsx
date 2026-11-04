@@ -42,16 +42,16 @@ const CATEGORIES: { value: ClothingCategory; label: string }[] = [
   { value: 'tops', label: 'Tops' },
   { value: 'bottoms', label: 'Bottoms' },
   { value: 'dresses', label: 'Dresses' },
-  { value: 'outerwear', label: 'Outerwear' },
+  { value: 'outerwear', label: 'Woolens' },
   { value: 'shoes', label: 'Shoes' },
   { value: 'accessories', label: 'Accessories' },
 ]
 
 const SUBCATEGORIES: Partial<Record<ClothingCategory, string[]>> = {
-  tops: ['T-shirt', 'Shirt', 'Blouse', 'Tank Top', 'Polo', 'Crop Top', 'Hoodie', 'Sweatshirt'],
+  tops: ['T-shirt', 'Shirt', 'Blouse', 'Tank Top', 'Polo', 'Crop Top'],
   bottoms: ['Jeans', 'Trousers', 'Shorts', 'Skirt', 'Leggings', 'Joggers'],
   dresses: ['Casual Dress', 'Midi Dress', 'Maxi Dress', 'Mini Dress', 'Wrap Dress', 'Sundress'],
-  outerwear: ['Blazer', 'Jacket', 'Coat', 'Cardigan', 'Puffer', 'Raincoat', 'Leather Jacket'],
+  outerwear: ['Sweater', 'Sweatshirt', 'Hoodie', 'Cardigan', 'Blazer', 'Jacket', 'Coat', 'Puffer', 'Raincoat', 'Leather Jacket'],
   shoes: ['Sneakers', 'Boots', 'Heels', 'Loafers', 'Sandals', 'Flats', 'Mules'],
   accessories: ['Bag', 'Jewellery', 'Belt', 'Hat', 'Scarf', 'Watch', 'Sunglasses'],
 }
@@ -169,10 +169,10 @@ interface AddItemModalProps {
   onSave: (item: ClothingItem) => void
   editItem?: ClothingItem
   initialTab?: 'upload' | 'browse'
-  initialFile?: File | null
+  initialFiles?: File[] | null
 }
 
-export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'upload', initialFile = null }: AddItemModalProps) {
+export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'upload', initialFiles = null }: AddItemModalProps) {
   const [draft, setDraft] = useState<ItemDraft>(() =>
     editItem ? itemToDraft(editItem) : blankDraft()
   )
@@ -332,12 +332,12 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
     }
   }, [activeImageId, editItem?.imageId, editItem?.category]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const processedInitialFile = useRef<File | null>(null)
+  const processedInitialFiles = useRef<File[] | null>(null)
   useEffect(() => {
-    if (!open || !initialFile || processedInitialFile.current === initialFile) return
-    processedInitialFile.current = initialFile
-    void processFiles([initialFile])
-  }, [open, initialFile, processFiles])
+    if (!open || !initialFiles?.length || processedInitialFiles.current === initialFiles) return
+    processedInitialFiles.current = initialFiles
+    void processFiles(initialFiles)
+  }, [open, initialFiles, processFiles])
 
   // ── AI analysis ──────────────────────────────────────────────────────────────
   const applyAnalysis = useCallback((analysis: ClothingAnalysis, detectedCategory?: ClothingCategory, detectedName?: string) => {
@@ -376,8 +376,11 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
       if (analysis.name && (!prev.name.trim() || (detectedName && prev.name === detectedName))) next.name = analysis.name
       else if (detectedName && !prev.name.trim()) next.name = detectedName
 
-      if (finalCategory) next.category = finalCategory
-      if (analysis.category !== finalCategory || !analysis.subcategory) next.subcategory = ''
+      const woolenSubcategories = new Set(['sweater', 'sweatshirt', 'hoodie', 'cardigan', 'coat', 'jacket', 'blazer', 'raincoat', 'puffer', 'parka', 'trench coat'])
+      const analysisSubcategory = analysis.subcategory?.toLowerCase()
+      const resolvedCategory = analysisSubcategory && woolenSubcategories.has(analysisSubcategory) ? 'outerwear' : finalCategory
+      if (resolvedCategory) next.category = resolvedCategory
+      if (!analysis.subcategory) next.subcategory = ''
       else next.subcategory = analysis.subcategory
       next.neckline_closure = analysis.neckline_closure ?? ''
       next.construction = analysis.construction ?? ''
@@ -1174,17 +1177,26 @@ interface PexelsPhoto {
 }
 
 const BROWSE_ITEM_QUERIES = [
-  ['Tops', 'single shirt top blouse on plain background product photo'],
-  ['Bottoms', 'single trousers pants skirt on plain background product photo'],
-  ['Dresses', 'single dress on plain background product photo'],
-  ['Outerwear', 'single jacket coat blazer on plain background product photo'],
-  ['Shoes', 'single pair of shoes product photo plain background'],
-  ['Accessories', 'single bag jewellery accessory product photo plain background'],
+  ['Tops', 'single top shirt or blouse isolated product photo'],
+  ['Bottoms', 'single pair of trousers jeans or skirt isolated product photo'],
+  ['Dresses', 'single dress isolated product photo'],
+  ['Woolens', 'single sweater cardigan jacket or coat isolated product photo'],
+  ['Shoes', 'single pair of shoes isolated product photo'],
+  ['Accessories', 'single bag or accessory isolated product photo'],
 ] as const
 
 function buildSingleItemQuery(category?: string, subcategory?: string) {
-  const item = subcategory || (category === 'tops' ? 'top' : category === 'bottoms' ? 'bottoms' : category === 'dresses' ? 'dress' : category === 'outerwear' ? 'jacket' : category === 'shoes' ? 'shoes' : category === 'accessories' ? 'accessory' : 'clothing item')
-  return `single ${item} product photo isolated plain background`
+  if (!category && !subcategory) return ''
+  const item = subcategory || (category === 'tops' ? 'top shirt or blouse' : category === 'bottoms' ? 'trousers jeans or skirt' : category === 'dresses' ? 'dress' : category === 'outerwear' ? 'jacket coat or blazer' : category === 'shoes' ? 'pair of shoes' : 'bag or accessory')
+  return `single ${item} isolated product photo`
+}
+
+function isolatedPhotoQuery(input: string) {
+  const trimmed = input.trim()
+  if (!trimmed) return ''
+  return /^single\b/i.test(trimmed) && /isolated product photo/i.test(trimmed)
+    ? trimmed
+    : `single ${trimmed} isolated product photo`
 }
 
 function ImageSearchBrowser({
@@ -1194,11 +1206,11 @@ function ImageSearchBrowser({
   defaultQuery: string
   onSelect: (url: string) => void
 }) {
-  const [query, setQuery] = useState(defaultQuery || 'clothing fashion')
+  const [query, setQuery] = useState(defaultQuery)
   const [photos, setPhotos] = useState<PexelsPhoto[]>([])
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
-  const [totalResults, setTotalResults] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
   const [noKey, setNoKey] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -1211,7 +1223,7 @@ function ImageSearchBrowser({
       const data = await res.json()
       if (data.noKey) { setNoKey(true); return }
       setPhotos(data.photos ?? [])
-      setTotalResults(data.totalResults ?? 0)
+      setTotalPages(data.totalPages ?? 0)
       setPage(p)
     } catch {
       setError('Could not load images — make sure the API server is running.')
@@ -1219,13 +1231,6 @@ function ImageSearchBrowser({
       setLoading(false)
     }
   }, [])
-
-  // Auto-search on mount with the default query
-  useEffect(() => {
-    search(query, 1)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const totalPages = Math.ceil(totalResults / 18)
 
   if (noKey) {
     return (
@@ -1249,7 +1254,7 @@ function ImageSearchBrowser({
   return (
     <div className="space-y-3">
       <div>
-        <p className="mb-2 text-xs text-text-muted">Browse individual pieces — clothing, shoes, bags, and accessories.</p>
+        <p className="mb-2 text-xs text-text-muted">Search for one item to see isolated product photos.</p>
         <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Browse item categories">
           {BROWSE_ITEM_QUERIES.map(([label, itemQuery]) => (
             <button key={label} type="button" onClick={() => { setQuery(itemQuery); search(itemQuery, 1) }} className="shrink-0 rounded-full border border-text-primary/15 px-3 py-1.5 text-xs text-text-muted transition-colors hover:border-text-primary/35 hover:text-text-primary">{label}</button>
@@ -1264,14 +1269,14 @@ function ImageSearchBrowser({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') search(query, 1) }}
-            placeholder="e.g. black blazer, white sneakers…"
+            onKeyDown={(e) => { if (e.key === 'Enter') search(isolatedPhotoQuery(query), 1) }}
+            placeholder="Search one item, e.g. pink cardigan…"
             className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-text-primary/20 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-primary/50 bg-surface"
           />
         </div>
         <button
           type="button"
-          onClick={() => search(query, 1)}
+          onClick={() => search(isolatedPhotoQuery(query), 1)}
           disabled={loading}
           className="px-4 py-2.5 rounded-xl bg-dark-purple text-butter-yellow text-sm font-medium hover:bg-deep-purple transition-colors disabled:opacity-40"
         >
@@ -1291,7 +1296,7 @@ function ImageSearchBrowser({
           ))}
         </div>
       ) : photos.length === 0 ? (
-        <p className="text-sm text-text-muted text-center py-6">No results for "{query}" — try different words.</p>
+        <p className="text-sm text-text-muted text-center py-6">{query ? `No single-item photos found for "${query}" — try another item.` : 'Choose a category or search for one item to browse product photos.'}</p>
       ) : (
         <div className="grid grid-cols-3 gap-2">
           {photos.map((photo) => (

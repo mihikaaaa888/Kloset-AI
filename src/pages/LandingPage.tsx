@@ -138,6 +138,7 @@ export function LandingPage() {
             ))}
           </nav>
           <div className="px-6 py-6 border-t border-butter-yellow/15">
+            <NavLink to="/privacy" onClick={() => setMenuOpen(false)} className="mb-3 block py-2 text-sm text-butter-yellow/70 transition-colors hover:text-butter-yellow">Privacy Policy</NavLink>
             {user ? (
               <button
                 onClick={handleSignOut}

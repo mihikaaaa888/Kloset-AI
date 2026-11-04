@@ -7,6 +7,7 @@ import { useDataSync } from '@/hooks/useDataSync'
 import { useApplyTheme } from '@/hooks/useTheme'
 import { useOutfitStore } from '@/store/outfitStore'
 import { LandingPage } from '@/pages/LandingPage'
+import { PrivacyPolicyPage } from '@/pages/PrivacyPolicyPage'
 
 // Everything past the landing page loads on demand, so a first visit to /
 // doesn't download the whole app before anything shows.
@@ -86,6 +87,7 @@ function AppRoutes() {
       <Routes>
         {/* Public */}
         <Route path="/" element={<LandingPage />} />
+        <Route path="/privacy" element={<PrivacyPolicyPage />} />
         <Route path="/login" element={<RedirectIfAuth><LoginPage /></RedirectIfAuth>} />
         <Route path="/signup" element={<RedirectIfAuth><SignupPage /></RedirectIfAuth>} />
         <Route path="/forgot-password" element={<RedirectIfAuth><ForgotPasswordPage /></RedirectIfAuth>} />

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ChevronDown, SlidersHorizontal, X } from 'lucide-react'
+import { ChevronDown, Search, SlidersHorizontal, X } from 'lucide-react'
 import { clsx } from 'clsx'
 
 import { ShopItemCard } from '@/components/shop/ShopItemCard'
@@ -31,7 +31,7 @@ const CATEGORY_FILTERS: { value: ClothingCategory | 'all'; label: string }[] = [
   { value: 'tops', label: 'Tops' },
   { value: 'bottoms', label: 'Bottoms' },
   { value: 'dresses', label: 'Dresses' },
-  { value: 'outerwear', label: 'Outerwear' },
+  { value: 'outerwear', label: 'Woolens' },
   { value: 'shoes', label: 'Shoes' },
   { value: 'accessories', label: 'Accessories' },
 ]
@@ -62,7 +62,9 @@ export function DiscoverPage() {
 
   const [mode, setMode] = useState<ShopMode>('buy')
   const [budget, setBudget] = useState<BudgetId>('any')
+  const [customBudgetAmount, setCustomBudgetAmount] = useState(6500)
   const [category, setCategory] = useState<ClothingCategory | 'all'>('all')
+  const [searchQuery, setSearchQuery] = useState('')
   const [retailers, setRetailers] = useState<string[]>([])
   const [colours, setColours] = useState<string[]>([])
   const [sort, setSort] = useState<SortMode>('recommended')
@@ -106,8 +108,13 @@ export function DiscoverPage() {
     const genders = preference === 'feminine' ? ['women'] : preference === 'masculine' ? ['men'] : ['women', 'men']
     const pool = ALL_CATALOG_ITEMS
       .filter((item) => genders.includes(item.gender ?? 'women'))
-      .filter((item) => mode === 'rent' ? isRentable(item) && fitsRentBudget(item, budget) : fitsBuyBudget(item, budget))
+      .filter((item) => mode === 'rent' ? isRentable(item) && fitsRentBudget(item, budget, customBudgetAmount) : fitsBuyBudget(item, budget, customBudgetAmount))
       .filter((item) => category === 'all' || item.category === category)
+      .filter((item) => {
+        const query = searchQuery.trim().toLowerCase()
+        return !query || [item.name, item.brand, item.category, item.subcategory, item.material, item.description, ...(item.colours ?? []), ...(item.occasions ?? [])]
+          .some((value) => value?.toLowerCase().includes(query))
+      })
       .filter((item) => retailers.length === 0 || retailers.includes(item.brand ?? ''))
       .filter((item) => colours.length === 0 || item.colours.some((colour) => colours.includes(colour)))
     const ranked = rankForUser(pool, profile, wardrobeItems)
@@ -115,7 +122,7 @@ export function DiscoverPage() {
     if (sort === 'price-high') return [...ranked].sort((a, b) => (mode === 'rent' ? b.rentPricePerWeek - a.rentPricePerWeek : b.estimatedPrice - a.estimatedPrice))
     if (sort === 'name') return [...ranked].sort((a, b) => a.name.localeCompare(b.name))
     return ranked
-  }, [mode, budget, category, profile, wardrobeItems, retailers, colours, sort])
+  }, [mode, budget, customBudgetAmount, category, profile, wardrobeItems, retailers, colours, sort, searchQuery])
 
   const handleAdd = useCallback((catalogItem: CatalogItem) => {
     if (isInWardrobe(catalogItem.id)) return
@@ -233,14 +240,20 @@ export function DiscoverPage() {
           </div>
         </div>
 
-        {mode === 'rent' ? (
-          <div className="py-20 text-center"><p className="font-display text-2xl text-text-primary">Coming soon</p></div>
+        {mode === 'buy' && !completeOpen && <label className="mt-4 flex items-center gap-2 border-b border-text-primary/15 px-1 py-2 text-text-muted focus-within:border-text-primary/50">
+          <Search size={16} strokeWidth={1.5} />
+          <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} type="search" placeholder="Search Shop" aria-label="Search Shop" className="min-w-0 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none" />
+          {searchQuery && <button type="button" onClick={() => setSearchQuery('')} aria-label="Clear shop search" className="p-1 hover:text-text-primary"><X size={14} /></button>}
+        </label>}
+
+        {mode === 'rent' && !completeOpen ? (
+          <div className="py-20 text-center"><p className="mb-5 font-display text-2xl text-text-primary">Coming soon</p><button onClick={() => openComplete()} className="border border-text-primary/25 px-4 py-2 text-sm text-text-primary hover:border-text-primary/50">Complete a piece</button></div>
         ) : completeOpen ? (
           <section className="py-5" aria-label="Complete a piece">
             <div className="mb-4 flex items-center justify-end">
               <button onClick={() => { setCompleteOpen(false); setCompleteAnchor(undefined) }} aria-label="Close complete-a-piece" className="p-1 text-text-muted hover:text-text-primary"><X size={18} /></button>
             </div>
-            <CompleteAPiece key={completeAnchor?.name ?? 'choose-piece'} budget={budget} onBudgetChange={setBudget} profile={profile} wardrobe={wardrobeItems} isInWardrobe={isInWardrobe} initialAnchor={completeAnchor} />
+            <CompleteAPiece key={completeAnchor?.name ?? 'choose-piece'} mode={mode} budget={budget} onBudgetChange={setBudget} customBudgetAmount={customBudgetAmount} onCustomBudgetAmountChange={setCustomBudgetAmount} profile={profile} wardrobe={wardrobeItems} isInWardrobe={isInWardrobe} initialAnchor={completeAnchor} />
           </section>
         ) : <>
         <div className="flex items-center gap-4 border-b border-text-primary/10 py-3">
@@ -261,6 +274,7 @@ export function DiscoverPage() {
                 <div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-medium text-text-primary">Filters</h3><button onClick={() => { setBudget('any'); setRetailers([]); setColours([]) }} className="text-xs text-text-muted hover:text-text-primary">Clear all</button></div>
                 <FilterGroup label="Budget">
                   {BUDGET_BANDS.map((band) => <label key={band.id} className="flex cursor-pointer items-center gap-2 py-1.5 text-sm text-text-muted"><input type="radio" name="shop-budget" checked={budget === band.id} onChange={() => setBudget(band.id)} />{band.buyLabel}</label>)}
+                  {budget === 'custom' && <label className="mt-2 flex items-center gap-2 text-xs text-text-muted">Maximum ₹<input type="number" min="1" value={customBudgetAmount} onChange={(event) => setCustomBudgetAmount(Number(event.target.value))} className="w-24 border-b border-text-primary/20 bg-transparent px-1 py-1 text-text-primary focus:outline-none" /></label>}
                 </FilterGroup>
                 <FilterGroup label="Retailer">
                   <div className="grid max-h-28 grid-cols-2 gap-x-2 overflow-y-auto">{retailersAvailable.map((retailer) => <label key={retailer} className="flex cursor-pointer items-center gap-2 py-1 text-xs text-text-muted"><input type="checkbox" checked={retailers.includes(retailer)} onChange={() => toggleValue(retailers, retailer, setRetailers)} />{retailer}</label>)}</div>

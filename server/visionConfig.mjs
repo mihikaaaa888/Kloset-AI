@@ -3,10 +3,10 @@ export const VISION_MODEL_DEFAULT = 'qwen/qwen3.8-27b'
 export const CATEGORY_VALUES = ['tops', 'bottoms', 'dresses', 'outerwear', 'shoes', 'accessories']
 
 export const SUBCATEGORY_VALUES = {
-  tops: ['t-shirt', 'shirt', 'polo', 'sweater', 'sweatshirt', 'hoodie', 'cardigan', 'blouse', 'tank', 'other'],
+  tops: ['t-shirt', 'shirt', 'polo', 'blouse', 'tank', 'other'],
   bottoms: ['jeans', 'trousers', 'shorts', 'skirt', 'leggings', 'joggers', 'other'],
   dresses: ['mini dress', 'midi dress', 'maxi dress', 'wrap dress', 'shirt dress', 'slip dress', 'other'],
-  outerwear: ['coat', 'jacket', 'blazer', 'raincoat', 'puffer', 'parka', 'trench coat', 'other'],
+  outerwear: ['sweater', 'sweatshirt', 'hoodie', 'cardigan', 'coat', 'jacket', 'blazer', 'raincoat', 'puffer', 'parka', 'trench coat', 'other'],
   shoes: ['sneakers', 'boots', 'heels', 'flats', 'sandals', 'loafers', 'other'],
   accessories: ['bag', 'belt', 'hat', 'scarf', 'jewelry', 'sunglasses', 'watch', 'other'],
 }
@@ -32,7 +32,8 @@ ${Object.entries(SUBCATEGORY_VALUES).map(([category, values]) => `- ${category}:
 - construction must be one of: ${CONSTRUCTION_VALUES.join(', ')}, null.
 - quarter-zip knit = subcategory sweater and neckline_closure quarter-zip.
 - hooded fleece = subcategory hoodie.
-- cardigan means an open-front knit; classify it as tops, not outerwear, unless it is heavy/coat-weight.
+- Woolens is the user-facing name for the internal outerwear category. Classify sweaters, sweatshirts, hoodies, cardigans, jackets, blazers, and coats as outerwear/Woolens.
+- cardigan means an open-front knit; classify it as outerwear/Woolens.
 - overshirt is a shirt unless it is coat-weight; only coat-weight overshirts are outerwear.
 - Confidence values are numbers from 0 to 1. Include separate confidence for category, subcategory, neckline_closure, color, material, and construction.
 - Preserve the existing fields in the output. primaryColor must be exactly one of: ${PRIMARY_COLOR_VALUES.join(', ')}.
@@ -40,6 +41,6 @@ ${Object.entries(SUBCATEGORY_VALUES).map(([category, values]) => `- ${category}:
 - name is a short natural garment name with no brand.
 
 Example output (literal JSON; every key is required):
-{"name":"Cream Quarter-Zip Sweater","category":"tops","subcategory":"sweater","neckline_closure":"quarter-zip","construction":"knit","primaryColor":"Cream","secondaryColors":[],"material":"Wool blend","pattern":"solid","fit":"regular","formality":"casual","seasons":["autumn","winter"],"occasions":["casual","weekend"],"confidence":{"category":0.96,"subcategory":0.94,"neckline_closure":0.98,"color":0.91,"material":0.72,"construction":0.95}}`
+{"name":"Cream Quarter-Zip Sweater","category":"outerwear","subcategory":"sweater","neckline_closure":"quarter-zip","construction":"knit","primaryColor":"Cream","secondaryColors":[],"material":"Wool blend","pattern":"solid","fit":"regular","formality":"casual","seasons":["autumn","winter"],"occasions":["casual","weekend"],"confidence":{"category":0.96,"subcategory":0.94,"neckline_closure":0.98,"color":0.91,"material":0.72,"construction":0.95}}`
 
 export const VISION_USER_PROMPT = 'Analyze the clothing item in this image. Return only the JSON object using the exact keys and vocabularies defined in the system instructions.'

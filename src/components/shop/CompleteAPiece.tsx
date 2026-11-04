@@ -1,20 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ImagePlus, Shirt, X } from 'lucide-react'
+import { ArrowLeft, Check, ImagePlus, Shirt } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useItemImage } from '@/hooks/useItemImage'
 import { compressImage } from '@/lib/imageStorage'
 import { analyzeImage } from '@/lib/analyzeImage'
-import { fitsBuyBudget, recommendForPiece, type BudgetId, type PieceAnchor } from '@/lib/shopping'
+import { fitsBuyBudget, fitsRentBudget, isRentable, recommendForPiece, type BudgetId, type PieceAnchor } from '@/lib/shopping'
 import { ALL_CATALOG_ITEMS } from '@/lib/catalogData'
 import { formatINR } from '@/lib/shopping'
 import { BudgetDropdown } from '@/components/shop/BudgetDropdown'
 import type { CatalogItem, ClothingCategory, ClothingItem, UserProfile } from '@/types'
 
 const CATEGORY_LABELS: Record<ClothingCategory, string> = {
-  tops: 'Tops', bottoms: 'Bottoms', dresses: 'Dresses', outerwear: 'Outerwear', shoes: 'Shoes', accessories: 'Accessories',
+  tops: 'Tops', bottoms: 'Bottoms', dresses: 'Dresses', outerwear: 'Woolens', shoes: 'Shoes', accessories: 'Accessories',
 }
 const SLOT_HEADINGS: Record<ClothingCategory, string> = {
-  tops: 'Tops', bottoms: 'Bottoms', dresses: 'Dresses', outerwear: 'Outerwear', shoes: 'Shoes', accessories: 'Accessories',
+  tops: 'Tops', bottoms: 'Bottoms', dresses: 'Dresses', outerwear: 'Woolens', shoes: 'Shoes', accessories: 'Accessories',
 }
 const CATEGORIES = Object.keys(CATEGORY_LABELS) as ClothingCategory[]
 const COMPLEMENTS: Record<ClothingCategory, ClothingCategory[]> = {
@@ -36,6 +36,9 @@ type Picked =
 interface CompleteAPieceProps {
   budget: BudgetId
   onBudgetChange: (budget: BudgetId) => void
+  customBudgetAmount: number
+  onCustomBudgetAmountChange: (amount: number) => void
+  mode: 'buy' | 'rent'
   profile: UserProfile | null
   wardrobe: ClothingItem[]
   isInWardrobe: (catalogId: string) => boolean
@@ -49,10 +52,9 @@ const anchorFromCatalogItem = (item: CatalogItem): PieceAnchor => ({
   name: item.name, category: item.category, colours: item.colours, occasions: item.occasions, formality: item.formality, imageUrl: item.imageUrl,
 })
 
-export function CompleteAPiece({ budget, onBudgetChange, profile, wardrobe, isInWardrobe, initialAnchor }: CompleteAPieceProps) {
+export function CompleteAPiece({ budget, onBudgetChange, customBudgetAmount, onCustomBudgetAmountChange, mode, profile, wardrobe, isInWardrobe, initialAnchor }: CompleteAPieceProps) {
   const [source, setSource] = useState<PickerSource>('closet')
   const [picked, setPicked] = useState<Picked | null>(initialAnchor ? { kind: 'anchor', anchor: initialAnchor } : null)
-  const [rentComingSoon, setRentComingSoon] = useState(false)
   const [addedToOutfit, setAddedToOutfit] = useState<string[]>([])
   const anchor = useMemo(() => picked ? (picked.kind === 'kloset' ? anchorFromItem(picked.item) : picked.kind === 'catalog' ? anchorFromCatalogItem(picked.item) : picked.anchor) : null, [picked])
 
@@ -61,11 +63,12 @@ export function CompleteAPiece({ budget, onBudgetChange, profile, wardrobe, isIn
     const shopGroups = recommendForPiece(anchor, 'any', profile, 12)
     return COMPLEMENTS[anchor.category].map((category) => {
       let shopMatches = shopGroups.find((group) => group.category === category)?.items ?? []
-      if (budget !== 'any') shopMatches = shopMatches.filter((item) => fitsBuyBudget(item, budget))
+      shopMatches = shopMatches.filter((item) => mode === 'rent' ? isRentable(item) : true)
+      if (budget !== 'any') shopMatches = shopMatches.filter((item) => mode === 'rent' ? fitsRentBudget(item, budget, customBudgetAmount) : fitsBuyBudget(item, budget, customBudgetAmount))
       shopMatches = shopMatches.filter((item) => !isInWardrobe(item.id)).slice(0, 3)
       return { category, shopMatches }
     }).filter((group) => group.shopMatches.length > 0)
-  }, [anchor, profile, budget, isInWardrobe])
+  }, [anchor, profile, budget, customBudgetAmount, isInWardrobe, mode])
 
   useEffect(() => {
     if (picked?.kind !== 'upload') return
@@ -77,8 +80,8 @@ export function CompleteAPiece({ budget, onBudgetChange, profile, wardrobe, isIn
   const closePanel = () => setPicked(null)
 
   return (
-    <div className={clsx('grid items-start gap-6', picked && 'lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]')}>
-      <section className={clsx(picked && 'pb-[68dvh] lg:pb-0')} aria-label="Complete a piece">
+    <div className="w-full">
+      {!picked && <section aria-label="Choose a piece to complete">
         <h2 className="mb-1 font-display text-2xl font-medium text-text-primary">What are you completing?</h2>
         <p className="mb-4 text-sm text-text-muted">Choose a piece from your closet or the shop.</p>
         <div className="mb-5 inline-flex rounded-full border border-text-primary/15 bg-surface p-1" role="tablist" aria-label="Choose a piece from">
@@ -90,33 +93,32 @@ export function CompleteAPiece({ budget, onBudgetChange, profile, wardrobe, isIn
           <PhotoUploadTile onReady={(previewUrl, uploadAnchor) => setPicked({ kind: 'upload', previewUrl, anchor: uploadAnchor })} />
           {source === 'closet' ? wardrobe.map((item) => <ClosetPickCard key={item.id} item={item} selected={picked?.kind === 'kloset' && picked.item.id === item.id} onClick={() => { console.log('[complete-a-piece] picked from Kloset', item.id); setPicked({ kind: 'kloset', item }) }} />) : availableShopItems(profile).map((item) => <ShopPickCard key={item.id} item={item} selected={picked?.kind === 'catalog' && picked.item.id === item.id} onClick={() => setPicked({ kind: 'catalog', item })} />)}
         </div>
-      </section>
+      </section>}
 
-      {picked && anchor && <aside aria-label="Outfit suggestions" className="fixed inset-x-0 bottom-0 z-40 max-h-[68dvh] overflow-y-auto rounded-t-3xl border border-text-primary/10 bg-surface p-4 shadow-lifted lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)] lg:rounded-none lg:p-5">
+      {picked && anchor && <section aria-label="Outfit suggestions" className="min-h-[70vh] w-full py-3">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
             <div className="h-16 w-12 shrink-0 overflow-hidden bg-tile">{picked.kind === 'kloset' ? <KlosetItemImage item={picked.item} /> : <SelectedImage picked={picked} anchor={anchor} />}</div>
             <div className="min-w-0"><p className="text-2xs uppercase tracking-widest text-text-muted">Completing</p><h2 className="truncate font-display text-xl text-text-primary">{anchor.name}</h2></div>
           </div>
-          <button onClick={closePanel} aria-label="Close suggestions" className="shrink-0 p-1 text-text-muted hover:text-text-primary"><X size={18} /></button>
+          <button onClick={closePanel} aria-label="Choose a different piece" title="Choose a different piece" className="shrink-0 rounded-full p-2 text-text-muted hover:bg-text-primary/5 hover:text-text-primary"><ArrowLeft size={18} strokeWidth={1.5} /></button>
         </div>
 
         <div className="mb-4 flex flex-wrap items-center gap-3" aria-label="Suggestion filters">
-          <BudgetDropdown value={budget} onChange={onBudgetChange} mode="buy" />
-          <button onClick={() => setRentComingSoon(true)} className="rounded-full border border-text-primary/15 px-3 py-1.5 text-xs text-text-muted transition-colors hover:border-text-primary/35">Rent only</button>
+          <BudgetDropdown value={budget} onChange={onBudgetChange} customAmount={customBudgetAmount} onCustomAmountChange={onCustomBudgetAmountChange} mode={mode} />
         </div>
 
-        {rentComingSoon && <div role="status" className="mb-4 border border-text-primary/10 bg-text-primary/[0.03] px-4 py-3 text-center font-display text-lg text-text-primary">Coming soon</div>}
+        {mode === 'rent' && <div role="status" className="mb-4 border border-text-primary/10 bg-text-primary/[0.03] px-4 py-3 text-center font-display text-lg text-text-primary">Rentals are coming soon</div>}
 
         <div className="space-y-5">
           {groups.length === 0 ? <p className="py-6 text-center text-sm text-text-muted">No matches with these options. Try turning off a filter.</p> : groups.map((group) => <section key={group.category}>
             <h3 className="mb-2 text-xs font-medium text-text-primary">{SLOT_HEADINGS[group.category]}</h3>
             <div className="flex gap-3 overflow-x-auto pb-1 no-scrollbar">
-              {group.shopMatches.map((item) => <OutfitSuggestionCard key={`shop-${item.id}`} name={item.name} category={CATEGORY_LABELS[item.category]} image={<img src={item.imageUrl} alt="" className="h-full w-full object-cover" />} price={formatINR(item.estimatedPrice)} added={addedToOutfit.includes(`shop:${item.id}`)} onAdd={() => addKey(`shop:${item.id}`)} />)}
+              {group.shopMatches.map((item) => <OutfitSuggestionCard key={`shop-${item.id}`} name={item.name} category={CATEGORY_LABELS[item.category]} image={<img src={item.imageUrl} alt="" className="h-full w-full object-cover" />} href={mode === 'rent' ? item.rentUrl : item.shopUrl} price={mode === 'rent' ? `${formatINR(item.rentPricePerWeek)} / wk` : formatINR(item.estimatedPrice)} added={addedToOutfit.includes(`shop:${item.id}`)} onAdd={() => addKey(`shop:${item.id}`)} />)}
             </div>
           </section>)}
         </div>
-      </aside>}
+      </section>}
     </div>
   )
 }
@@ -130,25 +132,29 @@ function availableShopItems(profile: UserProfile | null) {
 
 function ClosetPickCard({ item, selected, onClick }: { item: ClothingItem; selected: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={selected} className="group text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow">
-    <div className="relative aspect-[3/4] overflow-hidden bg-tile"><KlosetItemImage item={item} /><span className="absolute left-2 top-2 rounded-full bg-warm-cream/90 px-2 py-1 text-2xs uppercase tracking-widest text-text-primary opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">{CATEGORY_LABELS[item.category]}</span>{selected && <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-text-primary text-warm-cream"><Check size={14} /></span>}</div>
+    <div className="relative aspect-[3/4] overflow-hidden bg-tile"><KlosetItemImage item={item} />{selected && <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-text-primary text-warm-cream"><Check size={14} /></span>}</div>
     <p className="mt-2 truncate text-xs text-text-primary">{item.name}</p>
   </button>
 }
 
 function ShopPickCard({ item, selected, onClick }: { item: CatalogItem; selected: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={selected} className="group text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow">
-    <div className="relative aspect-[3/4] overflow-hidden bg-tile"><img src={item.imageUrl} alt={item.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" /><span className="absolute left-2 top-2 rounded-full bg-warm-cream/90 px-2 py-1 text-2xs uppercase tracking-widest text-text-primary opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">{CATEGORY_LABELS[item.category]}</span>{selected && <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-text-primary text-warm-cream"><Check size={14} /></span>}</div>
+    <div className="relative aspect-[3/4] overflow-hidden bg-tile"><img src={item.imageUrl} alt={item.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />{selected && <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-text-primary text-warm-cream"><Check size={14} /></span>}</div>
     <p className="mt-2 truncate text-xs text-text-primary">{item.name}</p>
     <p className="truncate text-2xs text-text-muted">{item.brand ?? 'Shop'} · {formatINR(item.estimatedPrice)}</p>
   </button>
 }
 
-function OutfitSuggestionCard({ name, category, image, tag, price, added, onAdd }: { name: string; category: string; image: React.ReactNode; tag?: string; price?: string; added: boolean; onAdd: () => void }) {
-  return <article className="w-36 shrink-0 sm:w-40">
-    <div className="relative mb-2 aspect-[4/3] overflow-hidden bg-tile">{image}{tag && <span className="absolute left-1.5 top-1.5 bg-warm-cream/90 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-text-primary">{tag}</span>}</div>
-    <p className="truncate text-xs text-text-primary" title={name}>{name}</p>
-    <p className="truncate text-2xs text-text-muted">{category}{price ? ` · ${price}` : ''}</p>
-    <button onClick={onAdd} disabled={added} className="mt-2 w-full border border-text-primary/20 px-2 py-1.5 text-2xs text-text-primary transition-colors hover:border-text-primary/50 disabled:bg-text-primary/5 disabled:text-text-muted">{added ? 'Added to outfit' : 'Add to outfit'}</button>
+function OutfitSuggestionCard({ name, category, image, href, price, added, onAdd }: { name: string; category: string; image: React.ReactNode; href: string; price?: string; added: boolean; onAdd: () => void }) {
+  return <article className="group relative w-36 shrink-0 sm:w-40">
+    <div className="relative mb-2 aspect-[4/3] overflow-hidden bg-tile">
+      <a href={href} target="_blank" rel="noreferrer" aria-label={`View ${name} on seller website`} className="absolute inset-0">{image}</a>
+      <button onClick={onAdd} disabled={added} className="absolute bottom-2 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-warm-cream px-3 py-1.5 text-2xs text-text-primary opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 disabled:opacity-80">{added ? 'Added to outfit' : 'Add to outfit'}</button>
+    </div>
+    <a href={href} target="_blank" rel="noreferrer" className="block">
+      <p className="mt-2 truncate text-xs text-text-primary" title={name}>{name}</p>
+      <p className="truncate text-2xs text-text-muted">{category}{price ? ` · ${price}` : ''}</p>
+    </a>
   </article>
 }
 

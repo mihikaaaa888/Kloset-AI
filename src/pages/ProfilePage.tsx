@@ -8,14 +8,15 @@ import { clsx } from 'clsx'
 
 import { ThemePicker } from '@/components/ui/ThemeToggle'
 import { useItemImage } from '@/hooks/useItemImage'
-import { getImage, saveImage } from '@/lib/imageStorage'
+import { deleteImage, getImage, saveImage } from '@/lib/imageStorage'
 import { compressImage } from '@/lib/imageStorage'
 import { ALL_CATALOG_ITEMS } from '@/lib/catalogData'
 import { useAuth } from '@/contexts/AuthContext'
 import { useUserStore } from '@/store/userStore'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useOutfitStore } from '@/store/outfitStore'
-import { deleteWithUndo } from '@/store/undoStore'
+import { deleteAccount } from '@/lib/accountService'
+import { supabase } from '@/lib/supabase'
 import type { ClothingItem } from '@/types'
 
 const CARD = 'rounded-2xl bg-surface ring-1 ring-inset ring-text-primary/10 shadow-card transition-colors duration-500'
@@ -29,7 +30,6 @@ export function ProfilePage() {
   const profile = useUserStore((state) => state.profile)
   const clearProfile = useUserStore((state) => state.clearProfile)
   const wardrobeItems = useWardrobeStore((state) => state.items)
-  const removeWardrobeItem = useWardrobeStore((state) => state.removeItem)
   const savedOutfits = useOutfitStore((state) => state.savedOutfits)
   const clearOutfits = useOutfitStore((state) => state.clearOutfits)
   const { user, signOut } = useAuth()
@@ -42,6 +42,8 @@ export function ProfilePage() {
     setSearchParams((params) => { params.delete('settings'); return params }, { replace: true })
   }, [searchParams, setSearchParams])
   const [dangerOpen, setDangerOpen] = useState(false)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
   const [avatarId, setAvatarId] = useState<string | null>(null)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [counts, setCounts] = useState({ pieces: 0, outfits: 0, costPerWear: 0 })
@@ -89,21 +91,25 @@ export function ProfilePage() {
       setAvatarId(id)
     } catch (error) { console.error('[profile] avatar upload failed', error) }
   }
-  const handleClearAll = () => {
-    const { profile: savedProfile, loadedForUserId } = useUserStore.getState()
-    const items = useWardrobeStore.getState().items
-    const { savedOutfits: outfits, trashedOutfits } = useOutfitStore.getState()
-    deleteWithUndo({
-      message: 'Everything cleared',
-      remove: () => { items.forEach((item) => removeWardrobeItem(item.id)); clearOutfits(); clearProfile(); setDangerOpen(false); setSettingsOpen(false); navigate('/') },
-      restore: () => {
-        useWardrobeStore.getState().setItems(items)
-        useOutfitStore.setState({ savedOutfits: outfits, trashedOutfits })
-        if (savedProfile) useUserStore.getState().setProfile(savedProfile)
-        useUserStore.getState().markLoaded(loadedForUserId)
-        navigate('/profile')
-      },
-    })
+  const handleDeleteAccount = async () => {
+    setDeleteBusy(true)
+    setDeleteError('')
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession()
+      if (error || !session) throw new Error('Please sign in again before deleting your account.')
+      await deleteAccount(session.access_token)
+      await Promise.all(wardrobeItems.map((item) => item.imageId ? deleteImage(item.imageId).catch(() => {}) : Promise.resolve()))
+      if (avatarId) await deleteImage(avatarId).catch(() => {})
+      if (profile) localStorage.removeItem(`kloset-profile-avatar:${profile.id}`)
+      useWardrobeStore.getState().setItems([])
+      clearOutfits()
+      clearProfile()
+      await supabase.auth.signOut({ scope: 'local' })
+      navigate('/', { replace: true })
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Could not delete your account. Please try again.')
+      setDeleteBusy(false)
+    }
   }
   const handleSignOut = async () => {
     try { await signOut(); setSettingsOpen(false); navigate('/') } catch (error) { console.error('[profile] sign out failed', error) }
@@ -149,7 +155,7 @@ export function ProfilePage() {
       </div>
 
       {settingsOpen && <SettingsSheet onClose={() => setSettingsOpen(false)} onEdit={handleEditProfile} onRecycle={() => { setSettingsOpen(false); navigate('/wardrobe?view=outfits&recycle=1') }} onSignOut={handleSignOut} onClear={() => setDangerOpen(true)} email={user?.email} />}
-      {dangerOpen && <ConfirmDialog onCancel={() => setDangerOpen(false)} onConfirm={handleClearAll} />}
+      {dangerOpen && <ConfirmDialog onCancel={() => { if (!deleteBusy) setDangerOpen(false) }} onConfirm={() => void handleDeleteAccount()} busy={deleteBusy} error={deleteError} />}
     </main>
   )
 }
@@ -204,14 +210,14 @@ function NeverWornPiece({ item }: { item: ClothingItem }) {
 }
 
 function SettingsSheet({ onClose, onEdit, onRecycle, onSignOut, onClear, email }: { onClose: () => void; onEdit: () => void; onRecycle: () => void; onSignOut: () => void; onClear: () => void; email?: string }) {
-  return <ModalShell onClose={onClose} label="Profile settings"><div className="max-h-[85dvh] overflow-y-auto p-5 sm:p-7"><div className="mb-5 flex items-center justify-between"><div><p className="text-[10px] uppercase tracking-[0.2em] text-text-muted">Profile</p><h2 className="font-display text-3xl">Settings</h2></div><button onClick={onClose} aria-label="Close settings" className="p-2 text-text-muted hover:text-text-primary"><X size={18} /></button></div>
+  return <ModalShell onClose={onClose} label="Profile settings"><div className="max-h-[85dvh] overflow-y-auto p-5 sm:p-7"><div className="mb-5 flex items-center justify-between"><div><h2 className="font-display text-3xl">Settings</h2></div><button onClick={onClose} aria-label="Close settings" className="p-2 text-text-muted hover:text-text-primary"><X size={18} /></button></div>
     <div className="divide-y divide-text-primary/10 border-y border-text-primary/10">
-      <div className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm">Appearance</p><p className="text-xs text-text-muted">Choose Light, Dark, or System</p></div><ThemePicker /></div>
+      <div className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm">Appearance</p></div><ThemePicker /></div>
       <SettingsRow icon={Pencil} title="Edit style" subtitle="Update your style preferences" onClick={onEdit} />
       <SettingsRow icon={Archive} title="Recycle bin" subtitle="Restore or permanently delete saved outfits" onClick={onRecycle} />
       <SettingsRow icon={LogOut} title="Sign out" subtitle={email ?? 'Sign out of your account'} onClick={onSignOut} />
     </div>
-    <div className="mt-7 border-t border-red-700/20 pt-5"><p className="mb-2 text-[10px] uppercase tracking-[0.2em] text-red-700 dark:text-red-400">Danger zone</p><button onClick={onClear} className="text-sm text-red-700 underline underline-offset-4 dark:text-red-400">Clear data</button><p className="mt-1 text-xs text-text-muted">Permanently remove your profile, closet, and saved outfits.</p></div>
+    <div className="mt-7 border-t border-red-700/20 pt-5"><button onClick={onClear} className="text-sm text-red-700 underline underline-offset-4 dark:text-red-400">Delete account</button><p className="mt-1 text-xs text-text-muted">Permanently delete your account and its synced data.</p></div>
   </div></ModalShell>
 }
 
@@ -219,8 +225,8 @@ function SettingsRow({ icon: Icon, title, subtitle, onClick }: { icon: LucideIco
   return <button onClick={onClick} className="flex w-full items-center gap-3 py-4 text-left transition-colors hover:text-butter-yellow"><Icon size={17} className="shrink-0 text-butter-yellow" /><span className="min-w-0 flex-1"><span className="block text-sm">{title}</span><span className="block truncate text-xs text-text-muted">{subtitle}</span></span><ChevronRight size={16} className="text-text-muted" /></button>
 }
 
-function ConfirmDialog({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
-  return <ModalShell onClose={onCancel} label="Confirm clearing profile data"><div className="p-6"><p className="text-[10px] uppercase tracking-[0.2em] text-red-700 dark:text-red-400">Danger zone</p><h2 className="mt-2 font-display text-3xl">Clear your data?</h2><p className="mt-3 text-sm leading-relaxed text-text-muted">Your profile, closet, and saved outfits will be removed. You can undo this from the confirmation notice.</p><div className="mt-6 flex justify-end gap-3"><button onClick={onCancel} className="px-4 py-2 text-sm text-text-muted">Cancel</button><button onClick={onConfirm} className="bg-red-700 px-4 py-2 text-sm text-white hover:bg-red-800">Clear data</button></div></div></ModalShell>
+function ConfirmDialog({ onCancel, onConfirm, busy, error }: { onCancel: () => void; onConfirm: () => void; busy: boolean; error: string }) {
+  return <ModalShell onClose={onCancel} label="Confirm account deletion"><div className="p-6"><h2 className="font-display text-3xl">Delete your account?</h2><p className="mt-3 text-sm leading-relaxed text-text-muted">This permanently deletes your account, profile, closet, and saved outfits. This cannot be undone.</p>{error && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}<div className="mt-6 flex justify-end gap-3"><button onClick={onCancel} disabled={busy} className="px-4 py-2 text-sm text-text-muted disabled:opacity-50">Cancel</button><button onClick={onConfirm} disabled={busy} className="bg-red-700 px-4 py-2 text-sm text-white hover:bg-red-800 disabled:opacity-50">{busy ? 'Deleting…' : 'Delete account'}</button></div></div></ModalShell>
 }
 
 function ModalShell({ children, onClose, label }: { children: React.ReactNode; onClose: () => void; label: string }) {

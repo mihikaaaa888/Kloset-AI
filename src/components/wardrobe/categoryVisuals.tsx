@@ -4,7 +4,7 @@ export const CATEGORY_LABEL: Record<string, string> = {
   tops: 'Top',
   bottoms: 'Bottom',
   dresses: 'Dress',
-  outerwear: 'Outerwear',
+  outerwear: 'Woolens',
   shoes: 'Shoes',
   accessories: 'Accessory',
 }

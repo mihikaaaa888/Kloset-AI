@@ -56,6 +56,64 @@ app.get('/api/health', (_req, res) => {
   })
 })
 
+// Account deletion runs only on the server so the Supabase service key never
+// reaches the browser. Auth cascade removes the user's database rows.
+app.delete('/api/account', async (req, res) => {
+  const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '')
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const accessToken = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1]
+  if (!supabaseUrl || !serviceKey) return res.status(503).json({ error: 'Account deletion is not configured on the server.' })
+  if (!accessToken) return res.status(401).json({ error: 'Please sign in again before deleting your account.' })
+
+  try {
+    const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' }
+    const authResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: { apikey: serviceKey, Authorization: `Bearer ${accessToken}` },
+    })
+    if (!authResponse.ok) return res.status(401).json({ error: 'Your session has expired. Please sign in again.' })
+    const account = await authResponse.json()
+    if (!account?.id) return res.status(401).json({ error: 'Could not verify your account.' })
+
+    // Remove this account's private wardrobe and shared-image objects before
+    // deleting the Auth user. Bucket absence is okay for older installations.
+    const collectObjects = async (bucket, prefix) => {
+      const response = await fetch(`${supabaseUrl}/storage/v1/object/list/${bucket}`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ prefix, limit: 1000, offset: 0 }),
+      })
+      if (response.status === 404) return []
+      if (!response.ok) throw new Error('Could not prepare account photos for deletion.')
+      const entries = await response.json()
+      const paths = []
+      for (const entry of entries) {
+        const path = `${prefix}/${entry.name}`
+        if (entry.id || entry.metadata) paths.push(path)
+        else paths.push(...await collectObjects(bucket, path))
+      }
+      return paths
+    }
+    for (const bucket of ['wardrobe-images', 'shared-images']) {
+      const paths = await collectObjects(bucket, account.id)
+      for (let start = 0; start < paths.length; start += 100) {
+        const response = await fetch(`${supabaseUrl}/storage/v1/object/${bucket}`, {
+          method: 'DELETE', headers,
+          body: JSON.stringify({ prefixes: paths.slice(start, start + 100) }),
+        })
+        if (!response.ok) throw new Error('Could not delete account photos. Please try again.')
+      }
+    }
+
+    const deleteResponse = await fetch(`${supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(account.id)}`, {
+      method: 'DELETE', headers,
+    })
+    if (!deleteResponse.ok) throw new Error('Could not delete the account. Please try again.')
+    return res.json({ ok: true })
+  } catch (error) {
+    console.error('[account] deletion failed:', error?.message ?? 'unknown error')
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Could not delete your account.' })
+  }
+})
+
 // ─── Image search (Pexels) ────────────────────────────────────────────────────
 
 app.get('/api/search-images', async (req, res) => {
@@ -68,15 +126,21 @@ app.get('/api/search-images', async (req, res) => {
   }
 
   try {
+    const productQuery = /isolated product photo/i.test(q)
+      ? `${q} on plain background, no person, no outfit`
+      : `single ${q} isolated product photo on plain background, no person, no outfit`
     const response = await fetch(
-      `https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=18&page=${page}&orientation=portrait`,
+      `https://api.pexels.com/v1/search?query=${encodeURIComponent(productQuery)}&per_page=80&page=${page}&orientation=portrait`,
       { headers: { Authorization: apiKey } }
     )
 
     if (!response.ok) throw new Error(`Pexels ${response.status}`)
 
     const data = await response.json()
-    const photos = (data.photos ?? []).map((p) => ({
+    // Pexels also returns lifestyle/editorial shots for apparel queries. Only
+    // offer results whose descriptions don't indicate a model or full outfit.
+    const lifestyleDescription = /\b(woman|women|man|men|person|people|model|wearing|outfit|street style|portrait|girl|boy|couple|group)\b/i
+    const photos = (data.photos ?? []).filter((p) => p.alt && !lifestyleDescription.test(p.alt)).slice(0, 18).map((p) => ({
       id: p.id,
       url: p.src.medium,      // ~1200px wide
       thumbUrl: p.src.small,  // ~280px wide
@@ -84,7 +148,7 @@ app.get('/api/search-images', async (req, res) => {
       photographer: p.photographer,
     }))
 
-    return res.json({ photos, totalResults: data.total_results ?? 0, page })
+    return res.json({ photos, totalPages: Math.ceil((data.total_results ?? 0) / 80), page })
   } catch (e) {
     console.error('[search-images] Pexels error:', e?.message)
     return res.status(500).json({ photos: [], error: 'Image search failed.' })

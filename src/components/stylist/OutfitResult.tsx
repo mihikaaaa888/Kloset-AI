@@ -28,13 +28,6 @@ export function OutfitResult({
 }: OutfitResultProps) {
   const { name, items, stylingTips } = suggestion
 
-  // Separate items by role for the layout
-  const mainItems = items.filter((i) => ['top', 'bottom', 'dress'].includes(i.role))
-  const layerItems = items.filter((i) => i.role === 'outerwear')
-  const footwearItems = items.filter((i) => i.role === 'shoes')
-  const accItems = items.filter((i) => i.role === 'accessory')
-
-  const secondaryItems = [...layerItems, ...footwearItems, ...accItems]
   return (
     <div className="animate-fade-up grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-start">
       {/* ══ Left: the outfit itself ══════════════════════════════════════════ */}
@@ -50,21 +43,9 @@ export function OutfitResult({
           </div>
         </div>
 
-        {/* ── Main pieces (top + bottom, or dress) — tall, side by side ── */}
-        <div className={clsx('grid gap-4', mainItems.length === 1 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-2')}>
-          {mainItems.map((result) => (
-            <OutfitItemTile key={result.item.id} result={result} featured />
-          ))}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          {items.map((result) => <OutfitItemTile key={result.item.id} result={result} />)}
         </div>
-
-        {/* ── Outerwear, shoes, accessories — compact grid ── */}
-        {secondaryItems.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            {secondaryItems.map((result) => (
-              <OutfitItemTile key={result.item.id} result={result} />
-            ))}
-          </div>
-        )}
       </div>
 
       {/* ══ Right: tips, reasoning, actions — sticks alongside on desktop ═════ */}
@@ -107,37 +88,37 @@ export function OutfitResult({
         <CompleteTheLook suggestion={suggestion} />
 
         {/* ── Actions ── */}
-        <div className="flex flex-col sm:flex-row lg:flex-col xl:flex-row gap-3">
+        <div className="grid grid-cols-2 gap-2">
           <Button
             variant={isSaved ? 'secondary' : 'primary'}
-            size="lg"
+            size="md"
             onClick={onSave}
             disabled={isSaved}
             fullWidth
-            className="gap-2"
+            className="gap-1 px-2 text-[10px] tracking-normal whitespace-nowrap sm:text-xs"
           >
             {isSaved ? (
               <>
                 <Check size={16} />
-                Outfit Saved
+                Saved
               </>
             ) : (
               <>
                 <BookMarked size={16} />
-                Save Outfit
+                Save outfit
               </>
             )}
           </Button>
           <Button
             variant="outline"
-            size="lg"
+            size="md"
             onClick={onTryAnother}
             loading={isRegenerating}
             fullWidth
-            className="gap-2"
+            className="gap-1 px-2 text-[10px] tracking-normal whitespace-nowrap sm:text-xs"
           >
             <RefreshCw size={16} className={isRegenerating ? 'animate-spin' : ''} />
-            Try Another
+            Try another
           </Button>
         </div>
       </aside>
@@ -147,13 +128,7 @@ export function OutfitResult({
 
 // ─── Individual outfit item tile ──────────────────────────────────────────────
 
-function OutfitItemTile({
-  result,
-  featured = false,
-}: {
-  result: OutfitItemResult
-  featured?: boolean
-}) {
+function OutfitItemTile({ result }: { result: OutfitItemResult }) {
   const { item, stylingNote } = result
   const imageUrl = useItemImage(item)
   const primaryColour = item.colour[0]
@@ -163,7 +138,7 @@ function OutfitItemTile({
   return (
     <div className="rounded-3xl overflow-hidden bg-surface shadow-card">
       {/* Image / placeholder */}
-      <div className={clsx('relative', featured ? 'aspect-[3/4]' : 'aspect-square')}>
+      <div className="relative aspect-[4/5]">
         {imageUrl ? (
           <img
             src={imageUrl}
@@ -176,7 +151,7 @@ function OutfitItemTile({
             style={{ backgroundColor: bgHex }}
           >
             <Shirt
-              size={featured ? 40 : 28}
+              size={32}
               className={clsx('select-none', isLight ? 'text-text-primary opacity-30' : 'text-white opacity-40')}
             />
           </div>

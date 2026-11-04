@@ -188,6 +188,7 @@ export function Navigation() {
               {[
                 { label: 'Profile', icon: <User size={18} />, onClick: () => navigate('/profile') },
                 { label: 'Settings', icon: <Settings size={18} />, onClick: () => navigate('/profile?settings=1') },
+                { label: 'Privacy Policy', icon: <span className="w-[18px] text-center text-sm">ⓘ</span>, onClick: () => navigate('/privacy') },
               ].map((row) => (
                 <button key={row.label} onClick={row.onClick} className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base text-text-primary transition-colors hover:bg-text-primary/5">
                   {row.icon}
