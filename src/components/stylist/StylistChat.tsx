@@ -159,6 +159,7 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
   const imageInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const previewUrlsRef = useRef(new Set<string>())
+  const lastPhotoSentAt = useRef(0)
   const preloadedItemIdsRef = useRef('')
   const initialImageItemIdsKey = initialImageItemIds.join('|')
 
@@ -231,6 +232,14 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
     // user only shares images so they render without a text-message bubble.
     const content = typedContent
     if ((!content && !imageFiles.length) || loading) return
+    if (imageFiles.length) {
+      const wait = Math.ceil((lastPhotoSentAt.current + PHOTO_COOLDOWN_MS - Date.now()) / 1000)
+      if (wait > 0) {
+        setAttachmentNotice(`Kaia looks at one photo message at a time. Give her ${wait}s, then send again.`)
+        return
+      }
+      lastPhotoSentAt.current = Date.now()
+    }
     setAwaitingDailyOccasion(false)
 
     const userMsg: ChatMessage = { role: 'user', content, ...(attachedPreviews.length ? { imagePreviewUrls: attachedPreviews } : {}) }
@@ -740,7 +749,12 @@ function MessageBubble({
 // the same cap). Up to 3 photos go as they are; more are packed into up to 3
 // numbered collage sheets so Kaia sees every piece, however many there are.
 const MAX_KAIA_IMAGES = 3
-const SHEET_WIDTH = 1440
+// Groq's free tier allows ~7,000 image-model tokens a minute and a big photo costs thousands,
+// so photos go out small and photo messages are spaced out. Raise both with a paid Groq tier.
+const SHEET_WIDTH = 960
+const PHOTO_MAX_EDGE = 768
+const PHOTO_QUALITY = 0.7
+const PHOTO_COOLDOWN_MS = 60_000
 
 async function prepareImagesForKaia(files: File[]): Promise<{ dataUrls: string[]; note: string | null }> {
   if (files.length <= MAX_KAIA_IMAGES) {
@@ -795,7 +809,7 @@ async function buildContactSheet(files: File[], startIndex: number): Promise<str
       URL.revokeObjectURL(objectUrl)
     }
   }))
-  return canvas.toDataURL('image/jpeg', 0.82)
+  return canvas.toDataURL('image/jpeg', PHOTO_QUALITY)
 }
 
 async function imageFileToDataUrl(file: File): Promise<string> {
@@ -804,7 +818,7 @@ async function imageFileToDataUrl(file: File): Promise<string> {
     const image = new Image()
     image.src = objectUrl
     await image.decode()
-    const scale = Math.min(1, 1440 / Math.max(image.naturalWidth, image.naturalHeight))
+    const scale = Math.min(1, PHOTO_MAX_EDGE / Math.max(image.naturalWidth, image.naturalHeight))
     const canvas = document.createElement('canvas')
     canvas.width = Math.round(image.naturalWidth * scale)
     canvas.height = Math.round(image.naturalHeight * scale)
@@ -813,7 +827,7 @@ async function imageFileToDataUrl(file: File): Promise<string> {
     context.fillStyle = '#fff'
     context.fillRect(0, 0, canvas.width, canvas.height)
     context.drawImage(image, 0, 0, canvas.width, canvas.height)
-    return canvas.toDataURL('image/jpeg', 0.82)
+    return canvas.toDataURL('image/jpeg', PHOTO_QUALITY)
   } finally {
     URL.revokeObjectURL(objectUrl)
   }
