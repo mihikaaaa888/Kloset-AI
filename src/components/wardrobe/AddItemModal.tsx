@@ -18,7 +18,7 @@ import {
 } from '@/lib/imageStorage'
 import { getPhotoUrl } from '@/lib/wardrobeService'
 import { analyzeImage, analyzeImageFromUrl } from '@/lib/analyzeImage'
-import { removeImageBackground } from '@/lib/backgroundRemoval'
+import { parseOutfitPhoto } from '@/lib/fashionParsing'
 import { deleteWithUndo, finalizeScope } from '@/store/undoStore'
 import type { ClothingAnalysis } from '@/lib/analyzeImage'
 import type { ClothingItem, ClothingCategory, Pattern, Season, Occasion } from '@/types'
@@ -202,7 +202,6 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
   const [urlLoading, setUrlLoading] = useState(false)
 
   // Multi-upload batch (new items only)
-  const scrollRef = useRef<HTMLDivElement>(null)
   const [uploadBatch, setUploadBatch] = useState<QueuedImage[]>([])
   const [batchIdx, setBatchIdx] = useState(0)
   const isInBatch = uploadBatch.length > 1
@@ -273,22 +272,25 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
 
     try {
       const processed: QueuedImage[] = []
-      let backgroundFailure: string | null = null
       for (const file of valid) {
-        setImageProcessingStep('Removing background…')
+        setImageProcessingStep('Finding and labeling pieces…')
         const compressed = await compressImage(file)
-        let blob = compressed
-        try {
-          blob = await removeImageBackground(compressed)
-        } catch (error) {
-          console.warn('[AddItemModal] remove.bg background removal failed; keeping the original photo.', error)
-          backgroundFailure = error instanceof Error ? error.message : 'unknown error'
+        // Segmentation is best-effort: even if the local model is unavailable,
+        // preserve the uploaded image so the user can still add it manually.
+        const parsed = await parseOutfitPhoto(compressed).catch(() => ({ garments: [], containsPerson: false }))
+        let pieces: Array<{ blob: Blob; category?: ClothingCategory; name?: string }> = parsed.garments.length > 0
+          ? parsed.garments
+          : [{ blob: compressed, category: undefined, name: undefined }]
+        if (editItem && pieces.length > 1) {
+          pieces = [pieces.find((piece) => piece.category === editItem.category) ?? pieces[0]]
         }
-        setImageProcessingStep('Saving photo…')
-        const imageId = await saveImage(blob)
-        const url = URL.createObjectURL(blob)
-        processed.push({ imageId, previewUrl: url, blob })
-        pendingMap.current.set(imageId, url)
+        for (const piece of pieces) {
+          setImageProcessingStep('Saving labeled piece…')
+          const imageId = await saveImage(piece.blob)
+          const url = URL.createObjectURL(piece.blob)
+          processed.push({ imageId, previewUrl: url, blob: piece.blob, detectedCategory: piece.category, detectedName: piece.name })
+          pendingMap.current.set(imageId, url)
+        }
       }
 
       // If there was already a pending (just-uploaded, not from editItem) image, clean it up
@@ -315,8 +317,6 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
 
       if (errs.length > 0) {
         setImageError(`${errs.length} file(s) skipped — unsupported format or too large.`)
-      } else if (backgroundFailure) {
-        setImageError(`Background removal couldn’t finish (${backgroundFailure.replace(/\.$/, '')}), so the original photo was kept. You can still add the item.`)
       }
 
       // Trigger AI analysis on the first image (only for new items, not edits)
@@ -565,23 +565,6 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
     return Object.keys(newErrors).length === 0
   }
 
-  // ── Move to another piece in a multi-photo batch ─────────────────────────────
-  // Every piece gets a fresh form, scrolled back to the top so its photo, name and category
-  // are the first things seen, and keeps the category and name detected for it.
-  const showPiece = (idx: number) => {
-    const next = uploadBatch[idx]
-    setBatchIdx(idx)
-    setActiveImageId(next.imageId)
-    setPreviewUrl(next.previewUrl)
-    setLegacyImageUrl(null)
-    setDraft(draftForDetectedPiece(next.detectedCategory, next.detectedName))
-    setErrors({})
-    setImageError(null)
-    setAiApplied(false)
-    scrollRef.current?.scrollTo({ top: 0 })
-    runAiAnalysis(next.blob, next.detectedCategory, next.detectedName)
-  }
-
   // ── Save ─────────────────────────────────────────────────────────────────────
   const handleSave = () => {
     if (!validate()) return
@@ -641,8 +624,17 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
     // Advance through batch or close
     const nextIdx = batchIdx + 1
     if (isInBatch && nextIdx < uploadBatch.length) {
+      const next = uploadBatch[nextIdx]
+      setBatchIdx(nextIdx)
+      setActiveImageId(next.imageId)
+      setPreviewUrl(next.previewUrl)
+      setLegacyImageUrl(null)
       priorImageId.current = null
-      showPiece(nextIdx)
+      setDraft(draftForDetectedPiece(next.detectedCategory, next.detectedName))
+      setErrors({})
+      setImageError(null)
+      setAiApplied(false)
+      runAiAnalysis(next.blob, next.detectedCategory, next.detectedName)
     } else {
       handleClose()
     }
@@ -654,6 +646,19 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
     finalizeScope(UNDO_SCOPE)
     const skippedIdx = batchIdx
     const current = uploadBatch[skippedIdx]
+
+    const showGarment = (idx: number) => {
+      const next = uploadBatch[idx]
+      setBatchIdx(idx)
+      setActiveImageId(next.imageId)
+      setPreviewUrl(next.previewUrl)
+      setLegacyImageUrl(null)
+      setDraft(draftForDetectedPiece(next.detectedCategory, next.detectedName))
+      setErrors({})
+      setImageError(null)
+      setAiApplied(false)
+      runAiAnalysis(next.blob, next.detectedCategory, next.detectedName)
+    }
 
     const nextIdx = skippedIdx + 1
     // Skipping the last photo closes the form, so there's nothing to go back to.
@@ -671,8 +676,8 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
     deleteWithUndo({
       message: `Skipped garment ${skippedIdx + 1}`,
       scope: UNDO_SCOPE,
-      remove: () => showPiece(nextIdx),
-      restore: () => showPiece(skippedIdx),
+      remove: () => showGarment(nextIdx),
+      restore: () => showGarment(skippedIdx),
       commit: () => {
         deleteImage(current.imageId).catch(() => {})
         URL.revokeObjectURL(current.previewUrl)
@@ -726,7 +731,6 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
           : 'Add to My Kloset'
       }
       variant="sheet"
-      scrollRef={scrollRef}
       footer={actionFooter}
     >
       <div className="px-6 py-4 pb-10 space-y-7">
@@ -897,12 +901,6 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
                 </>
               )}
             </div>
-          )}
-
-          {!displayUrl && photoTab === 'upload' && !imageProcessing && (
-            <p className="text-xs text-text-muted mt-2">
-              The background is removed by remove.bg, so the photo is sent to their service for processing. Use a photo of just the garment if you’d rather not share a photo of yourself.
-            </p>
           )}
 
           {/* AI auto-fill banner */}

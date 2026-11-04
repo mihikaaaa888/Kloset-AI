@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Send, RotateCcw, Plus, Check, ExternalLink, ImagePlus, Camera, X } from 'lucide-react'
+import { Send, RotateCcw, Plus, Check, ExternalLink, ImagePlus, Camera, X, History } from 'lucide-react'
+import { ChatHistory } from '@/components/stylist/ChatHistory'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { clsx } from 'clsx'
 import { sendChatMessage, type ChatMessage } from '@/lib/chatService'
@@ -138,6 +139,11 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
   const messages = useChatStore((s) => s.messages)
   const setMessages = useChatStore((s) => s.setMessages)
   const clearChat = useChatStore((s) => s.clear)
+  const setOwner = useChatStore((s) => s.setOwner)
+  const [historyOpen, setHistoryOpen] = useState(false)
+
+  // A different account (or a fresh page load) always begins on a new, empty chat.
+  useEffect(() => { setOwner(user?.id ?? null) }, [user?.id, setOwner])
 
   const [input, setInput] = useState(initialPrompt ?? '')
   const [loading, setLoading] = useState(false)
@@ -333,7 +339,24 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
   const hasAddedFromChat = addedCatalogIds.size > 0
 
   return (
-    <div className="flex flex-col h-full min-h-[60vh]">
+    <div className="flex gap-8 h-full">
+      <aside className="hidden md:block w-60 shrink-0">
+        <ChatHistory className="sticky top-24 max-h-[calc(100vh-8rem)]" />
+      </aside>
+
+      {historyOpen && (
+        <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-label="Chat history">
+          <button type="button" aria-label="Close chat history" className="absolute inset-0 bg-scrim/50" onClick={() => setHistoryOpen(false)} />
+          <div className="absolute inset-y-0 left-0 flex w-72 max-w-[85%] flex-col bg-warm-cream p-4 pt-20 shadow-lifted">
+            <ChatHistory className="min-h-0 flex-1" onPick={() => setHistoryOpen(false)} />
+          </div>
+        </div>
+      )}
+
+    <div className="flex flex-col flex-1 min-w-0 min-h-[60vh]">
+      <button type="button" onClick={() => setHistoryOpen(true)} className="mb-3 flex items-center gap-1.5 self-start text-xs text-text-muted transition-colors hover:text-text-primary md:hidden">
+        <History size={13} /> Chat history
+      </button>
 
       {/* ── Message list or empty state ── */}
       <div className="flex-1 overflow-y-auto space-y-4 pb-4">
@@ -446,6 +469,7 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
           </div>
         </div>
       </div>
+    </div>
     </div>
   )
 }

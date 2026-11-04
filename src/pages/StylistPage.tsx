@@ -145,7 +145,7 @@ export function StylistPage() {
       {/* Results get the full width (outfit + side panel); forms stay narrow and focused. */}
       <div className={clsx(
         'mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-8 lg:pt-12 lg:pb-10',
-        mode !== 'chat' && pageState === 'result' ? 'max-w-6xl' : 'max-w-2xl'
+        mode === 'chat' ? 'max-w-4xl' : pageState === 'result' ? 'max-w-6xl' : 'max-w-2xl'
       )}>
 
         {/* ── Mode tabs ── */}
