@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useSearchParams } from 'react-router-dom'
-import { Check, MessageCircle, Send, Trash2, UserPlus, X } from 'lucide-react'
+import { useLocation, useSearchParams } from 'react-router-dom'
+import { ArrowLeft, Check, ImagePlus, MessageCircle, Send, Trash2, UserPlus, X } from 'lucide-react'
 import { clsx } from 'clsx'
 
 import { useAuth } from '@/contexts/AuthContext'
@@ -20,10 +20,11 @@ import {
   sendFriendRequest,
   listFriendMessages,
   sendFriendMessage,
+  sendShare,
   type FriendMessage,
 } from '@/lib/friendService'
 import { deleteWithUndo, isPendingDelete, notify } from '@/store/undoStore'
-import type { Connection, Share, SharedPiece } from '@/types'
+import type { ClothingItem, Connection, Share, SharedPiece } from '@/types'
 
 type Tab = 'chat' | 'add'
 
@@ -31,6 +32,7 @@ const notifyChanged = () => window.dispatchEvent(new Event(FRIENDS_CHANGED_EVENT
 
 export function FriendsPage() {
   const { user } = useAuth()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const tab: Tab = searchParams.get('tab') === 'add' ? 'add' : 'chat'
   const setTab = (t: Tab) => setSearchParams(t === 'chat' ? {} : { tab: t }, { replace: true })
@@ -68,6 +70,7 @@ export function FriendsPage() {
   const outgoing = connections.filter((c) => c.status === 'pending' && c.direction === 'outgoing')
   const friends = connections.filter((c) => c.status === 'accepted')
   const unseen = received.filter((s) => !s.seenAt)
+  const chatWith = (location.state as { chatWith?: string } | null)?.chatWith
 
   // Opening the inbox marks everything in it as seen (the "New" tags stay until next visit).
   useEffect(() => {
@@ -155,10 +158,10 @@ export function FriendsPage() {
 
         {loading ? (
           <p className="text-sm text-text-muted py-16 text-center">Loading…</p>
-        ) : tab === 'chat' ? <FriendsChat friends={friends} myId={user?.id ?? ''} /> : <>
-          <FriendsTab myId={user?.id ?? ''} incoming={incoming} outgoing={outgoing} friends={friends} onAct={act} onRemove={removeConnectionWithUndo} />
+        ) : tab === 'chat' ? <FriendsChat key={chatWith ?? 'inbox'} friends={friends} myId={user?.id ?? ''} initialFriendId={chatWith} shares={shares} images={images} onOpenShare={setOpenShare} onRefresh={load} /> : <>
+          <FriendsTab myId={user?.id ?? ''} incoming={incoming} outgoing={outgoing} friends={friends} shares={shares} onAct={act} onRemove={removeConnectionWithUndo} />
           <div className="mt-10">
-            <div className="mb-4 flex gap-5 border-b border-text-primary/10"><button onClick={() => setShareTab('received')} className={clsx('pb-2 text-xs uppercase tracking-widest', shareTab === 'received' ? 'border-b border-text-primary text-text-primary' : 'text-text-muted')}>Received shares {unseen.length > 0 && `(${unseen.length})`}</button><button onClick={() => setShareTab('sent')} className={clsx('pb-2 text-xs uppercase tracking-widest', shareTab === 'sent' ? 'border-b border-text-primary text-text-primary' : 'text-text-muted')}>Sent shares</button></div>
+            <div className="mb-4 flex gap-5 border-b border-text-primary/10"><button onClick={() => setShareTab('received')} className={clsx('pb-2 text-xs uppercase tracking-widest', shareTab === 'received' ? 'border-b border-text-primary text-text-primary' : 'text-text-muted')}>Received {unseen.length > 0 && `(${unseen.length})`}</button><button onClick={() => setShareTab('sent')} className={clsx('pb-2 text-xs uppercase tracking-widest', shareTab === 'sent' ? 'border-b border-text-primary text-text-primary' : 'text-text-muted')}>Sent</button></div>
             <ShareGrid shares={shareTab === 'received' ? received : sent} images={images} emptyTitle={shareTab === 'received' ? 'Nothing shared with you yet' : 'You haven’t shared anything yet'} emptyBody={shareTab === 'received' ? 'Pieces and outfits friends send you will appear here.' : 'Share a piece or outfit from your Kloset.'} onOpen={setOpenShare} />
           </div>
         </>}
@@ -182,17 +185,31 @@ export function FriendsPage() {
   )
 }
 
-function FriendsChat({ friends, myId }: { friends: Connection[]; myId: string }) {
-  const [activeId, setActiveId] = useState(friends[0]?.otherId ?? '')
+function FriendsChat({ friends, myId, initialFriendId, shares, images, onOpenShare, onRefresh }: {
+  friends: Connection[]
+  myId: string
+  initialFriendId?: string
+  shares: Share[]
+  images: Record<string, string>
+  onOpenShare: (share: Share) => void
+  onRefresh: () => Promise<void>
+}) {
+  const [activeId, setActiveId] = useState(initialFriendId ?? friends[0]?.otherId ?? '')
+  const [mobileConversationOpen, setMobileConversationOpen] = useState(Boolean(initialFriendId))
   const [messages, setMessages] = useState<FriendMessage[]>([])
   const [draft, setDraft] = useState('')
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [sending, setSending] = useState(false)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [error, setError] = useState('')
+  const photoInputRef = useRef<HTMLInputElement>(null)
   const activeFriend = friends.find((friend) => friend.otherId === activeId)
 
   useEffect(() => {
-    if (!friends.some((friend) => friend.otherId === activeId)) setActiveId(friends[0]?.otherId ?? '')
+    if (!friends.some((friend) => friend.otherId === activeId)) {
+      setActiveId(friends[0]?.otherId ?? '')
+      setMobileConversationOpen(false)
+    }
   }, [friends, activeId])
 
   const loadMessages = useCallback(async () => {
@@ -208,9 +225,9 @@ function FriendsChat({ friends, myId }: { friends: Connection[]; myId: string })
     if (!activeId) return
     setLoadingMessages(true)
     void loadMessages().finally(() => setLoadingMessages(false))
-    const timer = window.setInterval(() => { void loadMessages() }, 6000)
+    const timer = window.setInterval(() => { void loadMessages(); void onRefresh() }, 6000)
     return () => window.clearInterval(timer)
-  }, [activeId, loadMessages])
+  }, [activeId, loadMessages, onRefresh])
 
   const send = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -225,24 +242,83 @@ function FriendsChat({ friends, myId }: { friends: Connection[]; myId: string })
     finally { setSending(false) }
   }
 
-  return <section className="grid min-h-[28rem] overflow-hidden rounded-2xl border border-text-primary/10 bg-surface md:grid-cols-[15rem_1fr]">
-    <aside className="border-b border-text-primary/10 md:border-b-0 md:border-r">
-      <h2 className="px-4 py-4 text-xs font-semibold uppercase tracking-widest text-text-muted">Your friends</h2>
-      {friends.length ? friends.map((friend) => <button key={friend.id} onClick={() => setActiveId(friend.otherId)} className={clsx('flex w-full items-center gap-3 border-t border-text-primary/5 px-4 py-3 text-left transition-colors', activeId === friend.otherId ? 'bg-text-primary/5' : 'hover:bg-text-primary/[0.03]')}>
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-butter-yellow/50 font-display text-text-primary">{friend.otherName.charAt(0).toUpperCase()}</span><span className="min-w-0"><span className="block truncate text-sm text-text-primary">{friend.otherName}</span><span className="block truncate text-xs text-text-muted">{friend.otherEmail}</span></span>
-      </button>) : <p className="px-4 py-2 text-sm text-text-muted">Add a friend to start chatting.</p>}
+  const sendPhoto = async (file?: File) => {
+    if (!file || !activeId || !myId || uploadingPhoto) return
+    if (!file.type.startsWith('image/')) { setError('Choose an image to share.'); return }
+    setUploadingPhoto(true)
+    setError('')
+    try {
+      const imageUrl = await readFileAsDataUrl(file)
+      const now = new Date().toISOString()
+      const item: ClothingItem = {
+        id: crypto.randomUUID(), name: file.name.replace(/\.[^.]+$/, '') || 'Photo from chat', category: 'tops',
+        imageUrl, imageSource: 'local', colour: [], pattern: 'other', seasons: [], occasions: [],
+        isFavourite: false, timesWorn: 0, createdAt: now, updatedAt: now,
+      }
+      const ids = await sendShare({ kind: 'item', item }, [activeId], myId, '')
+      await sendFriendMessage(activeId, myId, `[[KLOSET_SHARE:${ids[0]}]]`)
+      await onRefresh()
+      await loadMessages()
+      window.dispatchEvent(new Event(FRIENDS_CHANGED_EVENT))
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setUploadingPhoto(false)
+    }
+  }
+
+  return <section className="grid min-h-[min(70vh,44rem)] overflow-hidden border border-text-primary/10 bg-surface md:grid-cols-[17rem_1fr] md:rounded-2xl">
+    <aside className={clsx('min-h-[min(70vh,44rem)] border-b border-text-primary/10 md:border-b-0 md:border-r', mobileConversationOpen ? 'hidden md:block' : 'block')}>
+      <header className="flex items-center justify-between border-b border-text-primary/10 px-4 py-4">
+        <h2 className="font-display text-2xl text-text-primary">Messages</h2>
+        <span className="text-xs text-text-muted">{friends.length}</span>
+      </header>
+      {friends.length ? friends.map((friend) => <button key={friend.id} onClick={() => { setActiveId(friend.otherId); setMobileConversationOpen(true) }} className={clsx('flex w-full items-center gap-3 border-b border-text-primary/5 px-4 py-3.5 text-left transition-colors', activeId === friend.otherId ? 'bg-text-primary/5' : 'hover:bg-text-primary/[0.03]')}>
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-butter-yellow/50 font-display text-text-primary">{friend.otherName.charAt(0).toUpperCase()}</span><span className="min-w-0"><span className="block truncate text-sm font-medium text-text-primary">{friend.otherName}</span><span className="block truncate text-xs text-text-muted">{friend.otherEmail}</span></span>
+      </button>) : <p className="px-4 py-3 text-sm text-text-muted">Add a friend to start chatting.</p>}
     </aside>
-    <div className="flex min-h-[28rem] flex-col">
+    <div className={clsx('min-h-[min(70vh,44rem)] flex-col', mobileConversationOpen ? 'flex' : 'hidden md:flex')}>
       {activeFriend ? <>
-        <header className="border-b border-text-primary/10 px-5 py-4"><p className="font-display text-xl text-text-primary">{activeFriend.otherName}</p><p className="text-xs text-text-muted">{activeFriend.otherEmail}</p></header>
+        <header className="flex items-center gap-3 border-b border-text-primary/10 px-4 py-3.5 sm:px-5">
+          <button type="button" onClick={() => setMobileConversationOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full text-text-primary hover:bg-text-primary/5 md:hidden" aria-label="Back to messages"><ArrowLeft size={19}/></button>
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-butter-yellow/50 font-display text-text-primary">{activeFriend.otherName.charAt(0).toUpperCase()}</span>
+          <div className="min-w-0"><p className="truncate font-medium text-text-primary">{activeFriend.otherName}</p><p className="truncate text-xs text-text-muted">{activeFriend.otherEmail}</p></div>
+        </header>
         {error && <p role="alert" className="mx-4 mt-3 text-xs text-red-700">{error}</p>}
-        <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4" aria-live="polite">
-          {loadingMessages ? <p className="m-auto text-sm text-text-muted">Loading messages…</p> : messages.length ? messages.map((message) => <div key={message.id} className={clsx('max-w-[80%] rounded-2xl px-4 py-2.5 text-sm', message.senderId === myId ? 'ml-auto bg-text-primary text-warm-cream' : 'mr-auto bg-text-primary/5 text-text-primary')}><p className="whitespace-pre-wrap break-words">{message.body}</p><time className="mt-1 block text-right text-[10px] opacity-65">{new Date(message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time></div>) : <div className="m-auto max-w-xs text-center"><MessageCircle size={24} className="mx-auto mb-3 text-text-muted/50"/><p className="text-sm text-text-muted">No messages yet. Say hello to {activeFriend.otherName}.</p></div>}
+        <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-3 py-4 sm:px-5" aria-live="polite">
+          {loadingMessages ? <p className="m-auto text-sm text-text-muted">Loading messages…</p> : messages.length ? messages.map((message) => {
+            const sharedId = message.body.match(/^\[\[KLOSET_SHARE:([^\]]+)\]\]$/)?.[1]
+            const shared = sharedId ? shares.find((share) => share.id === sharedId) : null
+            return <div key={message.id} className={clsx('max-w-[88%] rounded-2xl px-3 py-3 text-sm sm:max-w-[75%]', message.senderId === myId ? 'ml-auto bg-text-primary text-warm-cream' : 'mr-auto bg-text-primary/5 text-text-primary')}>
+              {shared ? <button type="button" onClick={() => onOpenShare(shared)} className="block w-full overflow-hidden rounded-xl bg-surface text-left text-text-primary">
+                <div className={clsx('grid aspect-[1.45] gap-px overflow-hidden bg-text-primary/10', shared.payload.pieces.length > 1 ? 'grid-cols-2' : 'grid-cols-1')}>
+                  {shared.payload.pieces.slice(0, 4).map((piece, index) => <PieceImage key={`${shared.id}-${index}`} piece={piece} images={images} glyphSize={28} />)}
+                </div>
+                <div className="px-3 py-2.5"><p className="truncate font-medium">{shared.payload.title}</p><p className="mt-0.5 text-xs text-text-muted">{shared.kind === 'outfit' ? 'Outfit' : 'Photo'} · tap to view</p>{shared.message && <p className="mt-1 text-xs text-text-muted">{shared.message}</p>}</div>
+              </button> : sharedId ? <p className="text-xs opacity-75">Shared an outfit</p> : <p className="whitespace-pre-wrap break-words">{message.body}</p>}
+              <time className="mt-1 block text-right text-[10px] opacity-65">{new Date(message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>
+            </div>
+          }) : <div className="m-auto max-w-xs text-center"><MessageCircle size={24} className="mx-auto mb-3 text-text-muted/50"/><p className="text-sm text-text-muted">No messages yet. Say hello to {activeFriend.otherName}.</p></div>}
         </div>
-        <form onSubmit={send} className="flex items-center gap-2 border-t border-text-primary/10 p-3"><input value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={2000} placeholder="Write a message…" aria-label="Message" className="min-w-0 flex-1 rounded-full border border-text-primary/15 bg-transparent px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-text-primary/30"/><button disabled={!draft.trim() || sending} aria-label="Send message" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-text-primary text-warm-cream disabled:opacity-40"><Send size={17}/></button></form>
+        <form onSubmit={send} className="flex items-center gap-2 border-t border-text-primary/10 p-3 sm:p-4">
+          <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => { void sendPhoto(event.target.files?.[0]); event.currentTarget.value = '' }} />
+          <button type="button" onClick={() => photoInputRef.current?.click()} disabled={uploadingPhoto || sending} aria-label="Upload a photo or outfit" title="Upload a photo or outfit" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-text-primary hover:bg-text-primary/5 disabled:opacity-40"><ImagePlus size={20}/></button>
+          <input value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={2000} placeholder="Message…" aria-label="Message" className="min-w-0 flex-1 rounded-full border border-text-primary/15 bg-transparent px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-text-primary/30"/>
+          <button disabled={!draft.trim() || sending || uploadingPhoto} aria-label="Send message" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-text-primary text-warm-cream disabled:opacity-40"><Send size={16}/></button>
+          {uploadingPhoto && <span className="sr-only">Uploading photo…</span>}
+        </form>
       </> : <div className="m-auto px-6 py-10 text-center"><MessageCircle size={28} className="mx-auto mb-3 text-text-muted/50"/><p className="font-display text-xl text-text-primary">Your chats</p><p className="mt-2 text-sm text-text-muted">Choose a friend or add someone to start a conversation.</p></div>}
     </div>
   </section>
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Could not read this photo.'))
+    reader.onerror = () => reject(new Error('Could not read this photo.'))
+    reader.readAsDataURL(file)
+  })
 }
 
 // ─── Friends tab ──────────────────────────────────────────────────────────────
@@ -252,6 +328,7 @@ function FriendsTab({
   incoming,
   outgoing,
   friends,
+  shares,
   onAct,
   onRemove,
 }: {
@@ -259,12 +336,18 @@ function FriendsTab({
   incoming: Connection[]
   outgoing: Connection[]
   friends: Connection[]
+  shares: Share[]
   onAct: (fn: () => Promise<unknown>) => Promise<void>
   onRemove: (c: Connection, message: string, run: () => Promise<unknown>) => void
 }) {
   const [email, setEmail] = useState('')
   const [sending, setSending] = useState(false)
   const [note, setNote] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null)
+  const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null)
+  const selectedFriend = friends.find((friend) => friend.otherId === selectedFriendId) ?? null
+  const friendShares = selectedFriend ? shares.filter((share) => share.kind === 'outfit' && share.otherId === selectedFriend.otherId) : []
+  const sentOutfits = friendShares.filter((share) => share.direction === 'sent').length
+  const receivedOutfits = friendShares.filter((share) => share.direction === 'received').length
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -284,22 +367,45 @@ function FriendsTab({
   }
 
   return (
-    <div className="grid gap-10 lg:grid-cols-[minmax(16rem,0.8fr)_minmax(0,1.4fr)]">
+    <div className="grid items-start gap-8 lg:grid-cols-[minmax(16rem,0.85fr)_minmax(0,1.15fr)]">
       <aside className="self-start">
         <PeopleSection title="Your friends">
           {friends.length === 0 ? <p className="py-4 text-sm text-text-muted">No friends yet. Add someone to start a chat.</p> : friends.map((c) => (
-            <PersonRow key={c.id} person={c}>
-              <button onClick={() => onRemove(c, `Removed ${c.otherName} from your friends`, () => removeConnection(c.id))} className="h-9 px-3 text-2xs uppercase tracking-widest text-text-muted hover:text-red-700">Remove</button>
+            <PersonRow key={c.id} person={c} onSelect={() => setSelectedFriendId(c.otherId)} selected={selectedFriendId === c.otherId}>
+              <span className="sr-only">Friend details</span>
             </PersonRow>
           ))}
         </PeopleSection>
+        {selectedFriend && (
+          <section className="mt-5 border border-text-primary/10 bg-surface p-4 sm:p-5" aria-label={`${selectedFriend.otherName} friendship details`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="font-display text-xl text-text-primary">{selectedFriend.otherName}</h3>
+                <p className="mt-1 text-xs text-text-muted">Friends since {new Date(selectedFriend.respondedAt ?? selectedFriend.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+              </div>
+              <button
+                type="button"
+                aria-label={`Remove ${selectedFriend.otherName} as a friend`}
+                title="Remove friend"
+                onClick={() => onRemove(selectedFriend, `Removed ${selectedFriend.otherName} from your friends`, () => removeConnection(selectedFriend.id))}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-red-50 hover:text-red-700"
+              >
+                <Trash2 size={16} strokeWidth={1.6} />
+              </button>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-3 border-t border-text-primary/10 pt-4">
+              <div><p className="font-display text-2xl text-text-primary">{sentOutfits}</p><p className="text-xs text-text-muted">Outfits sent</p></div>
+              <div><p className="font-display text-2xl text-text-primary">{receivedOutfits}</p><p className="text-xs text-text-muted">Outfits received</p></div>
+            </div>
+          </section>
+        )}
       </aside>
 
-      <div className="space-y-10">
-        <section className="border border-text-primary/10 bg-surface p-5">
+      <div className="space-y-8">
+        <section className="w-full max-w-2xl border border-text-primary/10 bg-surface p-4 sm:p-5">
         <h2 className="font-display text-2xl text-text-primary">Add a friend</h2>
-        <p className="text-sm text-text-muted mt-1">Enter the email they use for Kloset.</p>
-        <form onSubmit={handleAdd} className="mt-5 flex items-end gap-2">
+        <p className="mt-1 text-sm text-text-muted">Enter the email they use for Kloset.</p>
+        <form onSubmit={handleAdd} className="mt-4 flex items-end gap-2">
           <label className="flex-1">
             <span className="sr-only">Friend’s email</span>
             <input
@@ -377,12 +483,12 @@ function PeopleSection({ title, children }: { title: string; children: React.Rea
   )
 }
 
-function PersonRow({ person, meta, children }: { person: Connection; meta?: string; children: React.ReactNode }) {
+function PersonRow({ person, meta, children, onSelect, selected = false }: { person: Connection; meta?: string; children: React.ReactNode; onSelect?: () => void; selected?: boolean }) {
   return (
-    <li className="flex items-center gap-4 py-4">
+    <li className={clsx('flex items-center gap-3 py-4', selected && 'bg-text-primary/[0.025]')}>
       <Monogram name={person.otherName} size="lg" />
       <div className="flex-1 min-w-0">
-        <p className="text-base text-text-primary truncate capitalize">{person.otherName}</p>
+        {onSelect ? <button type="button" onClick={onSelect} className="block max-w-full truncate text-left text-base text-text-primary capitalize hover:underline">{person.otherName}</button> : <p className="text-base text-text-primary truncate capitalize">{person.otherName}</p>}
         <p className="text-xs text-text-muted truncate">
           {person.otherEmail}
           {meta && <> · {meta}</>}

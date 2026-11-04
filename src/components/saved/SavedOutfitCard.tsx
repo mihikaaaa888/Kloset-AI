@@ -44,8 +44,6 @@ export function SavedOutfitCard({ outfit, resolvedItems, onClick, onUnsave, onSe
           <h3 className="font-display text-xl leading-snug text-text-primary mt-1 line-clamp-2">{outfit.name}</h3>
           {outfit.source === 'manual' ? (
             <p className="text-xs text-text-muted mt-1">Styled by you</p>
-          ) : outfit.mood ? (
-            <p className="text-xs text-text-muted mt-1 capitalize">{outfit.mood}</p>
           ) : null}
         </div>
       </button>

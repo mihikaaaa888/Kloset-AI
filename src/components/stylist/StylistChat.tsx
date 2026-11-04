@@ -20,11 +20,9 @@ import type { CatalogItem, ClothingCategory, ClothingItem, WebShopResult } from 
 
 const SUGGESTED_PROMPTS = [
   'What should I wear today?',
-  'Style my wardrobe for a date night.',
-  'Give me 3 outfits using my wardrobe.',
-  'What goes with my favourite pieces?',
-  'I need something for a formal event.',
 ]
+
+const DAILY_OCCASIONS = ['Work', 'Casual', 'Date night', 'Formal', 'Weekend', 'Travel', 'Gym', 'Special event']
 
 // Kaia is grounded on a sample of the catalog (see chatService's shopSummary)
 // and will name real pieces by their exact catalog name — matching on that
@@ -146,6 +144,7 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
   const [attachedImages, setAttachedImages] = useState<File[]>([])
   const [attachedPreviews, setAttachedPreviews] = useState<string[]>([])
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null)
+  const [awaitingDailyOccasion, setAwaitingDailyOccasion] = useState(false)
   const [addedCatalogIds, setAddedCatalogIds] = useState<Set<string>>(
     () => new Set(items.map((i) => i.catalogId).filter(Boolean) as string[])
   )
@@ -226,6 +225,7 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
     // user only shares images so they render without a text-message bubble.
     const content = typedContent
     if ((!content && !imageFiles.length) || loading) return
+    setAwaitingDailyOccasion(false)
 
     const userMsg: ChatMessage = { role: 'user', content, ...(attachedPreviews.length ? { imagePreviewUrls: attachedPreviews } : {}) }
     const next = [...messages, userMsg]
@@ -255,6 +255,15 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
     } finally {
       setLoading(false)
     }
+  }
+
+  const startDailyOutfitPrompt = () => {
+    setMessages([
+      ...messages,
+      { role: 'user', content: 'What should I wear today?' },
+      { role: 'assistant', content: 'What are you dressing for?' },
+    ])
+    setAwaitingDailyOccasion(true)
   }
 
   const attachImageFiles = (files: File[]) => {
@@ -287,6 +296,7 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
       remove: () => {
         clearChat()
         setInput('')
+        setAwaitingDailyOccasion(false)
       },
       restore: () => useChatStore.getState().setMessages(previous),
     })
@@ -328,7 +338,7 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
       {/* ── Message list or empty state ── */}
       <div className="flex-1 overflow-y-auto space-y-4 pb-4">
         {isEmpty ? (
-          <EmptyState onPrompt={(p) => send(p)} />
+          <EmptyState onPrompt={() => startDailyOutfitPrompt()} />
         ) : (
           <>
             {messages.map((msg, i) => (
@@ -339,6 +349,23 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
                 onAddCatalogItem={handleAddCatalogItem}
               />
             ))}
+            {awaitingDailyOccasion && !loading && (
+              <div className="ml-9 flex flex-wrap gap-2">
+                {DAILY_OCCASIONS.map((occasion) => (
+                  <button
+                    key={occasion}
+                    type="button"
+                    onClick={() => {
+                      setAwaitingDailyOccasion(false)
+                      void send(occasion)
+                    }}
+                    className="rounded-full border border-text-primary/15 bg-surface px-4 py-2 text-sm text-text-primary transition-colors hover:border-text-primary/40"
+                  >
+                    {occasion}
+                  </button>
+                ))}
+              </div>
+            )}
             {loading && <TypingIndicator />}
             <div ref={bottomRef} />
           </>

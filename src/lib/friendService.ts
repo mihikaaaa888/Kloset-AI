@@ -171,8 +171,8 @@ export async function sendShare(
   recipientIds: string[],
   myId: string,
   message: string
-): Promise<void> {
-  if (recipientIds.length === 0) return
+): Promise<string[]> {
+  if (recipientIds.length === 0) return []
   const bundleId = crypto.randomUUID()
 
   let payload: SharePayload
@@ -189,7 +189,9 @@ export async function sendShare(
     payload = { title: target.outfit.name, occasion: target.outfit.occasion, pieces }
   }
 
-  const rows = recipientIds.map((recipient_id) => ({
+  const shareIds = recipientIds.map(() => crypto.randomUUID())
+  const rows = recipientIds.map((recipient_id, index) => ({
+    id: shareIds[index],
     sender_id: myId,
     recipient_id,
     bundle_id: bundleId,
@@ -200,6 +202,7 @@ export async function sendShare(
   const { error } = await supabase.from('shares').insert(rows)
   if (error) fail('send share', error)
   console.log('[friends] shared', { kind: target.kind, recipients: recipientIds.length, pieces: payload.pieces.length })
+  return shareIds
 }
 
 type DbShare = {

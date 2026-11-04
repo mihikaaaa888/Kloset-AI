@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Check, X } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '@/contexts/AuthContext'
-import { listConnections, sendShare, type ShareTarget } from '@/lib/friendService'
+import { FRIENDS_CHANGED_EVENT, listConnections, sendFriendMessage, sendShare, type ShareTarget } from '@/lib/friendService'
 import type { Connection } from '@/types'
 
 interface ShareSheetProps {
@@ -15,6 +15,7 @@ interface ShareSheetProps {
 /** Pick friends, add a note, send a piece or outfit. */
 export function ShareSheet({ target, onClose }: ShareSheetProps) {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [friends, setFriends] = useState<Connection[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [picked, setPicked] = useState<string[]>([])
@@ -58,9 +59,14 @@ export function ShareSheet({ target, onClose }: ShareSheetProps) {
     setStatus('sending')
     setSendError(null)
     try {
-      await sendShare(target, picked, user.id, message)
+      const shareIds = await sendShare(target, picked, user.id, message)
+      await Promise.all(picked.map((friendId, index) => sendFriendMessage(friendId, user.id, `[[KLOSET_SHARE:${shareIds[index]}]]`)))
+      window.dispatchEvent(new Event(FRIENDS_CHANGED_EVENT))
       setStatus('sent')
-      setTimeout(onClose, 1200)
+      window.setTimeout(() => {
+        onClose()
+        navigate('/friends?tab=chat', { state: { chatWith: picked[0] } })
+      }, 500)
     } catch (err) {
       setStatus('error')
       setSendError((err as Error).message)

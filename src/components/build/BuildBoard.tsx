@@ -21,7 +21,7 @@ import type { ClothingCategory, ClothingItem, Occasion, Outfit, OutfitItem } fro
 type Source = BoardPiece['source']
 
 const SOURCES: { id: Source; label: string }[] = [
-  { id: 'kloset', label: 'Closet' },
+  { id: 'kloset', label: 'Kloset' },
   { id: 'shop', label: 'Shop' },
   { id: 'inspiration', label: 'Inspiration' },
 ]
@@ -561,7 +561,7 @@ function PieceDrawer({ wardrobe, onPick, onAddPiece }: { wardrobe: ClothingItem[
 
       {source !== 'inspiration' && <div className="relative mb-3">
         <Search size={15} strokeWidth={1.25} className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-text-muted" />
-        <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${source === 'kloset' ? 'closet' : 'shop'}…`} aria-label={`Search ${source === 'kloset' ? 'closet' : 'shop'} pieces`} className="w-full border-b border-text-primary/20 bg-transparent py-2 pl-6 pr-7 text-sm text-text-primary placeholder:text-text-muted focus:border-text-primary focus:outline-none" />
+        <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${source === 'kloset' ? 'Kloset' : 'shop'}…`} aria-label={`Search ${source === 'kloset' ? 'Kloset' : 'shop'} pieces`} className="w-full border-b border-text-primary/20 bg-transparent py-2 pl-6 pr-7 text-sm text-text-primary placeholder:text-text-muted focus:border-text-primary focus:outline-none" />
         {search && <button onClick={() => setSearch('')} aria-label="Clear search" className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-text-muted hover:text-text-primary"><X size={14} /></button>}
       </div>}
 
