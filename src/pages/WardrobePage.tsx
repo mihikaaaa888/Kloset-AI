@@ -50,6 +50,8 @@ export function WardrobePage() {
 
   const [showAddModal, setShowAddModal] = useState(false)
   const [showAddMenu, setShowAddMenu] = useState(false)
+  const [addPhotoTab, setAddPhotoTab] = useState<'upload' | 'browse'>('upload')
+  const [cameraFile, setCameraFile] = useState<File | null>(null)
   const [editItem, setEditItem] = useState<ClothingItem | undefined>()
   const [detailItem, setDetailItem] = useState<ClothingItem | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -208,8 +210,24 @@ export function WardrobePage() {
 
   const openAdd = () => {
     setEditItem(undefined)
+    setCameraFile(null)
+    setAddPhotoTab('upload')
     setShowAddModal(true)
   }
+
+  const openAddBrowse = () => {
+    setEditItem(undefined)
+    setCameraFile(null)
+    setAddPhotoTab('browse')
+    setShowAddModal(true)
+  }
+
+  const takePhoto = () => {
+    setShowAddMenu(false)
+    cameraInputRef.current?.click()
+  }
+
+  const cameraInputRef = useRef<HTMLInputElement>(null)
 
   const openCompletePiece = (item: ClothingItem) => {
     setCompleteSelectionMode(false)
@@ -295,7 +313,10 @@ export function WardrobePage() {
             <div ref={addMenuRef} className="relative">
               <button type="button" aria-haspopup="menu" aria-expanded={showAddMenu} onClick={() => setShowAddMenu((visible) => !visible)} className="inline-flex h-9 sm:h-10 items-center gap-1.5 bg-text-primary px-2.5 sm:px-5 text-2xs font-medium uppercase tracking-widest text-warm-cream transition-colors hover:bg-text-primary/90"><Plus size={14} strokeWidth={1.5} /> Add <ChevronDown size={13} /></button>
               {showAddMenu && <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-48 border border-text-primary/10 bg-surface p-1 shadow-lifted">
-                <button role="menuitem" onClick={() => { setShowAddMenu(false); openAdd() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Upload item</button>
+                <button role="menuitem" onClick={takePhoto} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Take photo</button>
+                <button role="menuitem" onClick={() => { setShowAddMenu(false); openAdd() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Upload</button>
+                <button role="menuitem" onClick={() => { setShowAddMenu(false); openAddBrowse() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Browse</button>
+                <div className="my-1 border-t border-text-primary/10" />
                 <button role="menuitem" onClick={() => { setShowAddMenu(false); setView('build') }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Create outfit</button>
               </div>}
             </div>
@@ -396,9 +417,28 @@ export function WardrobePage() {
 
       <AddItemModal
         open={showAddModal}
-        onClose={() => { setShowAddModal(false); setEditItem(undefined) }}
+        onClose={() => { setShowAddModal(false); setEditItem(undefined); setCameraFile(null) }}
         onSave={handleSaveItem}
         editItem={editItem}
+        initialTab={addPhotoTab}
+        initialFile={cameraFile}
+      />
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        aria-label="Take a clothing photo"
+        onChange={(event) => {
+          const file = event.target.files?.[0] ?? null
+          event.target.value = ''
+          if (!file) return
+          setCameraFile(file)
+          setAddPhotoTab('upload')
+          setEditItem(undefined)
+          setShowAddModal(true)
+        }}
       />
 
       <ItemDetailModal

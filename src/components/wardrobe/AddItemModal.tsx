@@ -168,9 +168,11 @@ interface AddItemModalProps {
   onClose: () => void
   onSave: (item: ClothingItem) => void
   editItem?: ClothingItem
+  initialTab?: 'upload' | 'browse'
+  initialFile?: File | null
 }
 
-export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalProps) {
+export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'upload', initialFile = null }: AddItemModalProps) {
   const [draft, setDraft] = useState<ItemDraft>(() =>
     editItem ? itemToDraft(editItem) : blankDraft()
   )
@@ -223,14 +225,14 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
     setAiAnalyzing(false)
     setAiApplied(false)
     setLowConfidenceFields([])
-    setPhotoTab('upload')
+    setPhotoTab(initialTab)
     setUrlInput('')
     setUrlError(null)
     setUrlLoading(false)
 
     pendingMap.current = new Map()
     priorImageId.current = null
-  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, initialTab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load existing IndexedDB image for edit mode ──────────────────────────────
   useEffect(() => {
@@ -329,6 +331,13 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }, [activeImageId, editItem?.imageId, editItem?.category]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const processedInitialFile = useRef<File | null>(null)
+  useEffect(() => {
+    if (!open || !initialFile || processedInitialFile.current === initialFile) return
+    processedInitialFile.current = initialFile
+    void processFiles([initialFile])
+  }, [open, initialFile, processFiles])
 
   // ── AI analysis ──────────────────────────────────────────────────────────────
   const applyAnalysis = useCallback((analysis: ClothingAnalysis, detectedCategory?: ClothingCategory, detectedName?: string) => {

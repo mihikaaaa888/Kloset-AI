@@ -8,19 +8,58 @@ export interface LocalWeather {
 
 let cachedWeather: { value: LocalWeather; expiresAt: number } | null = null
 let pendingWeather: Promise<LocalWeather> | null = null
+const SAVED_LOCATION_KEY = 'kloset-weather-location-v1'
+
+type Coordinates = { latitude: number; longitude: number }
+
+function getSavedLocation(): Coordinates | null {
+  try {
+    const value = JSON.parse(localStorage.getItem(SAVED_LOCATION_KEY) ?? 'null') as Partial<Coordinates> | null
+    if (typeof value?.latitude === 'number' && typeof value.longitude === 'number') return value as Coordinates
+  } catch {
+    // Storage can be disabled; fall back to the browser's location permission.
+  }
+  return null
+}
+
+function saveLocation({ latitude, longitude }: Coordinates) {
+  try {
+    // Weather needs only approximate location; persist a coarse position so a
+    // granted browser permission is not requested again on each visit.
+    localStorage.setItem(SAVED_LOCATION_KEY, JSON.stringify({
+      latitude: Math.round(latitude * 100) / 100,
+      longitude: Math.round(longitude * 100) / 100,
+    }))
+  } catch {
+    // Weather still works for this session if storage is unavailable.
+  }
+}
+
+function requestLocation(): Promise<Coordinates> {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject(new Error('Location is unavailable')); return }
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const location = { latitude: coords.latitude, longitude: coords.longitude }
+        saveLocation(location)
+        resolve(location)
+      },
+      reject,
+      { timeout: 12000, maximumAge: 30 * 60 * 1000 },
+    )
+  })
+}
 
 /** Reuse the site's location-based weather reading across Home and Stylist. */
 export function getLocalWeather(): Promise<LocalWeather> {
   if (cachedWeather && cachedWeather.expiresAt > Date.now()) return Promise.resolve(cachedWeather.value)
   if (pendingWeather) return pendingWeather
 
-  pendingWeather = new Promise<GeolocationPosition>((resolve, reject) => {
-    if (!navigator.geolocation) { reject(new Error('Location is unavailable')); return }
-    navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 12000, maximumAge: 30 * 60 * 1000 })
-  }).then(async ({ coords }) => {
+  const location = getSavedLocation() ? Promise.resolve(getSavedLocation()!) : requestLocation()
+  pendingWeather = location.then(async ({ latitude, longitude }) => {
     const params = new URLSearchParams({
-      latitude: String(coords.latitude),
-      longitude: String(coords.longitude),
+      latitude: String(latitude),
+      longitude: String(longitude),
       current: 'temperature_2m,weather_code',
       timezone: 'auto',
     })

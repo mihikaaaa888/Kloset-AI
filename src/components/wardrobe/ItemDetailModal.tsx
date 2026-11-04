@@ -169,28 +169,23 @@ export function ItemDetailModal({
             {item.pattern && item.pattern !== 'solid' && (
               <DetailRow label="Pattern"><span className="capitalize">{item.pattern}</span></DetailRow>
             )}
-            {item.seasons.length > 0 && (
-              <DetailRow label="Season">
-                <span className="capitalize">{item.seasons.map((s) => s.replace('-', ' ')).join(', ')}</span>
-              </DetailRow>
-            )}
             {item.occasions.length > 0 && (
               <DetailRow label="Wear to">
                 <span className="capitalize">{item.occasions.map((o) => o.replace('-', ' ')).join(', ')}</span>
               </DetailRow>
             )}
             <DetailRow label="Times worn">
-              <span className="flex items-center justify-end gap-3">
-                <span className="tabular-nums">{item.timesWorn}</span>
-                <button
-                  onClick={() => { setWearDate(todayDateInput()); setShowWearDate((showing) => !showing) }}
-                  className="flex items-center gap-1 text-2xs uppercase tracking-widest font-semibold text-butter-yellow hover:underline underline-offset-4"
-                >
-                  <Plus size={12} strokeWidth={1.5} />
-                  Log wear
-                </button>
-              </span>
+              <span className="tabular-nums">{item.timesWorn}</span>
             </DetailRow>
+            <div className="flex justify-start border-b border-text-primary/10 py-3">
+              <button
+                onClick={() => { setWearDate(todayDateInput()); setShowWearDate((showing) => !showing) }}
+                className="inline-flex items-center gap-2 border border-text-primary/20 px-4 py-2 text-xs font-medium text-text-primary transition-colors hover:border-text-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow"
+              >
+                <Plus size={14} strokeWidth={1.5} />
+                Log wear
+              </button>
+            </div>
             {showWearDate && (
               <div className="flex flex-wrap items-center justify-end gap-3 border-b border-text-primary/10 py-4">
                 <label htmlFor="wear-date" className="mr-auto text-xs text-text-muted">Date worn</label>
@@ -218,10 +213,10 @@ export function ItemDetailModal({
 
           <button
             onClick={onDelete}
-            className="mt-10 flex items-center gap-2 text-2xs uppercase tracking-widest text-text-muted hover:text-red-700 transition-colors"
+            aria-label={deleteLabel}
+            className="mt-10 flex h-10 w-10 items-center justify-center text-text-muted transition-colors hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow"
           >
             <Trash2 size={13} strokeWidth={1.5} />
-            {deleteLabel}
           </button>
         </div>
       </div>
