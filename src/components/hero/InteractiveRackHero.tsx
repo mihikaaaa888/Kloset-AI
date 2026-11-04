@@ -19,21 +19,17 @@ type RackPiece = {
 // width) so the rack keeps its proportions at every size. Narrow screens show
 // fewer, larger pieces in a taller scene: eight hangers across a phone would be a few pixels wide.
 const RACK_LAYOUTS = {
-  wide: { slots: 6, size: 1, rodY: 24, reach: 46, aspect: '4 / 3', width: 'min(94vw, 115svh)' },
-  compact: { slots: 5, size: 1.2, rodY: 30, reach: 58, aspect: '4 / 5', width: 'min(96vw, 69svh)' },
+  wide: { slots: 6, rodY: 24, reach: 46, aspect: '4 / 3', width: 'min(94vw, 115svh)' },
+  compact: { slots: 6, rodY: 30, reach: 58, aspect: '4 / 5', width: 'min(96vw, 69svh)' },
 }
-// size: multiplier on every piece. rodY: rail height in cqw. reach: how far the longest garment hangs below it.
+// rodY: rail height in cqw. reach: how far the longest garment hangs below it.
 
-type GarmentKind = 'top' | 'outerwear' | 'bottom' | 'full'
-const TOPS = new Set(['burgundy-rib-knit-top', 'olive-eyelet-crop-top', 'chartreuse-buckle-wrap-top', 'burgundy-button-up-shirt'])
-const BOTTOMS = new Set(['red-asymmetric-overlay-skirt', 'pale-blue-wrap-skirt', 'olive-gathered-contrast-hem-skirt', 'charcoal-pinstripe-trousers', 'blue-layered-chiffon-skirt', 'white-trousers-burgundy-look'])
-const kindOf = (piece: RackPiece): GarmentKind => (piece.outerwear ? 'outerwear' : TOPS.has(piece.id) ? 'top' : BOTTOMS.has(piece.id) ? 'bottom' : 'full') // everything else is a dress or a head-to-toe look on one hanger
+const STANDARD_HANGER_WIDTH_IN = 1.2
 
 // Garments of one kind share one size, so every top matches every other top regardless of how its
 // photo was framed. A piece is sized by the square root of its garment's width x height (in cqw);
 // that stays steady across wide-sleeved and long, narrow cuts. Full looks run larger: they are
 // a top and a bottom on one hanger.
-const RACK_SIZE: Record<GarmentKind, number> = { top: 17, outerwear: 19, bottom: 17, full: 22 }
 
 function getRackLayout() {
   const compact = window.matchMedia('(max-width: 640px)').matches
@@ -87,21 +83,12 @@ const OUTFITS: RackPiece[] = [
     details: ['Pale blue flowing midi skirt', 'Draped wrap waistband', 'Long side sash'],
   },
   {
-    id: 'olive-eyelet-crop-top',
-    name: 'Olive Eyelet Cutout Top',
-    image: '/images/olive-eyelet-crop-top-on-hanger.png',
-    imageAlt: 'Olive green collared crop top with an eyelet-trimmed chest cutout hanging on a wooden hanger',
-    warmWeather: true,
-    detailImage: '/images/olive-eyelet-crop-top-reference.png',
-    detailAlt: 'Olive cropped collared top with an eyelet-trimmed cutout and shaped seams',
-    details: ['Olive short-sleeve cropped top', 'Collared neckline', 'Eyelet-trimmed chest cutout'],
-  },
-  {
     id: 'chartreuse-buckle-wrap-top',
     name: 'Chartreuse Buckle-Wrap Top',
     image: '/images/chartreuse-wrap-top-on-hanger.png',
     imageAlt: 'Bright chartreuse sleeveless wrap top with a silver buckle hanging on a wooden hanger',
     warmWeather: true,
+    pairId: 'chartreuse-top-olive-skirt',
     detailImage: '/images/chartreuse-top-olive-skirt-look-reference.jpg',
     detailAlt: 'Chartreuse buckle-wrap top and olive gathered skirt with matching sunglasses, gold earrings, olive handbag, and green heels',
     details: ['Chartreuse sleeveless buckle-wrap top', 'Olive gathered midi skirt with golden hem', 'Brown-tinted sunglasses', 'Gold hoop earrings', 'Olive shoulder bag', 'Olive slingback heels'],
@@ -112,9 +99,10 @@ const OUTFITS: RackPiece[] = [
     image: '/images/olive-gathered-skirt-on-hanger.png',
     imageAlt: 'Olive gathered midi skirt with an asymmetric golden chartreuse hem hanging on a wooden clip hanger',
     warmWeather: true,
+    pairId: 'chartreuse-top-olive-skirt',
     detailImage: '/images/chartreuse-top-olive-skirt-look-reference.jpg',
-    detailAlt: 'Olive gathered skirt with golden hem paired with a chartreuse buckle-wrap top, sunglasses, gold earrings, olive handbag, and green heels',
-    details: ['Olive gathered midi skirt with golden hem', 'Chartreuse sleeveless buckle-wrap top', 'Brown-tinted sunglasses', 'Gold hoop earrings', 'Olive shoulder bag', 'Olive slingback heels'],
+    detailAlt: 'Olive gathered skirt with golden hem paired with the chartreuse buckle-wrap top and matching accessories',
+    details: ['Olive gathered midi skirt with golden hem', 'Chartreuse buckle-wrap top', 'Brown-tinted sunglasses', 'Gold hoop earrings', 'Olive shoulder bag', 'Olive slingback heels'],
   },
   {
     id: 'ivory-floral-midi-dress',
@@ -264,6 +252,8 @@ const OUTFITS: RackPiece[] = [
   },
 ]
 
+const RECENT_RACK_PIECES_KEY = 'kloset:landing-rack-recent:v1'
+
 function shuffle<T>(items: T[]): T[] {
   const shuffled = [...items]
   for (let index = shuffled.length - 1; index > 0; index -= 1) {
@@ -280,8 +270,8 @@ type HangerAnchor = {
   hookX: number
   /** Distance from the top of the picture down to the point that rests on the rod. */
   restY: number
-  /** √(garment width × height) in source pixels: how big the piece is in its own photo. */
-  size: number
+  /** Width of the hanger itself in source pixels. */
+  hangerWidth: number
 }
 
 /** Find the hook's arch in a hanger photo so it can be placed exactly on the rod. */
@@ -320,17 +310,6 @@ function measureHanger(image: HTMLImageElement): HangerAnchor | null {
       hookEnd += 1
     }
 
-    let boxLeft = width
-    let boxRight = 0
-    let boxBottom = apex
-    for (let y = apex; y < height; y += 1) {
-      const span = rowSpan(y)
-      if (!span) continue
-      boxLeft = Math.min(boxLeft, span.left)
-      boxRight = Math.max(boxRight, span.right)
-      boxBottom = y
-    }
-
     let left = width
     let right = 0
     const archRows = Math.max(3, Math.floor((hookEnd - apex) / 2))
@@ -340,8 +319,15 @@ function measureHanger(image: HTMLImageElement): HangerAnchor | null {
       left = Math.min(left, span.left)
       right = Math.max(right, span.right)
     }
+    let hangerWidth = 0
+    // Measure the hanger before the garment silhouette takes over.
+    for (let y = hookEnd; y < Math.floor(height * 0.36); y += 1) {
+      const span = rowSpan(y)
+      if (span) hangerWidth = Math.max(hangerWidth, span.right - span.left + 1)
+    }
+    if (hangerWidth <= 0) return null
     // The rod rests just under the top of the arch, about a third of its width down.
-    return { width, height, hookX: (left + right) / 2, restY: apex + (right - left) * 0.32, size: Math.sqrt((boxRight - boxLeft + 1) * (boxBottom - apex + 1)) }
+    return { width, height, hookX: (left + right) / 2, restY: apex + (right - left) * 0.32, hangerWidth }
   } catch {
     // Unreadable canvas: the piece simply stays hidden rather than hanging in the wrong place.
     return null
@@ -359,15 +345,23 @@ function getSeason(): 'cold' | 'warm' | 'transition' {
   return 'transition'
 }
 
-/** A fresh draw from the whole wardrobe on every load. The season only tilts the odds; it never fixes the set. */
+/** Draw six pieces while avoiding the same small set on consecutive visits. */
 function createInitialPieces({ positions }: RackLayout): RackPiece[] {
   const season = getSeason()
+  let recentIds: string[] = []
+  try {
+    const stored = localStorage.getItem(RECENT_RACK_PIECES_KEY)
+    if (stored) recentIds = JSON.parse(stored) as string[]
+  } catch {
+    // The rack still works when storage is unavailable; it simply draws randomly.
+  }
+  const recent = new Set(recentIds)
   const lean = (outfit: RackPiece) => {
-    if (season === 'cold') return outfit.outerwear ? 0.4 : 0
-    if (season === 'warm') return (outfit.warmWeather ? 0.4 : 0) - (outfit.outerwear ? 0.4 : 0)
+    if (season === 'cold') return outfit.outerwear ? 0.08 : 0
+    if (season === 'warm') return (outfit.warmWeather ? 0.08 : 0) - (outfit.outerwear ? 0.08 : 0)
     return 0
   }
-  const ranked = OUTFITS.map((outfit) => ({ outfit, score: Math.random() + lean(outfit) }))
+  const ranked = OUTFITS.map((outfit) => ({ outfit, score: Math.random() + lean(outfit) - (recent.has(outfit.id) ? 1 : 0) }))
     .sort((a, b) => b.score - a.score)
     .map(({ outfit }) => outfit)
 
@@ -380,7 +374,13 @@ function createInitialPieces({ positions }: RackLayout): RackPiece[] {
     const swapOut = [...chosen].reverse().find((other) => !other.pairId)
     if (swapOut) chosen[chosen.indexOf(swapOut)] = partner
   }
-  return shuffle(chosen)
+  const result = shuffle(chosen)
+  try {
+    localStorage.setItem(RECENT_RACK_PIECES_KEY, JSON.stringify([...recentIds, ...result.map((piece) => piece.id)].slice(-12)))
+  } catch {
+    // Ignore private-mode or quota errors.
+  }
+  return result
 }
 
 interface InteractiveRackHeroProps {
@@ -424,7 +424,8 @@ export function InteractiveRackHero({ onRackInteract, immersed = false, sceneRef
   useEffect(() => () => window.clearTimeout(settleTilt.current), [])
 
   const registerAnchor = (id: string, image: HTMLImageElement) => {
-    const anchor = measureHanger(image)
+    const measuredAnchor = measureHanger(image)
+    const anchor = measuredAnchor
     if (anchor) setAnchors((current) => (current[id] ? current : { ...current, [id]: anchor }))
   }
 
@@ -580,14 +581,24 @@ export function InteractiveRackHero({ onRackInteract, immersed = false, sceneRef
               const held = carried?.id === piece.id
               const facing = held || hoveredId === piece.id
               const anchor = anchors[piece.id]
-              const scale = anchor ? (RACK_SIZE[kindOf(piece)] * layout.size) / anchor.size : 0
+              const hangerSlotCqw = layout.spacing * 0.72
+              const imageWidthRatio = anchor ? anchor.width / anchor.hangerWidth : 0
+              const imageHeightRatio = anchor ? anchor.height / anchor.hangerWidth : 0
+              const hookXRatio = anchor ? anchor.hookX / anchor.hangerWidth : 0
+              const restYRatio = anchor ? anchor.restY / anchor.hangerWidth : 0
               return (
                 <button
                   key={piece.id}
                   type="button"
                   aria-label={piece.name ? `Select ${piece.name}. Shift and arrow keys move it along the rail.` : 'Empty wooden hanger'}
-                  onClick={() => {
-                    if (!suppressClick.current && piece.image) selectPiece(piece.id)
+                  onClick={(event) => {
+                    if (suppressClick.current || !piece.image) return
+                    // Garment cutouts can extend past their narrow slot button. Resolve pointer
+                    // clicks by the hanger position the user touched, not the overlapping hitbox.
+                    const clickedId = event.detail === 0
+                      ? piece.id
+                      : displayed[slotAt(sceneX(event.clientX))] ?? piece.id
+                    if (pieces.some((candidate) => candidate.id === clickedId && candidate.image)) selectPiece(clickedId)
                   }}
                   onPointerDown={(event) => piece.image && startGesture(event, piece.id)}
                   onPointerMove={(event) => moveGesture(event, piece.id)}
@@ -640,10 +651,10 @@ export function InteractiveRackHero({ onRackInteract, immersed = false, sceneRef
                         className="pointer-events-none absolute max-w-none select-none"
                         style={{
                           opacity: anchor ? 1 : 0,
-                          left: anchor ? `${-anchor.hookX * scale}cqw` : 0,
-                          top: anchor ? `${-anchor.restY * scale}cqw` : 0,
-                          width: anchor ? `${anchor.width * scale}cqw` : undefined,
-                          height: anchor ? `${anchor.height * scale}cqw` : undefined,
+                          left: anchor ? `max(${-hookXRatio * STANDARD_HANGER_WIDTH_IN}in, ${-hookXRatio * hangerSlotCqw}cqw)` : 0,
+                          top: anchor ? `max(${-restYRatio * STANDARD_HANGER_WIDTH_IN}in, ${-restYRatio * hangerSlotCqw}cqw)` : 0,
+                          width: anchor ? `min(${imageWidthRatio * STANDARD_HANGER_WIDTH_IN}in, ${imageWidthRatio * hangerSlotCqw}cqw)` : undefined,
+                          height: anchor ? `min(${imageHeightRatio * STANDARD_HANGER_WIDTH_IN}in, ${imageHeightRatio * hangerSlotCqw}cqw)` : undefined,
                           transform: 'translateZ(1px)',
                           filter: held ? 'drop-shadow(0 22px 22px rgba(42,34,24,0.26))' : 'drop-shadow(0 10px 14px rgba(42,34,24,0.22))',
                           transition: 'opacity 300ms, filter 200ms',
@@ -699,7 +710,6 @@ export function InteractiveRackHero({ onRackInteract, immersed = false, sceneRef
             <div className="flex min-h-0 flex-col justify-center overflow-y-auto p-6 sm:p-9">
               <p className="text-xs uppercase tracking-[0.22em] text-[#777364]">Complete look</p>
               <h2 id="outfit-detail-title" className="mt-3 font-display text-2xl text-[#243d2c]">{selectedPiece.name}</h2>
-              <p className="mt-3 text-sm leading-relaxed text-[#665f52]">Clothing and matching accessories detected in your outfit photo.</p>
               <ul className="mt-5 space-y-2 text-sm text-[#383b32]">
                 {selectedPiece.details?.map((detail) => <li key={detail} className="flex gap-2"><span className="text-[#355f43]">•</span>{detail}</li>)}
               </ul>

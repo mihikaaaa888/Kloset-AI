@@ -10,6 +10,8 @@ type DbItem = {
   name: string
   category: string
   subcategory: string | null
+  neckline_closure?: string | null
+  construction?: string | null
   image_id: string | null
   image_url: string | null
   image_storage_path: string | null
@@ -36,6 +38,8 @@ function toItem(row: DbItem): ClothingItem {
     name: row.name,
     category: row.category as ClothingItem['category'],
     subcategory: row.subcategory ?? undefined,
+    neckline_closure: row.neckline_closure ?? undefined,
+    construction: row.construction ?? undefined,
     imageId: row.image_id ?? undefined,
     imageStoragePath: row.image_storage_path ?? undefined,
     imageUrl: row.image_url,
@@ -64,6 +68,8 @@ function toRow(userId: string, item: ClothingItem): Omit<DbItem, 'user_id'> & { 
     name: item.name,
     category: item.category,
     subcategory: item.subcategory ?? null,
+    neckline_closure: item.neckline_closure ?? null,
+    construction: item.construction ?? null,
     image_id: item.imageId ?? null,
     image_url: item.imageUrl,
     image_storage_path: item.imageStoragePath ?? null,

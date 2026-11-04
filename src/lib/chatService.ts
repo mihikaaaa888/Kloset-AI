@@ -6,6 +6,10 @@ import { CATALOG_ITEMS } from '@/lib/catalogData'
 export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
+  /** Browser-only preview; omitted from chat API requests and persisted storage. */
+  imagePreviewUrl?: string
+  /** Browser-only previews for multiple attached outfit photos. */
+  imagePreviewUrls?: string[]
 }
 
 // A compact, representative slice of the shoppable catalog (not all 39+
@@ -30,7 +34,7 @@ const SLOT_HEADINGS: Record<ClothingCategory, string> = {
   tops: 'Top',
   bottoms: 'Bottom',
   dresses: 'Dress',
-  outerwear: 'Outerwear',
+  outerwear: 'Woolens',
   shoes: 'Shoes',
   accessories: 'Accessory',
 }
@@ -147,7 +151,8 @@ function buildProfileSummary(profile: UserProfile | null): string {
 export async function sendChatMessage(
   messages: ChatMessage[],
   wardrobe: ClothingItem[],
-  profile: UserProfile | null
+  profile: UserProfile | null,
+  imageDataUrls?: string[]
 ): Promise<string> {
   const wardrobeSummary = buildWardrobeSummary(wardrobe)
   const wardrobeGapsSummary = buildWardrobeGapsSummary(wardrobe)
@@ -158,7 +163,13 @@ export async function sendChatMessage(
   const shopSummary = buildShopSummary()
 
   const body = JSON.stringify({
-    messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    messages: messages.map((m, index) => ({
+      role: m.role,
+      content: imageDataUrls?.length && index === messages.length - 1 && m.role === 'user' && !m.content.trim()
+        ? 'Please review the attached outfit photo(s).'
+        : m.content,
+    })),
+    ...(imageDataUrls?.length ? { imageDataUrls } : {}),
     wardrobeSummary,
     wardrobeGapsSummary,
     profileSummary,

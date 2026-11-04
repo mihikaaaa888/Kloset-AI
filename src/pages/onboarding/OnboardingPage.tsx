@@ -236,16 +236,21 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
           />
         )}
         {step === 4 && (
-          <Step4Catalogue
-            selected={draft.styleItemSelections}
-            onToggle={(id) => toggleArray('styleItemSelections', id)}
+          <Step9Gender
+            value={draft.genderStylePreference ?? ''}
+            onChange={(v) => update('genderStylePreference', v)}
             onNext={goNext}
           />
         )}
         {step === 5 && (
-          <Step9Gender
-            value={draft.genderStylePreference ?? ''}
-            onChange={(v) => update('genderStylePreference', v)}
+          <Step4Catalogue
+            selected={draft.styleItemSelections}
+            preferredAudience={draft.genderStylePreference === 'masculine'
+              ? 'men'
+              : draft.genderStylePreference === 'feminine'
+                ? 'women'
+                : 'all'}
+            onToggle={(id) => toggleArray('styleItemSelections', id)}
             onNext={goNext}
           />
         )}
@@ -494,18 +499,22 @@ function Step3Occupation({
 // Step 4 — Style Catalogue
 function Step4Catalogue({
   selected,
+  preferredAudience,
   onToggle,
   onNext,
 }: {
   selected: string[]
+  preferredAudience: 'all' | 'women' | 'men'
   onToggle: (id: string) => void
   onNext: () => void
 }) {
   const [activeCategory, setActiveCategory] = useState<string>('all')
+  const [activeAudience, setActiveAudience] = useState<'all' | 'women' | 'men'>(preferredAudience)
 
-  const filtered = activeCategory === 'all'
-    ? CATALOGUE_ITEMS
-    : CATALOGUE_ITEMS.filter((item) => item.category === activeCategory)
+  const filtered = CATALOGUE_ITEMS.filter((item) =>
+    (activeCategory === 'all' || item.category === activeCategory) &&
+    (activeAudience === 'all' || (item.gender ?? 'women') === activeAudience)
+  )
 
   return (
     <div>
@@ -514,6 +523,30 @@ function Step4Catalogue({
         title="Pick pieces you'd wear"
         subtitle="Pick as many as you like."
       />
+
+      {/* Keep the men's inspiration picks easy to discover without hiding the existing range. */}
+      <div className="mb-4 flex flex-wrap gap-2" aria-label="Style inspiration audience">
+        {([
+          ['all', 'All styles'],
+          ['women', 'Women'],
+          ['men', 'Men'],
+        ] as const).map(([audience, label]) => (
+          <button
+            key={audience}
+            type="button"
+            aria-pressed={activeAudience === audience}
+            onClick={() => setActiveAudience(audience)}
+            className={clsx(
+              'rounded-full border px-3 py-1.5 text-xs transition-colors',
+              activeAudience === audience
+                ? 'border-text-primary bg-text-primary text-warm-cream'
+                : 'border-text-primary/15 bg-surface/60 text-text-muted hover:border-text-primary/35 hover:text-text-primary'
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       {/* Category tabs */}
       <div className="flex gap-6 overflow-x-auto pb-2 mb-5" style={{ scrollbarWidth: 'none' }}>

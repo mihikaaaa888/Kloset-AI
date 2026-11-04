@@ -92,6 +92,27 @@ export async function removeConnection(requestId: string): Promise<void> {
   console.log('[friends] connection removed', requestId)
 }
 
+export interface FriendMessage {
+  id: string
+  senderId: string
+  recipientId: string
+  body: string
+  createdAt: string
+}
+
+export async function listFriendMessages(friendId: string, myId: string): Promise<FriendMessage[]> {
+  const { data, error } = await supabase.from('friend_messages').select('id,sender_id,recipient_id,body,created_at')
+    .or(`and(sender_id.eq.${myId},recipient_id.eq.${friendId}),and(sender_id.eq.${friendId},recipient_id.eq.${myId})`)
+    .order('created_at', { ascending: true })
+  if (error) fail('load messages', error)
+  return ((data ?? []) as { id: string; sender_id: string; recipient_id: string; body: string; created_at: string }[]).map((row) => ({ id: row.id, senderId: row.sender_id, recipientId: row.recipient_id, body: row.body, createdAt: row.created_at }))
+}
+
+export async function sendFriendMessage(friendId: string, myId: string, body: string): Promise<void> {
+  const { error } = await supabase.from('friend_messages').insert({ sender_id: myId, recipient_id: friendId, body: body.trim() })
+  if (error) fail('send message', error)
+}
+
 // ─── Sharing ──────────────────────────────────────────────────────────────────
 
 async function dataUrlToBlob(url: string): Promise<Blob> {
@@ -150,8 +171,8 @@ export async function sendShare(
   recipientIds: string[],
   myId: string,
   message: string
-): Promise<void> {
-  if (recipientIds.length === 0) return
+): Promise<string[]> {
+  if (recipientIds.length === 0) return []
   const bundleId = crypto.randomUUID()
 
   let payload: SharePayload
@@ -168,7 +189,9 @@ export async function sendShare(
     payload = { title: target.outfit.name, occasion: target.outfit.occasion, pieces }
   }
 
-  const rows = recipientIds.map((recipient_id) => ({
+  const shareIds = recipientIds.map(() => crypto.randomUUID())
+  const rows = recipientIds.map((recipient_id, index) => ({
+    id: shareIds[index],
     sender_id: myId,
     recipient_id,
     bundle_id: bundleId,
@@ -179,6 +202,7 @@ export async function sendShare(
   const { error } = await supabase.from('shares').insert(rows)
   if (error) fail('send share', error)
   console.log('[friends] shared', { kind: target.kind, recipients: recipientIds.length, pieces: payload.pieces.length })
+  return shareIds
 }
 
 type DbShare = {

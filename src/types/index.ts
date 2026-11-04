@@ -70,6 +70,8 @@ export interface ClothingItem {
   name: string
   category: ClothingCategory
   subcategory?: string
+  neckline_closure?: string
+  construction?: string
   // imageId: IndexedDB key for the stored Blob (new path, survives refresh)
   imageId?: string
   // imageStoragePath: copy of the imageId photo in Supabase Storage, so other devices can show it
@@ -171,6 +173,8 @@ export interface Outfit {
   whyItWorks: string
   generatedAt: string
   savedAt?: string
+  /** Timestamp set when the outfit enters the recycle bin. */
+  trashedAt?: string
   isSaved: boolean
   source: 'ai-mock' | 'ai-api' | 'manual'
 }

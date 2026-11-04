@@ -181,6 +181,8 @@ export function SignupPage() {
           </Button>
         </form>
 
+        <p className="mt-4 text-center text-xs text-text-muted">Read our <Link to="/privacy" className="underline underline-offset-2 hover:text-text-primary">Privacy Policy</Link>.</p>
+
         <p className="text-center text-sm text-text-muted mt-8">
           Already have an account?{' '}
           <Link to="/login" className="inline-block py-2 text-butter-yellow hover:text-soft-butter transition-colors font-medium">

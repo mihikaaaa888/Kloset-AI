@@ -13,7 +13,7 @@ interface HeroCopyProps {
 }
 
 /**
- * The headline/CTA block — "Your wardrobe, curated for you" + Build My Kloset.
+ * The headline/CTA block — "Your wardrobe, reimagined" + Build My Kloset.
  * Shown below the interactive rack hero on the landing page.
  */
 export function HeroCopy({ onCTA, animate = true, align = 'left', tone = 'light' }: HeroCopyProps) {
@@ -29,7 +29,7 @@ export function HeroCopy({ onCTA, animate = true, align = 'left', tone = 'light'
       >
         Your wardrobe,
         <br />
-        <em className="italic">curated for you</em>
+        <em className="italic">reimagined</em>
       </h1>
 
       <div

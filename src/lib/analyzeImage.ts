@@ -4,6 +4,8 @@ export interface ClothingAnalysis {
   name: string | null
   category: string | null
   subcategory: string | null
+  neckline_closure: string | null
+  construction: string | null
   primaryColor: string | null
   secondaryColors: string[]
   material: string | null

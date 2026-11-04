@@ -6,6 +6,8 @@ export interface KlosetCollection {
   name: string
   /** Saved outfit IDs are references; an outfit can stay in Main and appear here too. */
   outfitIds: string[]
+  /** Wardrobe pieces included in this subset. Main implicitly contains every piece. */
+  itemIds: string[]
 }
 
 interface KlosetStore {
@@ -13,12 +15,15 @@ interface KlosetStore {
   activeCollectionId: string
   createCollection: (name: string) => string | null
   selectCollection: (id: string) => void
+  setCollectionItems: (collectionId: string, itemIds: string[]) => void
+  addItems: (collectionId: string, itemIds: string[]) => void
+  removeItem: (collectionId: string, itemId: string) => void
   addOutfits: (collectionId: string, outfitIds: string[]) => void
   removeOutfit: (collectionId: string, outfitId: string) => void
   deleteCollection: (id: string) => void
 }
 
-const MAIN_COLLECTION: KlosetCollection = { id: 'main', name: 'Main Kloset', outfitIds: [] }
+const MAIN_COLLECTION: KlosetCollection = { id: 'main', name: 'Main Kloset', outfitIds: [], itemIds: [] }
 
 export const useKlosetStore = create<KlosetStore>()(
   persist(
@@ -31,13 +36,31 @@ export const useKlosetStore = create<KlosetStore>()(
         if (!name) return null
         const id = crypto.randomUUID()
         set((state) => ({
-          collections: [...state.collections, { id, name, outfitIds: [] }],
+          collections: [...state.collections, { id, name, outfitIds: [], itemIds: [] }],
           activeCollectionId: id,
         }))
         return id
       },
 
       selectCollection: (activeCollectionId) => set({ activeCollectionId }),
+
+      setCollectionItems: (collectionId, itemIds) => set((state) => ({
+        collections: state.collections.map((collection) => collection.id !== collectionId || collection.id === 'main'
+          ? collection
+          : { ...collection, itemIds: [...new Set(itemIds)] }),
+      })),
+
+      addItems: (collectionId, itemIds) => set((state) => ({
+        collections: state.collections.map((collection) => collection.id !== collectionId || collection.id === 'main'
+          ? collection
+          : { ...collection, itemIds: [...new Set([...collection.itemIds, ...itemIds])] }),
+      })),
+
+      removeItem: (collectionId, itemId) => set((state) => ({
+        collections: state.collections.map((collection) => collection.id !== collectionId || collection.id === 'main'
+          ? collection
+          : { ...collection, itemIds: collection.itemIds.filter((id) => id !== itemId) }),
+      })),
 
       addOutfits: (collectionId, outfitIds) => set((state) => ({
         collections: state.collections.map((collection) => collection.id !== collectionId
@@ -64,7 +87,10 @@ export const useKlosetStore = create<KlosetStore>()(
       name: 'kloset-collections',
       merge: (persisted, current) => {
         const stored = persisted as Partial<KlosetStore> | undefined
-        const collections = stored?.collections?.filter((collection) => collection.id !== 'main') ?? []
+        const collections = stored?.collections?.filter((collection) => collection.id !== 'main').map((collection) => ({
+          ...collection,
+          itemIds: Array.isArray(collection.itemIds) ? collection.itemIds : [],
+        })) ?? []
         return {
           ...current,
           ...stored,

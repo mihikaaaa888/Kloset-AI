@@ -1,4 +1,5 @@
 import type { ClothingCategory, StylePreference } from '@/types'
+import { MEN_CATALOG_ITEMS } from '@/lib/catalogData'
 
 export interface CataloguePickItem {
   id: string
@@ -13,6 +14,7 @@ export interface CataloguePickItem {
   style: StylePreference[]
   colour: string
   tags: string[]
+  gender?: 'women' | 'men'
 }
 
 // Gen Z pieces with real product photos from H&M, Myntra and Newme — the same stores the shop uses.
@@ -122,12 +124,29 @@ export const CATALOGUE_ITEMS: CataloguePickItem[] = [
     fallbackColor: '#5A1F24', style: ['eclectic', 'streetwear'], tags: ['sunglasses', 'y2k', '90s'] },
 ]
 
+// Include the existing men's shop picks as visual style references in the
+// survey, while keeping their stable catalog IDs for downstream chat context.
+CATALOGUE_ITEMS.push(...MEN_CATALOG_ITEMS.map((item) => ({
+  id: item.id,
+  label: item.name,
+  category: item.category,
+  subcategory: item.subcategory ?? item.category,
+  imageUrl: item.imageUrl,
+  brand: item.brand === 'Myntra' ? 'Myntra' as const : 'H&M' as const,
+  productUrl: item.shopUrl,
+  fallbackColor: '#EDE9E2',
+  style: item.styleAesthetics,
+  colour: item.colours.join(', '),
+  tags: [item.subcategory, item.material, ...item.occasions].filter((tag): tag is string => Boolean(tag)),
+  gender: 'men' as const,
+})))
+
 export const CATALOGUE_CATEGORIES: { value: ClothingCategory | 'all'; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'tops', label: 'Tops' },
   { value: 'bottoms', label: 'Bottoms' },
   { value: 'dresses', label: 'Dresses' },
-  { value: 'outerwear', label: 'Outerwear' },
+  { value: 'outerwear', label: 'Woolens' },
   { value: 'shoes', label: 'Shoes' },
   { value: 'accessories', label: 'Accessories' },
 ]

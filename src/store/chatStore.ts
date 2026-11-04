@@ -18,6 +18,11 @@ export const useChatStore = create<ChatStore>()(
         })),
       clear: () => set({ messages: [] }),
     }),
-    { name: 'kloset-chat' }
+    {
+      name: 'kloset-chat',
+      partialize: (state) => ({
+        messages: state.messages.map(({ imagePreviewUrl: _preview, imagePreviewUrls: _previews, ...message }) => message),
+      }),
+    }
   )
 )

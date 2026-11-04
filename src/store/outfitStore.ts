@@ -10,9 +10,17 @@ interface OutfitStore {
   trashOutfit: (id: string) => void
   restoreOutfit: (id: string) => void
   permanentlyDeleteOutfit: (id: string) => void
+  pruneExpiredTrashedOutfits: () => void
   clearOutfits: () => void
   setCurrentOutfit: (outfit: Outfit | null) => void
   isOutfitSaved: (id: string) => boolean
+}
+
+const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
+
+function isWithinTrashRetention(outfit: Outfit): boolean {
+  const trashedAt = Date.parse(outfit.trashedAt ?? '')
+  return Number.isFinite(trashedAt) && Date.now() - trashedAt < TRASH_RETENTION_MS
 }
 
 export const useOutfitStore = create<OutfitStore>()(
@@ -36,7 +44,7 @@ export const useOutfitStore = create<OutfitStore>()(
         if (!outfit) return state
         return {
           savedOutfits: state.savedOutfits.filter((item) => item.id !== id),
-          trashedOutfits: [outfit, ...state.trashedOutfits.filter((item) => item.id !== id)],
+          trashedOutfits: [{ ...outfit, trashedAt: new Date().toISOString() }, ...state.trashedOutfits.filter((item) => item.id !== id)],
         }
       }),
 
@@ -53,12 +61,37 @@ export const useOutfitStore = create<OutfitStore>()(
         trashedOutfits: state.trashedOutfits.filter((item) => item.id !== id),
       })),
 
+      pruneExpiredTrashedOutfits: () => set((state) => {
+        const trashedOutfits = state.trashedOutfits.filter(isWithinTrashRetention)
+        return trashedOutfits.length === state.trashedOutfits.length ? state : { trashedOutfits }
+      }),
+
       clearOutfits: () => set({ savedOutfits: [], trashedOutfits: [], currentOutfit: null }),
 
       setCurrentOutfit: (outfit) => set({ currentOutfit: outfit }),
 
       isOutfitSaved: (id) => get().savedOutfits.some((o) => o.id === id),
     }),
-    { name: 'kloset-outfits' }
+    {
+      name: 'kloset-outfits',
+      version: 1,
+      migrate: (persistedState, version) => {
+        const state = persistedState as Partial<OutfitStore>
+        if (version < 1) {
+          const migratedAt = new Date().toISOString()
+          return {
+            ...state,
+            trashedOutfits: (state.trashedOutfits ?? []).map((outfit) => ({
+              ...outfit,
+              trashedAt: outfit.trashedAt ?? migratedAt,
+            })),
+          }
+        }
+        return state as OutfitStore
+      },
+      onRehydrateStorage: () => (state) => {
+        state?.pruneExpiredTrashedOutfits()
+      },
+    }
   )
 )

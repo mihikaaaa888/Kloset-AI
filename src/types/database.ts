@@ -61,6 +61,8 @@ export interface Database {
           name: string
           category: string
           subcategory: string | null
+          neckline_closure: string | null
+          construction: string | null
           image_id: string | null
           image_url: string | null
           image_storage_path: string | null
@@ -86,6 +88,8 @@ export interface Database {
           name: string
           category: string
           subcategory?: string | null
+          neckline_closure?: string | null
+          construction?: string | null
           image_id?: string | null
           image_url?: string | null
           image_storage_path?: string | null
@@ -109,6 +113,8 @@ export interface Database {
           name?: string
           category?: string
           subcategory?: string | null
+          neckline_closure?: string | null
+          construction?: string | null
           image_id?: string | null
           image_url?: string | null
           image_storage_path?: string | null

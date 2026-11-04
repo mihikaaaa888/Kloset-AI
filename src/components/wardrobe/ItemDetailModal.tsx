@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Heart, Pencil, Trash2, Plus, X, Send } from 'lucide-react'
-import { clsx } from 'clsx'
+import { Pencil, Trash2, Plus, X, Send, Sparkles } from 'lucide-react'
 import { colourNameToHex, isLightColour } from '@/lib/colourUtils'
 import { useItemImage } from '@/hooks/useItemImage'
 import { CATEGORY_LABEL, CategoryGlyph } from '@/components/wardrobe/categoryVisuals'
@@ -12,10 +11,11 @@ interface ItemDetailModalProps {
   open: boolean
   onClose: () => void
   onEdit: () => void
+  onStyle: () => void
   onDelete: () => void
-  onToggleFavourite: () => void
-  onIncrementWorn: () => void
+  onIncrementWorn: (date: string) => void
   onSend: () => void
+  deleteLabel?: string
 }
 
 /**
@@ -30,13 +30,27 @@ export function ItemDetailModal({
   open,
   onClose,
   onEdit,
+  onStyle,
   onDelete,
-  onToggleFavourite,
   onIncrementWorn,
   onSend,
+  deleteLabel = 'Remove from Kloset',
 }: ItemDetailModalProps) {
   const imageUrl = useItemImage(item)
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null)
+  const [wearDate, setWearDate] = useState(todayDateInput())
+  const [showWearDate, setShowWearDate] = useState(false)
+  const [lastWearDate, setLastWearDate] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!item) return
+    try {
+      const logs = JSON.parse(localStorage.getItem('kloset-wear-log-dates') ?? '{}') as Record<string, string[]>
+      setLastWearDate(logs[item.id]?.at(-1) ?? null)
+    } catch {
+      setLastWearDate(null)
+    }
+  }, [item?.id])
 
   useEffect(() => { setNaturalSize(null) }, [imageUrl])
 
@@ -111,26 +125,20 @@ export function ItemDetailModal({
             {item.name}
           </h2>
 
-          <div className="flex items-center gap-3 mt-8">
+          <div className="mt-8">
+            <button
+              onClick={onStyle}
+              className="mb-3 flex w-full items-center justify-center gap-2 h-12 ring-1 ring-inset ring-text-primary/20 text-text-primary text-xs font-medium uppercase tracking-widest hover:ring-text-primary/50 transition-colors"
+            >
+              <Sparkles size={14} strokeWidth={1.5} />
+              Style this item
+            </button>
             <button
               onClick={onEdit}
-              className="flex-1 flex items-center justify-center gap-2 h-12 bg-text-primary text-warm-cream text-xs font-medium uppercase tracking-widest hover:bg-text-primary/90 transition-colors"
+              className="flex w-full items-center justify-center gap-2 h-12 bg-text-primary text-warm-cream text-xs font-medium uppercase tracking-widest hover:bg-text-primary/90 transition-colors"
             >
               <Pencil size={14} strokeWidth={1.5} />
               Edit piece
-            </button>
-            <button
-              onClick={onToggleFavourite}
-              aria-label={item.isFavourite ? 'Remove from favourites' : 'Add to favourites'}
-              aria-pressed={item.isFavourite}
-              className={clsx(
-                'w-12 h-12 flex items-center justify-center ring-1 ring-inset transition-colors',
-                item.isFavourite
-                  ? 'ring-rose-300 text-rose-500 bg-rose-50'
-                  : 'ring-text-primary/20 text-text-primary hover:ring-text-primary/50'
-              )}
-            >
-              <Heart size={18} strokeWidth={1.25} className={item.isFavourite ? 'fill-rose-500' : ''} />
             </button>
           </div>
           <button
@@ -161,28 +169,39 @@ export function ItemDetailModal({
             {item.pattern && item.pattern !== 'solid' && (
               <DetailRow label="Pattern"><span className="capitalize">{item.pattern}</span></DetailRow>
             )}
-            {item.seasons.length > 0 && (
-              <DetailRow label="Season">
-                <span className="capitalize">{item.seasons.map((s) => s.replace('-', ' ')).join(', ')}</span>
-              </DetailRow>
-            )}
             {item.occasions.length > 0 && (
               <DetailRow label="Wear to">
                 <span className="capitalize">{item.occasions.map((o) => o.replace('-', ' ')).join(', ')}</span>
               </DetailRow>
             )}
             <DetailRow label="Times worn">
-              <span className="flex items-center justify-end gap-3">
-                <span className="tabular-nums">{item.timesWorn}</span>
-                <button
-                  onClick={onIncrementWorn}
-                  className="flex items-center gap-1 text-2xs uppercase tracking-widest font-semibold text-butter-yellow hover:underline underline-offset-4"
-                >
-                  <Plus size={12} strokeWidth={1.5} />
-                  Log wear
-                </button>
-              </span>
+              <span className="tabular-nums">{item.timesWorn}</span>
             </DetailRow>
+            <div className="flex justify-start border-b border-text-primary/10 py-3">
+              <button
+                onClick={() => { setWearDate(todayDateInput()); setShowWearDate((showing) => !showing) }}
+                className="inline-flex items-center gap-2 border border-text-primary/20 px-4 py-2 text-xs font-medium text-text-primary transition-colors hover:border-text-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow"
+              >
+                <Plus size={14} strokeWidth={1.5} />
+                Log wear
+              </button>
+            </div>
+            {showWearDate && (
+              <div className="flex flex-wrap items-center justify-end gap-3 border-b border-text-primary/10 py-4">
+                <label htmlFor="wear-date" className="mr-auto text-xs text-text-muted">Date worn</label>
+                <input id="wear-date" type="date" value={wearDate} max={todayDateInput()} onChange={(event) => setWearDate(event.target.value)} className="rounded-lg border border-text-primary/15 bg-surface px-3 py-2 text-sm text-text-primary" />
+                <button type="button" disabled={!wearDate} onClick={() => {
+                  const logs = (() => { try { return JSON.parse(localStorage.getItem('kloset-wear-log-dates') ?? '{}') as Record<string, string[]> } catch { return {} as Record<string, string[]> } })()
+                  const itemLogs = [...(logs[item.id] ?? []), wearDate].sort()
+                  logs[item.id] = itemLogs
+                  try { localStorage.setItem('kloset-wear-log-dates', JSON.stringify(logs)) } catch (error) { console.error('[item-detail] wear date could not be saved', error) }
+                  setLastWearDate(wearDate)
+                  onIncrementWorn(wearDate)
+                  setShowWearDate(false)
+                }} className="rounded-lg bg-text-primary px-3 py-2 text-xs text-surface disabled:opacity-40">Save</button>
+              </div>
+            )}
+            {!showWearDate && lastWearDate && <p className="border-b border-text-primary/10 py-2 text-right text-xs text-text-muted">Last worn {new Date(`${lastWearDate}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>}
           </dl>
 
           {item.notes && (
@@ -194,16 +213,22 @@ export function ItemDetailModal({
 
           <button
             onClick={onDelete}
-            className="mt-10 flex items-center gap-2 text-2xs uppercase tracking-widest text-text-muted hover:text-red-700 transition-colors"
+            aria-label={deleteLabel}
+            className="mt-10 flex h-10 w-10 items-center justify-center text-text-muted transition-colors hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow"
           >
             <Trash2 size={13} strokeWidth={1.5} />
-            Remove from Kloset
           </button>
         </div>
       </div>
     </div>,
     document.body
   )
+}
+
+function todayDateInput() {
+  const today = new Date()
+  const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60_000)
+  return localDate.toISOString().slice(0, 10)
 }
 
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {

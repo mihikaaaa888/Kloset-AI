@@ -5,7 +5,9 @@ import { UndoToast } from '@/components/ui/UndoToast'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { useDataSync } from '@/hooks/useDataSync'
 import { useApplyTheme } from '@/hooks/useTheme'
+import { useOutfitStore } from '@/store/outfitStore'
 import { LandingPage } from '@/pages/LandingPage'
+import { PrivacyPolicyPage } from '@/pages/PrivacyPolicyPage'
 
 // Everything past the landing page loads on demand, so a first visit to /
 // doesn't download the whole app before anything shows.
@@ -67,6 +69,13 @@ function RedirectIfAuth({ children }: { children: ReactNode }) {
 
 function AppRoutes() {
   useDataSync()
+  const pruneExpiredTrashedOutfits = useOutfitStore((s) => s.pruneExpiredTrashedOutfits)
+
+  useEffect(() => {
+    pruneExpiredTrashedOutfits()
+    const timer = window.setInterval(pruneExpiredTrashedOutfits, 60 * 60 * 1000)
+    return () => window.clearInterval(timer)
+  }, [pruneExpiredTrashedOutfits])
 
   return (
     <>
@@ -78,6 +87,7 @@ function AppRoutes() {
       <Routes>
         {/* Public */}
         <Route path="/" element={<LandingPage />} />
+        <Route path="/privacy" element={<PrivacyPolicyPage />} />
         <Route path="/login" element={<RedirectIfAuth><LoginPage /></RedirectIfAuth>} />
         <Route path="/signup" element={<RedirectIfAuth><SignupPage /></RedirectIfAuth>} />
         <Route path="/forgot-password" element={<RedirectIfAuth><ForgotPasswordPage /></RedirectIfAuth>} />

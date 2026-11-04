@@ -9,7 +9,7 @@ import type { ClothingCategory } from '@/types'
 type MissingRole = 'top' | 'bottom' | 'outerwear' | 'shoes'
 
 const ROLE_NOUN: Record<MissingRole, string> = { top: 'top', bottom: 'trousers', outerwear: 'jacket', shoes: 'shoes' }
-const ROLE_LABEL: Record<MissingRole, string> = { top: 'A top', bottom: 'A bottom', outerwear: 'A layer', shoes: 'Shoes' }
+const ROLE_LABEL: Record<MissingRole, string> = { top: 'A top', bottom: 'A bottom', outerwear: 'Woolens', shoes: 'Shoes' }
 const ROLE_CATEGORY: Record<MissingRole, ClothingCategory> = { top: 'tops', bottom: 'bottoms', outerwear: 'outerwear', shoes: 'shoes' }
 const OCCASION_WORD: Record<string, string> = {
   work: 'work', casual: 'casual', 'date-night': 'evening', formal: 'formal', weekend: 'weekend',
@@ -113,7 +113,6 @@ export function CompleteTheLook({ suggestion }: { suggestion: OutfitSuggestion }
   return (
     <div className="border-t border-text-primary/10 pt-5">
       <p className="text-xs font-medium uppercase tracking-widest text-butter-yellow mb-1">Complete the look</p>
-      <p className="text-sm text-text-muted mb-4">Your Kloset doesn&apos;t have these yet — here&apos;s what would finish it.</p>
       <div className="space-y-5">
         {missing.map((role) => (
           <MissingPiece key={role} role={role} suggestion={suggestion} />

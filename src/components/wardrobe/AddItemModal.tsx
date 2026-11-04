@@ -42,16 +42,16 @@ const CATEGORIES: { value: ClothingCategory; label: string }[] = [
   { value: 'tops', label: 'Tops' },
   { value: 'bottoms', label: 'Bottoms' },
   { value: 'dresses', label: 'Dresses' },
-  { value: 'outerwear', label: 'Outerwear' },
+  { value: 'outerwear', label: 'Woolens' },
   { value: 'shoes', label: 'Shoes' },
   { value: 'accessories', label: 'Accessories' },
 ]
 
 const SUBCATEGORIES: Partial<Record<ClothingCategory, string[]>> = {
-  tops: ['T-shirt', 'Shirt', 'Blouse', 'Tank Top', 'Polo', 'Crop Top', 'Hoodie', 'Sweatshirt'],
+  tops: ['T-shirt', 'Shirt', 'Blouse', 'Tank Top', 'Polo', 'Crop Top'],
   bottoms: ['Jeans', 'Trousers', 'Shorts', 'Skirt', 'Leggings', 'Joggers'],
   dresses: ['Casual Dress', 'Midi Dress', 'Maxi Dress', 'Mini Dress', 'Wrap Dress', 'Sundress'],
-  outerwear: ['Blazer', 'Jacket', 'Coat', 'Cardigan', 'Puffer', 'Raincoat', 'Leather Jacket'],
+  outerwear: ['Sweater', 'Sweatshirt', 'Hoodie', 'Cardigan', 'Blazer', 'Jacket', 'Coat', 'Puffer', 'Raincoat', 'Leather Jacket'],
   shoes: ['Sneakers', 'Boots', 'Heels', 'Loafers', 'Sandals', 'Flats', 'Mules'],
   accessories: ['Bag', 'Jewellery', 'Belt', 'Hat', 'Scarf', 'Watch', 'Sunglasses'],
 }
@@ -96,6 +96,8 @@ interface ItemDraft {
   name: string
   category: ClothingCategory | ''
   subcategory: string
+  neckline_closure: string
+  construction: string
   colour: string[]
   material: string
   pattern: Pattern | ''
@@ -112,6 +114,8 @@ function blankDraft(): ItemDraft {
     name: '',
     category: '',
     subcategory: '',
+    neckline_closure: '',
+    construction: '',
     colour: [],
     material: '',
     pattern: 'solid',
@@ -124,11 +128,17 @@ function blankDraft(): ItemDraft {
   }
 }
 
+function draftForDetectedPiece(category?: ClothingCategory, name?: string): ItemDraft {
+  return { ...blankDraft(), category: category ?? '', name: name ?? '' }
+}
+
 function itemToDraft(item: ClothingItem): ItemDraft {
   return {
     name: item.name,
     category: item.category,
     subcategory: item.subcategory ?? '',
+    neckline_closure: item.neckline_closure ?? '',
+    construction: item.construction ?? '',
     colour: item.colour,
     material: item.material ?? '',
     pattern: item.pattern,
@@ -158,9 +168,11 @@ interface AddItemModalProps {
   onClose: () => void
   onSave: (item: ClothingItem) => void
   editItem?: ClothingItem
+  initialTab?: 'upload' | 'browse'
+  initialFiles?: File[] | null
 }
 
-export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalProps) {
+export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'upload', initialFiles = null }: AddItemModalProps) {
   const [draft, setDraft] = useState<ItemDraft>(() =>
     editItem ? itemToDraft(editItem) : blankDraft()
   )
@@ -181,6 +193,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
   // AI analysis state
   const [aiAnalyzing, setAiAnalyzing] = useState(false)
   const [aiApplied, setAiApplied] = useState(false)
+  const [lowConfidenceFields, setLowConfidenceFields] = useState<string[]>([])
 
   // Photo tab state
   const [photoTab, setPhotoTab] = useState<'upload' | 'url' | 'browse'>('upload')
@@ -212,14 +225,15 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
     setPreviewUrl(editItem?.imageUrl ?? null)
     setAiAnalyzing(false)
     setAiApplied(false)
-    setPhotoTab('upload')
+    setLowConfidenceFields([])
+    setPhotoTab(initialTab)
     setUrlInput('')
     setUrlError(null)
     setUrlLoading(false)
 
     pendingMap.current = new Map()
     priorImageId.current = null
-  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, initialTab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load existing IndexedDB image for edit mode ──────────────────────────────
   useEffect(() => {
@@ -294,7 +308,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
       setActiveImageId(first.imageId)
       setPreviewUrl(first.previewUrl)
       setLegacyImageUrl(null)
-      setDraft({ ...blankDraft(), category: first.detectedCategory ?? '', name: first.detectedName ?? '' })
+      setDraft(draftForDetectedPiece(first.detectedCategory, first.detectedName))
 
       setUploadBatch(processed.length > 1 ? processed : [])
       setBatchIdx(0)
@@ -318,8 +332,41 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
     }
   }, [activeImageId, editItem?.imageId, editItem?.category]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const processedInitialFiles = useRef<File[] | null>(null)
+  useEffect(() => {
+    if (!open || !initialFiles?.length || processedInitialFiles.current === initialFiles) return
+    processedInitialFiles.current = initialFiles
+    void processFiles(initialFiles)
+  }, [open, initialFiles, processFiles])
+
   // ── AI analysis ──────────────────────────────────────────────────────────────
   const applyAnalysis = useCallback((analysis: ClothingAnalysis, detectedCategory?: ClothingCategory, detectedName?: string) => {
+    const categoryConfidence = analysis.confidence?.category ?? 0
+    const groqCategory = analysis.category && VALID_CATEGORIES.has(analysis.category)
+      ? analysis.category as ClothingCategory
+      : undefined
+    const finalCategory = categoryConfidence >= 0.6
+      ? groqCategory
+      : (detectedCategory ?? groqCategory)
+    const lowFields = [
+      ...(categoryConfidence < 0.6 ? ['category'] : []),
+      ...(analysis.subcategory && (analysis.confidence?.subcategory ?? 0) < 0.6 ? ['subcategory'] : []),
+      ...(analysis.neckline_closure && (analysis.confidence?.neckline_closure ?? 0) < 0.6 ? ['neckline_closure'] : []),
+      ...(analysis.construction && (analysis.confidence?.construction ?? 0) < 0.6 ? ['construction'] : []),
+      ...(analysis.primaryColor && (analysis.confidence?.color ?? 0) < 0.6 ? ['colour'] : []),
+      ...(analysis.material && (analysis.confidence?.material ?? 0) < 0.6 ? ['material'] : []),
+    ]
+    setLowConfidenceFields(lowFields)
+
+    if (import.meta.env.DEV) {
+      console.info('[garment-category-debug]', {
+        localSegmentationCategory: detectedCategory ?? null,
+        groqCategory: groqCategory ?? null,
+        groqCategoryConfidence: categoryConfidence,
+        finalCategory: finalCategory ?? null,
+      })
+    }
+
     setDraft((prev) => {
       const next = { ...prev }
 
@@ -329,16 +376,14 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
       if (analysis.name && (!prev.name.trim() || (detectedName && prev.name === detectedName))) next.name = analysis.name
       else if (detectedName && !prev.name.trim()) next.name = detectedName
 
-      if (detectedCategory) {
-        next.category = detectedCategory === 'tops' && analysis.category === 'outerwear'
-          ? 'outerwear'
-          : detectedCategory
-        next.subcategory = analysis.subcategory || (detectedName && !['Top', 'Pants', 'Shoes'].includes(detectedName) ? detectedName : '')
-      } else if (analysis.category && VALID_CATEGORIES.has(analysis.category)) {
-        next.category = analysis.category as ClothingCategory
-        next.subcategory = ''
-      }
-      if (analysis.subcategory) next.subcategory = analysis.subcategory
+      const woolenSubcategories = new Set(['sweater', 'sweatshirt', 'hoodie', 'cardigan', 'coat', 'jacket', 'blazer', 'raincoat', 'puffer', 'parka', 'trench coat'])
+      const analysisSubcategory = analysis.subcategory?.toLowerCase()
+      const resolvedCategory = analysisSubcategory && woolenSubcategories.has(analysisSubcategory) ? 'outerwear' : finalCategory
+      if (resolvedCategory) next.category = resolvedCategory
+      if (!analysis.subcategory) next.subcategory = ''
+      else next.subcategory = analysis.subcategory
+      next.neckline_closure = analysis.neckline_closure ?? ''
+      next.construction = analysis.construction ?? ''
 
       const colours = [analysis.primaryColor, ...(analysis.secondaryColors ?? [])]
         .filter((c): c is string => !!c && VALID_COLOURS.has(c))
@@ -372,6 +417,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
   const runAiAnalysis = useCallback(async (blob: Blob, detectedCategory?: ClothingCategory, detectedName?: string) => {
     setAiAnalyzing(true)
     setAiApplied(false)
+    setLowConfidenceFields([])
     try {
       const analysis = await analyzeImage(blob)
       if (analysis) {
@@ -391,6 +437,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
   const runAiAnalysisFromUrl = useCallback(async (url: string) => {
     setAiAnalyzing(true)
     setAiApplied(false)
+    setLowConfidenceFields([])
     try {
       const analysis = await analyzeImageFromUrl(url)
       if (analysis) {
@@ -527,7 +574,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
     setActiveImageId(next.imageId)
     setPreviewUrl(next.previewUrl)
     setLegacyImageUrl(null)
-    setDraft({ ...blankDraft(), category: next.detectedCategory ?? '', name: next.detectedName ?? '' })
+    setDraft(draftForDetectedPiece(next.detectedCategory, next.detectedName))
     setErrors({})
     setImageError(null)
     setAiApplied(false)
@@ -574,6 +621,8 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
       name: draft.name.trim(),
       category: draft.category as ClothingCategory,
       subcategory: draft.subcategory || undefined,
+      neckline_closure: draft.neckline_closure || undefined,
+      construction: draft.construction || undefined,
       ...imageFields,
       colour: draft.colour,
       material: draft.material.trim() || undefined,
@@ -634,6 +683,10 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
 
   // ── Render ───────────────────────────────────────────────────────────────────
   const subcategoryOptions = draft.category ? SUBCATEGORIES[draft.category as ClothingCategory] : undefined
+  const isLowConfidence = (field: string) => lowConfidenceFields.includes(field)
+  const reviewFieldClass = (field: string) => isLowConfidence(field)
+    ? 'rounded-xl border border-amber-500/60 bg-amber-50/40 p-3'
+    : ''
 
   const batchLabel = isInBatch
     ? `Garment ${batchIdx + 1} of ${uploadBatch.length}`
@@ -770,7 +823,7 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
             </div>
           ) : photoTab === 'browse' ? (
             <ImageSearchBrowser
-              defaultQuery={[draft.subcategory, draft.category, 'clothing'].filter(Boolean).join(' ')}
+              defaultQuery={buildSingleItemQuery(draft.category, draft.subcategory)}
               onSelect={(url) => {
                 setPreviewUrl(url)
                 setLegacyImageUrl(url)
@@ -858,7 +911,11 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
               <HangerIcon size={13} className="text-butter-yellow mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-butter-yellow">Auto-filled from your photo</p>
-                <p className="text-2xs text-text-muted mt-0.5">Review and adjust any fields before saving.</p>
+                <p className="text-2xs text-text-muted mt-0.5">
+                  {editItem
+                    ? (lowConfidenceFields.length ? 'Highlighted fields need your confirmation. You can still save as-is.' : 'Review and adjust any fields before saving.')
+                    : 'Colour, fit, season and other details are saved automatically.'}
+                </p>
               </div>
               <button
                 onClick={() => setAiApplied(false)}
@@ -892,8 +949,8 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
         </div>
 
         {/* ── Category ── */}
-        <div>
-          <SectionLabel error={errors.category}>Category *</SectionLabel>
+        <div className={reviewFieldClass('category')}>
+          <SectionLabel error={errors.category} review={isLowConfidence('category')}>Category *</SectionLabel>
           <div className="flex flex-wrap gap-2">
             {CATEGORIES.map((cat) => (
               <button
@@ -919,10 +976,15 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
           )}
         </div>
 
+        {/* New uploads show only name, category and notes. Type, colours, pattern,
+            fit, formality, material, seasons, occasions and brand are still filled
+            in from the photo analysis and saved with the piece (Kaia and the outfit
+            engine use them); they're only shown when editing an existing piece. */}
+        {!!editItem && <>
         {/* ── Subcategory ── */}
         {subcategoryOptions && subcategoryOptions.length > 0 && (
-          <div>
-            <SectionLabel>Type</SectionLabel>
+          <div className={reviewFieldClass('subcategory')}>
+            <SectionLabel review={isLowConfidence('subcategory')}>Type</SectionLabel>
             <div className="flex flex-wrap gap-2">
               {subcategoryOptions.map((sub) => (
                 <SelectChip
@@ -936,9 +998,39 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
           </div>
         )}
 
+        {/* ── Garment construction details ── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className={reviewFieldClass('neckline_closure')}>
+            <SectionLabel review={isLowConfidence('neckline_closure')}>Neckline / closure</SectionLabel>
+            <select
+              value={draft.neckline_closure}
+              onChange={(e) => update('neckline_closure', e.target.value)}
+              className="w-full rounded-xl border border-text-primary/15 bg-surface px-3 py-2.5 text-sm text-text-primary"
+            >
+              <option value="">Not specified</option>
+              {['crew', 'v-neck', 'turtleneck', 'collared', 'quarter-zip', 'half-zip', 'full-zip', 'button-up', 'hooded', 'other'].map((value) => (
+                <option key={value} value={value}>{value.replace(/-/g, ' ')}</option>
+              ))}
+            </select>
+          </div>
+          <div className={reviewFieldClass('construction')}>
+            <SectionLabel review={isLowConfidence('construction')}>Construction</SectionLabel>
+            <select
+              value={draft.construction}
+              onChange={(e) => update('construction', e.target.value)}
+              className="w-full rounded-xl border border-text-primary/15 bg-surface px-3 py-2.5 text-sm text-text-primary"
+            >
+              <option value="">Not specified</option>
+              {['knit', 'fleece', 'jersey', 'woven', 'denim', 'other'].map((value) => (
+                <option key={value} value={value}>{value}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         {/* ── Colours ── */}
-        <div>
-          <SectionLabel>Colours</SectionLabel>
+        <div className={reviewFieldClass('colour')}>
+          <SectionLabel review={isLowConfidence('colour')}>Colours</SectionLabel>
           <div className="flex flex-wrap gap-3">
             {COLOUR_PALETTE.map((colour) => (
               <div key={colour.name} className="flex flex-col items-center gap-1">
@@ -1002,8 +1094,8 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
         </div>
 
         {/* ── Material ── */}
-        <div>
-          <SectionLabel>Material</SectionLabel>
+        <div className={reviewFieldClass('material')}>
+          <SectionLabel review={isLowConfidence('material')}>Material</SectionLabel>
           <TextInput
             placeholder="e.g. Cotton, Wool, Silk, Denim…"
             value={draft.material}
@@ -1041,24 +1133,24 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
           </div>
         </div>
 
-        {/* ── Brand + Notes ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <SectionLabel>Brand (optional)</SectionLabel>
-            <TextInput
-              placeholder="e.g. Zara, COS, Uniqlo…"
-              value={draft.brand}
-              onChange={(e) => update('brand', e.target.value)}
-            />
-          </div>
-          <div>
-            <SectionLabel>Notes (optional)</SectionLabel>
-            <TextInput
-              placeholder="Any notes about this piece…"
-              value={draft.notes}
-              onChange={(e) => update('notes', e.target.value)}
-            />
-          </div>
+        <div>
+          <SectionLabel>Brand (optional)</SectionLabel>
+          <TextInput
+            placeholder="e.g. Zara, COS, Uniqlo…"
+            value={draft.brand}
+            onChange={(e) => update('brand', e.target.value)}
+          />
+        </div>
+        </>}
+
+        {/* ── Notes ── */}
+        <div>
+          <SectionLabel>Notes (optional)</SectionLabel>
+          <TextInput
+            placeholder="Any notes about this piece…"
+            value={draft.notes}
+            onChange={(e) => update('notes', e.target.value)}
+          />
         </div>
 
 
@@ -1067,10 +1159,11 @@ export function AddItemModal({ open, onClose, onSave, editItem }: AddItemModalPr
   )
 }
 
-function SectionLabel({ children, error }: { children: React.ReactNode; error?: string }) {
+function SectionLabel({ children, error, review }: { children: React.ReactNode; error?: string; review?: boolean }) {
   return (
-    <p className={clsx('text-sm font-medium mb-3', error ? 'text-red-500' : 'text-text-primary')}>
+    <p className={clsx('text-sm font-medium mb-3 flex items-center gap-2', error ? 'text-red-500' : 'text-text-primary')}>
       {children}
+      {review && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">Please confirm</span>}
     </p>
   )
 }
@@ -1085,6 +1178,29 @@ interface PexelsPhoto {
   photographer: string
 }
 
+const BROWSE_ITEM_QUERIES = [
+  ['Tops', 'single top shirt or blouse isolated product photo'],
+  ['Bottoms', 'single pair of trousers jeans or skirt isolated product photo'],
+  ['Dresses', 'single dress isolated product photo'],
+  ['Woolens', 'single sweater cardigan jacket or coat isolated product photo'],
+  ['Shoes', 'single pair of shoes isolated product photo'],
+  ['Accessories', 'single bag or accessory isolated product photo'],
+] as const
+
+function buildSingleItemQuery(category?: string, subcategory?: string) {
+  if (!category && !subcategory) return ''
+  const item = subcategory || (category === 'tops' ? 'top shirt or blouse' : category === 'bottoms' ? 'trousers jeans or skirt' : category === 'dresses' ? 'dress' : category === 'outerwear' ? 'jacket coat or blazer' : category === 'shoes' ? 'pair of shoes' : 'bag or accessory')
+  return `single ${item} isolated product photo`
+}
+
+function isolatedPhotoQuery(input: string) {
+  const trimmed = input.trim()
+  if (!trimmed) return ''
+  return /^single\b/i.test(trimmed) && /isolated product photo/i.test(trimmed)
+    ? trimmed
+    : `single ${trimmed} isolated product photo`
+}
+
 function ImageSearchBrowser({
   defaultQuery,
   onSelect,
@@ -1092,11 +1208,11 @@ function ImageSearchBrowser({
   defaultQuery: string
   onSelect: (url: string) => void
 }) {
-  const [query, setQuery] = useState(defaultQuery || 'clothing fashion')
+  const [query, setQuery] = useState(defaultQuery)
   const [photos, setPhotos] = useState<PexelsPhoto[]>([])
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
-  const [totalResults, setTotalResults] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
   const [noKey, setNoKey] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -1109,7 +1225,7 @@ function ImageSearchBrowser({
       const data = await res.json()
       if (data.noKey) { setNoKey(true); return }
       setPhotos(data.photos ?? [])
-      setTotalResults(data.totalResults ?? 0)
+      setTotalPages(data.totalPages ?? 0)
       setPage(p)
     } catch {
       setError('Could not load images — make sure the API server is running.')
@@ -1117,13 +1233,6 @@ function ImageSearchBrowser({
       setLoading(false)
     }
   }, [])
-
-  // Auto-search on mount with the default query
-  useEffect(() => {
-    search(query, 1)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const totalPages = Math.ceil(totalResults / 18)
 
   if (noKey) {
     return (
@@ -1146,6 +1255,14 @@ function ImageSearchBrowser({
 
   return (
     <div className="space-y-3">
+      <div>
+        <p className="mb-2 text-xs text-text-muted">Search for one item to see isolated product photos.</p>
+        <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Browse item categories">
+          {BROWSE_ITEM_QUERIES.map(([label, itemQuery]) => (
+            <button key={label} type="button" onClick={() => { setQuery(itemQuery); search(itemQuery, 1) }} className="shrink-0 rounded-full border border-text-primary/15 px-3 py-1.5 text-xs text-text-muted transition-colors hover:border-text-primary/35 hover:text-text-primary">{label}</button>
+          ))}
+        </div>
+      </div>
       {/* Search bar */}
       <div className="flex gap-2">
         <div className="relative flex-1">
@@ -1154,14 +1271,14 @@ function ImageSearchBrowser({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') search(query, 1) }}
-            placeholder="e.g. black blazer, white sneakers…"
+            onKeyDown={(e) => { if (e.key === 'Enter') search(isolatedPhotoQuery(query), 1) }}
+            placeholder="Search one item, e.g. pink cardigan…"
             className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-text-primary/20 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-primary/50 bg-surface"
           />
         </div>
         <button
           type="button"
-          onClick={() => search(query, 1)}
+          onClick={() => search(isolatedPhotoQuery(query), 1)}
           disabled={loading}
           className="px-4 py-2.5 rounded-xl bg-dark-purple text-butter-yellow text-sm font-medium hover:bg-deep-purple transition-colors disabled:opacity-40"
         >
@@ -1181,7 +1298,7 @@ function ImageSearchBrowser({
           ))}
         </div>
       ) : photos.length === 0 ? (
-        <p className="text-sm text-text-muted text-center py-6">No results for "{query}" — try different words.</p>
+        <p className="text-sm text-text-muted text-center py-6">{query ? `No single-item photos found for "${query}" — try another item.` : 'Choose a category or search for one item to browse product photos.'}</p>
       ) : (
         <div className="grid grid-cols-3 gap-2">
           {photos.map((photo) => (

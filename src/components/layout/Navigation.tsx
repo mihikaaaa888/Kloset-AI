@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { clsx } from 'clsx'
-import { Home, Shirt, User, Menu, X, Compass, Users } from 'lucide-react'
+import { Home, Shirt, User, Menu, X, Compass, Users, Settings, LogOut } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
-import { ThemeToggleButton } from '@/components/ui/ThemeToggle'
 import { useUserStore } from '@/store/userStore'
 import { useAuth } from '@/contexts/AuthContext'
 import { countFriendActivity, FRIENDS_CHANGED_EVENT } from '@/lib/friendService'
@@ -25,20 +24,33 @@ export const authNavItems: NavItem[] = [
   { label: 'Shop', to: '/discover', icon: <Compass size={18} />, requiresAuth: true },
   { label: 'Stylist', to: '/stylist', icon: <HangerIcon size={18} />, requiresAuth: true },
   { label: 'Friends', to: '/friends', icon: <Users size={18} />, requiresAuth: true },
-  { label: 'Profile', to: '/profile', icon: <User size={18} />, requiresAuth: true },
 ]
 
 export function Navigation() {
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const navigate = useNavigate()
   const location = useLocation()
   const profile = useUserStore((s) => s.profile)
-  const { user } = useAuth()
+  const { user, signOut } = useAuth()
 
   const isOnboarding = location.pathname.startsWith('/onboarding')
   const isAuthPage = ['/login', '/signup', '/forgot-password', '/reset-password'].includes(location.pathname)
   const isLanding = location.pathname === '/'
 
-  useEffect(() => { setMobileOpen(false) }, [location.pathname])
+  useEffect(() => { setMobileOpen(false); setDrawerOpen(false) }, [location.pathname, location.search])
+
+  useEffect(() => {
+    if (!drawerOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setDrawerOpen(false) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [drawerOpen])
+
+  const handleSignOut = async () => {
+    setDrawerOpen(false)
+    try { await signOut(); navigate('/') } catch (error) { console.error('[nav] sign out failed', error) }
+  }
 
   // Pending requests + unseen shares, refreshed on navigation, every minute, and when the Friends page changes something.
   const [friendBadge, setFriendBadge] = useState(0)
@@ -78,19 +90,34 @@ export function Navigation() {
         <nav className="mx-auto max-w-7xl px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 lg:h-20">
 
-            {/* Logo */}
-            <NavLink to="/" className="flex items-center gap-2" aria-label="Kloset home">
-              <span className={clsx(
-                'font-brand text-xl tracking-tight transition-colors duration-300',
-                'text-text-primary'
-              )}>
-                Kloset
-              </span>
-            </NavLink>
+            <div className="flex items-center">
+            {hasTabBar ? (
+              // Signed in: a home icon to today's outfit replaces the logo and the "Home" tab.
+              <NavLink
+                to="/home"
+                end
+                aria-label="Today's outfit"
+                title="Today's outfit"
+                className={({ isActive }) => clsx(
+                  'w-11 h-11 -ml-2.5 flex items-center justify-center rounded-full transition-colors hover:bg-text-primary/5',
+                  isActive ? 'text-butter-yellow' : 'text-text-primary'
+                )}
+              >
+                <Home size={21} />
+              </NavLink>
+            ) : (
+              <NavLink to="/" className="flex items-center gap-2" aria-label="Kloset home">
+                <span className="font-brand text-xl tracking-tight text-text-primary transition-colors duration-300">
+                  Kloset
+                </span>
+              </NavLink>
+            )}
+            </div>
 
+            <div className="flex items-center gap-4 lg:gap-6">
             {/* Desktop nav */}
             <div className="hidden md:flex items-center gap-7 lg:gap-9">
-              {(user && profile?.onboardingComplete ? authNavItems : publicNavItems).map((item) => {
+              {(user && profile?.onboardingComplete ? authNavItems.filter((item) => item.to !== '/home') : publicNavItems).map((item) => {
                 if (item.requiresAuth && !user) return null
                 if (item.requiresAuth && !profile?.onboardingComplete) return null
                 return (
@@ -106,8 +133,6 @@ export function Navigation() {
                 )
               })}
 
-              <ThemeToggleButton className="-mx-2" />
-
               {!user && (
                 <NavLink
                   to="/signup"
@@ -118,8 +143,20 @@ export function Navigation() {
               )}
             </div>
 
-            <div className="flex items-center md:hidden">
-            <ThemeToggleButton className={clsx(!hasTabBar && 'mr-1')} />
+            {/* Account menu (Profile, Settings, Log out), top right */}
+            {hasTabBar && (
+              <button
+                onClick={() => setDrawerOpen(true)}
+                className="w-11 h-11 -mr-2.5 flex items-center justify-center rounded-full text-text-primary transition-colors hover:bg-text-primary/5"
+                aria-label="Open menu"
+                aria-expanded={drawerOpen}
+              >
+                <Menu size={22} />
+              </button>
+            )}
+            </div>
+
+            <div className={clsx('flex items-center md:hidden', hasTabBar && 'hidden')}>
             {/* Mobile menu button */}
             <button
               onClick={() => setMobileOpen((v) => !v)}
@@ -135,6 +172,39 @@ export function Navigation() {
           </div>
         </nav>
       </header>
+
+      {/* Account drawer: Profile, Settings, Log out */}
+      {drawerOpen && hasTabBar && (
+        <div className="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-label="Account menu">
+          <div className="absolute inset-0 bg-scrim/40 backdrop-blur-sm animate-fade-in" onClick={() => setDrawerOpen(false)} />
+          <aside className="absolute inset-y-0 right-0 flex w-72 max-w-[85vw] flex-col bg-warm-cream shadow-lifted animate-drawer-in-right" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+            <div className="flex h-16 lg:h-20 items-center justify-between border-b border-text-primary/10 px-6">
+              <span className="font-brand text-xl tracking-tight text-text-primary">Kloset</span>
+              <button onClick={() => setDrawerOpen(false)} aria-label="Close menu" className="-mr-2.5 flex h-11 w-11 items-center justify-center rounded-full text-text-primary hover:bg-text-primary/5">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="flex flex-col px-3 py-4">
+              {[
+                { label: 'Profile', icon: <User size={18} />, onClick: () => navigate('/profile') },
+                { label: 'Settings', icon: <Settings size={18} />, onClick: () => navigate('/profile?settings=1') },
+                { label: 'Privacy Policy', icon: <span className="w-[18px] text-center text-sm">ⓘ</span>, onClick: () => navigate('/privacy') },
+              ].map((row) => (
+                <button key={row.label} onClick={row.onClick} className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base text-text-primary transition-colors hover:bg-text-primary/5">
+                  {row.icon}
+                  {row.label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-auto border-t border-text-primary/10 px-3 py-4" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+              <button onClick={handleSignOut} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-base text-text-primary transition-colors hover:bg-text-primary/5">
+                <LogOut size={18} />
+                Log out
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
 
       {/* Mobile menu overlay */}
       {mobileOpen && !hasTabBar && (
@@ -182,7 +252,8 @@ export function Navigation() {
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
           <div className="flex items-stretch px-1">
-            {authNavItems.map((item) => (
+            {/* Home lives in the top bar's home icon, so the tab bar leaves it out. */}
+            {authNavItems.filter((item) => item.to !== '/home').map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}

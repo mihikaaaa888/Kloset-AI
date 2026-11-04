@@ -1,4 +1,4 @@
-import { CATALOG_ITEMS } from '@/lib/catalogData'
+import { ALL_CATALOG_ITEMS } from '@/lib/catalogData'
 import type { CatalogItem, ClothingCategory, ClothingItem, StylePreference, UserProfile } from '@/types'
 import { affinityForLearnedTraits } from '@/lib/styleLearning'
 import { learnStyleFromWardrobe } from '@/lib/styleLearning'
@@ -8,7 +8,7 @@ import { learnStyleFromWardrobe } from '@/lib/styleLearning'
 // price; renting filters on the weekly rental price, so each band carries
 // both a buy and a rent range.
 
-export type BudgetId = 'any' | 'low' | 'mid' | 'high' | 'luxe'
+export type BudgetId = 'any' | 'under1000' | '1000to2500' | '2500to4000' | '4000to6500' | 'custom'
 
 interface BudgetBand {
   id: BudgetId
@@ -19,11 +19,12 @@ interface BudgetBand {
 }
 
 export const BUDGET_BANDS: BudgetBand[] = [
-  { id: 'any',  buyLabel: 'Any budget',          rentLabel: 'Any budget',            buy: [0, Infinity],      rent: [0, Infinity] },
-  { id: 'low',  buyLabel: 'Under ₹2,500',        rentLabel: 'Under ₹500 / wk',       buy: [0, 2499],          rent: [0, 499] },
-  { id: 'mid',  buyLabel: '₹2,500 – ₹6,000',     rentLabel: '₹500 – ₹1,000 / wk',    buy: [2500, 5999],       rent: [500, 999] },
-  { id: 'high', buyLabel: '₹6,000 – ₹15,000',    rentLabel: '₹1,000 – ₹2,000 / wk',  buy: [6000, 14999],      rent: [1000, 1999] },
-  { id: 'luxe', buyLabel: '₹15,000+',            rentLabel: '₹2,000+ / wk',          buy: [15000, Infinity],  rent: [2000, Infinity] },
+  { id: 'any',  buyLabel: 'None',               rentLabel: 'None',                  buy: [0, Infinity],      rent: [0, Infinity] },
+  { id: 'under1000', buyLabel: 'Under ₹1,000', rentLabel: 'Under ₹1,000 / wk', buy: [0, 999], rent: [0, 999] },
+  { id: '1000to2500', buyLabel: '₹1,000 – ₹2,500', rentLabel: '₹1,000 – ₹2,500 / wk', buy: [1000, 2499], rent: [1000, 2499] },
+  { id: '2500to4000', buyLabel: '₹2,500 – ₹4,000', rentLabel: '₹2,500 – ₹4,000 / wk', buy: [2500, 3999], rent: [2500, 3999] },
+  { id: '4000to6500', buyLabel: '₹4,000 – ₹6,500', rentLabel: '₹4,000 – ₹6,500 / wk', buy: [4000, 6500], rent: [4000, 6500] },
+  { id: 'custom', buyLabel: 'Custom', rentLabel: 'Custom', buy: [0, Infinity], rent: [0, Infinity] },
 ]
 
 const INR = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
@@ -35,13 +36,15 @@ export function formatINR(amount: number): string {
 
 const band = (id: BudgetId) => BUDGET_BANDS.find((b) => b.id === id) ?? BUDGET_BANDS[0]
 
-export function fitsBuyBudget(item: CatalogItem, budget: BudgetId): boolean {
+export function fitsBuyBudget(item: CatalogItem, budget: BudgetId, customAmount?: number): boolean {
   const [lo, hi] = band(budget).buy
+  if (budget === 'custom') return Number.isFinite(customAmount) && customAmount! > 0 && item.estimatedPrice <= customAmount!
   return item.estimatedPrice >= lo && item.estimatedPrice <= hi
 }
 
-export function fitsRentBudget(item: CatalogItem, budget: BudgetId): boolean {
+export function fitsRentBudget(item: CatalogItem, budget: BudgetId, customAmount?: number): boolean {
   const [lo, hi] = band(budget).rent
+  if (budget === 'custom') return Number.isFinite(customAmount) && customAmount! > 0 && item.rentPricePerWeek <= customAmount!
   return item.rentPricePerWeek >= lo && item.rentPricePerWeek <= hi
 }
 
@@ -153,8 +156,16 @@ export function recommendForPiece(
   const styles = profile?.stylePreferences ?? []
   const groups = COMPLEMENTS[anchor.category].map((category) => ({
     category,
-    items: CATALOG_ITEMS
-      .filter((i) => i.category === category && fitsBuyBudget(i, budget))
+    items: ALL_CATALOG_ITEMS
+      .filter((i) => {
+        const preference = profile?.genderStylePreference
+        const matchesGender = preference === 'feminine'
+          ? i.gender === 'women'
+          : preference === 'masculine'
+            ? i.gender === 'men'
+            : true
+        return matchesGender && i.category === category && fitsBuyBudget(i, budget)
+      })
       .sort((a, b) => complementScore(b, anchor, styles) - complementScore(a, anchor, styles))
       .slice(0, perCategory),
   })).filter((g) => g.items.length > 0)

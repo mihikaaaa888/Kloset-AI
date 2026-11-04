@@ -207,7 +207,7 @@ function OutfitDetailTile({
   resolved: ResolvedOutfitItem
   featured?: boolean
 }) {
-  const { item, role } = resolved
+  const { item } = resolved
   const imageUrl = useItemImage(item)
 
   if (!item) {
@@ -240,9 +240,6 @@ function OutfitDetailTile({
             className={clsx('select-none', isLight ? 'text-text-primary opacity-30' : 'text-white opacity-40')}
           />
         )}
-        <span className="absolute top-2 left-2 text-2xs font-medium uppercase tracking-widest px-2 py-0.5 rounded-full bg-surface/90 backdrop-blur-sm text-charcoal-700 capitalize">
-          {role}
-        </span>
       </div>
       <div className="px-3 py-2.5">
         <p className="text-xs font-medium text-charcoal-900 truncate">{item.name}</p>

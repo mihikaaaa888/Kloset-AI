@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Send, RotateCcw, Plus, Check, ExternalLink } from 'lucide-react'
+import { Send, RotateCcw, Plus, Check, ExternalLink, ImagePlus, Camera, X } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { clsx } from 'clsx'
 import { sendChatMessage, type ChatMessage } from '@/lib/chatService'
@@ -8,6 +8,8 @@ import { searchWebShopCached, cleanProductTitle, type Retailer } from '@/lib/web
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useUserStore } from '@/store/userStore'
 import { useChatStore } from '@/store/chatStore'
+import { getImage } from '@/lib/imageStorage'
+import { getPhotoUrl } from '@/lib/wardrobeService'
 import { deleteWithUndo } from '@/store/undoStore'
 import { useAuth } from '@/contexts/AuthContext'
 import { insertItem } from '@/lib/wardrobeService'
@@ -18,11 +20,9 @@ import type { CatalogItem, ClothingCategory, ClothingItem, WebShopResult } from 
 
 const SUGGESTED_PROMPTS = [
   'What should I wear today?',
-  'Style my wardrobe for a date night.',
-  'Give me 3 outfits using my wardrobe.',
-  'What goes with my favourite pieces?',
-  'I need something for a formal event.',
 ]
+
+const DAILY_OCCASIONS = ['Work', 'Casual', 'Date night', 'Formal', 'Weekend', 'Travel', 'Gym', 'Special event']
 
 // Kaia is grounded on a sample of the catalog (see chatService's shopSummary)
 // and will name real pieces by their exact catalog name — matching on that
@@ -77,7 +77,7 @@ const SLOT_LABEL: Record<string, string> = {
   top: 'Top',
   bottom: 'Bottom',
   dress: 'Dress',
-  outerwear: 'Layer',
+  outerwear: 'Woolens',
   shoes: 'Shoes',
   accessory: 'Accessory',
 }
@@ -128,7 +128,7 @@ function extractShopQueries(content: string): { text: string; queries: ShopQuery
   return { text, queries: queries.slice(0, 4) }
 }
 
-export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
+export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initialPrompt?: string; initialImageItemIds?: string[] }) {
   const items = useWardrobeStore((s) => s.items)
   const addItem = useWardrobeStore((s) => s.addItem)
   const profile = useUserStore((s) => s.profile)
@@ -141,11 +141,22 @@ export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
 
   const [input, setInput] = useState(initialPrompt ?? '')
   const [loading, setLoading] = useState(false)
+  const [attachedImages, setAttachedImages] = useState<File[]>([])
+  const [attachedPreviews, setAttachedPreviews] = useState<string[]>([])
+  const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null)
+  const [awaitingDailyOccasion, setAwaitingDailyOccasion] = useState(false)
   const [addedCatalogIds, setAddedCatalogIds] = useState<Set<string>>(
     () => new Set(items.map((i) => i.catalogId).filter(Boolean) as string[])
   )
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const previewUrlsRef = useRef(new Set<string>())
+  const preloadedItemIdsRef = useRef('')
+  const initialImageItemIdsKey = initialImageItemIds.join('|')
+
+  useEffect(() => () => previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url)), [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -158,18 +169,80 @@ export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
     }
   }, [initialPrompt])
 
-  const send = async (text?: string) => {
-    const content = (text ?? input).trim()
-    if (!content || loading) return
+  useEffect(() => {
+    if (!initialImageItemIdsKey || preloadedItemIdsRef.current === initialImageItemIdsKey) return
+    const requestedIds = initialImageItemIdsKey.split('|')
+    const selectedItems = requestedIds.map((id) => items.find((item) => item.id === id))
+    if (selectedItems.some((item) => !item)) return
+    preloadedItemIdsRef.current = initialImageItemIdsKey
+    let cancelled = false
+    void Promise.all(selectedItems.map(async (item) => {
+      if (!item) return null
+      let blob = item.imageId ? await getImage(item.imageId).catch(() => null) : null
+      if (!blob && item.imageStoragePath) {
+        const signedUrl = await getPhotoUrl(item.imageStoragePath).catch(() => null)
+        if (signedUrl) {
+          const response = await fetch(signedUrl).catch(() => null)
+          if (response?.ok) blob = await response.blob().catch(() => null)
+        }
+      }
+      if (!blob && item.imageUrl) {
+        const response = await fetch(item.imageUrl).catch(() => null)
+        if (response?.ok) blob = await response.blob().catch(() => null)
+      }
+      if (!blob) return null
+      const type = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(blob.type) ? blob.type : 'image/jpeg'
+      const extension = type === 'image/png' ? 'png' : type === 'image/webp' ? 'webp' : type === 'image/gif' ? 'gif' : 'jpg'
+      return new File([blob], `${item.name || 'outfit-piece'}.${extension}`, { type })
+    })).then((files) => {
+      if (cancelled) return
+      const loaded = files.filter((file): file is File => file !== null)
+      if (loaded.length) {
+        const previews = loaded.map((file) => {
+          const preview = URL.createObjectURL(file)
+          previewUrlsRef.current.add(preview)
+          return preview
+        })
+        setAttachedImages(loaded)
+        setAttachedPreviews(previews)
+      }
+      if (loaded.length !== requestedIds.length) {
+        setAttachmentNotice('Some outfit photos could not be loaded. You can attach them again below.')
+      }
+    }).catch(() => {
+      if (!cancelled) setAttachmentNotice('Could not load the outfit photos. You can attach them again below.')
+    })
+    return () => {
+      cancelled = true
+      if (preloadedItemIdsRef.current === initialImageItemIdsKey) preloadedItemIdsRef.current = ''
+    }
+  }, [initialImageItemIdsKey, items])
 
-    const userMsg: ChatMessage = { role: 'user', content }
+  const send = async (text?: string) => {
+    const typedContent = (text ?? input).trim()
+    const imageFiles = attachedImages
+    // Photos are sent as their own attachments. Keep the text empty when the
+    // user only shares images so they render without a text-message bubble.
+    const content = typedContent
+    if ((!content && !imageFiles.length) || loading) return
+    setAwaitingDailyOccasion(false)
+
+    const userMsg: ChatMessage = { role: 'user', content, ...(attachedPreviews.length ? { imagePreviewUrls: attachedPreviews } : {}) }
     const next = [...messages, userMsg]
     setMessages(next)
     setInput('')
+    setAttachedImages([])
+    setAttachedPreviews([])
+    setAttachmentNotice(null)
     setLoading(true)
 
     try {
-      const reply = await sendChatMessage(next, items, profile)
+      const prepared = imageFiles.length ? await prepareImagesForKaia(imageFiles) : null
+      // Tell Kaia how the collage is numbered; the bubble on screen keeps what was typed.
+      const outgoing = prepared?.note
+        ? next.map((m, i) => i === next.length - 1 ? { ...m, content: [m.content.trim(), prepared.note].filter(Boolean).join('\n\n') } : m)
+        : next
+      const reply = await sendChatMessage(outgoing, items, profile, prepared?.dataUrls)
       setMessages((prev) => [...prev, { role: 'assistant', content: reply }])
     } catch (e) {
       console.error('[chat] send failed', e)
@@ -181,6 +254,30 @@ export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
       }])
     } finally {
       setLoading(false)
+    }
+  }
+
+  const startDailyOutfitPrompt = () => {
+    setMessages([
+      ...messages,
+      { role: 'user', content: 'What should I wear today?' },
+      { role: 'assistant', content: 'What are you dressing for?' },
+    ])
+    setAwaitingDailyOccasion(true)
+  }
+
+  const attachImageFiles = (files: File[]) => {
+    if (!files.length) return
+    const selected = files
+    if (selected.length) {
+      const previews = selected.map((file) => {
+        const preview = URL.createObjectURL(file)
+        previewUrlsRef.current.add(preview)
+        return preview
+      })
+      setAttachedImages((current) => [...current, ...selected])
+      setAttachedPreviews((current) => [...current, ...previews])
+      setAttachmentNotice(null)
     }
   }
 
@@ -199,6 +296,7 @@ export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
       remove: () => {
         clearChat()
         setInput('')
+        setAwaitingDailyOccasion(false)
       },
       restore: () => useChatStore.getState().setMessages(previous),
     })
@@ -240,7 +338,7 @@ export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
       {/* ── Message list or empty state ── */}
       <div className="flex-1 overflow-y-auto space-y-4 pb-4">
         {isEmpty ? (
-          <EmptyState onPrompt={(p) => send(p)} />
+          <EmptyState onPrompt={() => startDailyOutfitPrompt()} />
         ) : (
           <>
             {messages.map((msg, i) => (
@@ -251,6 +349,23 @@ export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
                 onAddCatalogItem={handleAddCatalogItem}
               />
             ))}
+            {awaitingDailyOccasion && !loading && (
+              <div className="ml-9 flex flex-wrap gap-2">
+                {DAILY_OCCASIONS.map((occasion) => (
+                  <button
+                    key={occasion}
+                    type="button"
+                    onClick={() => {
+                      setAwaitingDailyOccasion(false)
+                      void send(occasion)
+                    }}
+                    className="rounded-full border border-text-primary/15 bg-surface px-4 py-2 text-sm text-text-primary transition-colors hover:border-text-primary/40"
+                  >
+                    {occasion}
+                  </button>
+                ))}
+              </div>
+            )}
             {loading && <TypingIndicator />}
             <div ref={bottomRef} />
           </>
@@ -278,35 +393,58 @@ export function StylistChat({ initialPrompt }: { initialPrompt?: string }) {
             New conversation
           </button>
         )}
-        <div className="flex gap-2 items-end">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask Kaia anything…"
-            rows={1}
-            maxLength={4000}
-            className="flex-1 resize-none px-4 py-3 rounded-2xl border border-text-primary/15 bg-surface text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-primary/40 transition-colors leading-relaxed"
-            style={{ maxHeight: 120 }}
-          />
-          <button
-            onClick={() => send()}
-            disabled={!input.trim() || loading}
-            aria-label="Send message"
-            className={clsx(
-              'w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-200 flex-shrink-0',
-              input.trim() && !loading
-                ? 'bg-dark-purple text-butter-yellow hover:bg-deep-purple'
-                : 'bg-text-primary/10 text-text-primary/30 cursor-not-allowed'
-            )}
-          >
-            <Send size={16} />
-          </button>
+        <div className="rounded-2xl border border-text-primary/15 bg-surface p-2 transition-colors focus-within:border-text-primary/40">
+          <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => {
+            attachImageFiles(Array.from(event.target.files ?? []))
+            event.target.value = ''
+          }} multiple />
+          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => {
+            attachImageFiles(Array.from(event.target.files ?? []))
+            event.target.value = ''
+          }} />
+          {!!attachedPreviews.length && <div className="flex gap-2 overflow-x-auto px-1 pb-2 pt-1">
+          {attachedPreviews.map((preview, index) => <div key={preview} className="relative w-fit">
+            <img src={preview} alt={`Outfit photo ${index + 1} attached`} className="h-16 w-14 rounded-lg object-cover" />
+            <button type="button" onClick={() => {
+              URL.revokeObjectURL(preview)
+              previewUrlsRef.current.delete(preview)
+              setAttachedPreviews((current) => current.filter((_, i) => i !== index))
+              setAttachedImages((current) => current.filter((_, i) => i !== index))
+            }} aria-label={`Remove photo ${index + 1}`} className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-text-primary text-surface"><X size={13} /></button>
+          </div>)}
+        </div>}
+          {attachmentNotice && <p className="px-1 pb-2 text-xs text-amber-700">{attachmentNotice}</p>}
+          <div className="flex items-end gap-2">
+            <div className="flex flex-shrink-0 items-center gap-1">
+              <button type="button" onClick={() => imageInputRef.current?.click()} disabled={loading || attachedImages.length >= 3} aria-label="Upload outfit photos" title="Upload image" className="flex h-10 w-10 items-center justify-center rounded-xl text-text-muted transition-colors hover:bg-text-primary/5 hover:text-text-primary disabled:opacity-40"><ImagePlus size={17} /></button>
+              <button type="button" onClick={() => cameraInputRef.current?.click()} disabled={loading || attachedImages.length >= 3} aria-label="Take a photo" title="Take a photo" className="flex h-10 w-10 items-center justify-center rounded-xl text-text-muted transition-colors hover:bg-text-primary/5 hover:text-text-primary disabled:opacity-40"><Camera size={17} /></button>
+            </div>
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask Kaia anything…"
+              rows={1}
+              maxLength={4000}
+              className="min-h-10 flex-1 resize-none bg-transparent px-2 py-2.5 text-sm leading-relaxed text-text-primary placeholder:text-text-muted focus:outline-none"
+              style={{ maxHeight: 120 }}
+            />
+            <button
+              onClick={() => send()}
+              disabled={(!input.trim() && !attachedImages.length) || loading}
+              aria-label="Send message"
+              className={clsx(
+                'flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl transition-all duration-200',
+                (input.trim() || attachedImages.length > 0) && !loading
+                  ? 'bg-dark-purple text-butter-yellow hover:bg-deep-purple'
+                  : 'bg-text-primary/10 text-text-primary/30 cursor-not-allowed'
+              )}
+            >
+              <Send size={16} />
+            </button>
+          </div>
         </div>
-        <p className="text-2xs text-text-muted mt-2">
-          Kaia has access to your wardrobe and style preferences.
-        </p>
       </div>
     </div>
   )
@@ -510,21 +648,25 @@ function MessageBubble({
   return (
     <div className={clsx('flex flex-col', isUser ? 'items-end' : 'items-start')}>
       <div className="flex w-full" style={{ justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
-        {!isUser && (
+        {isUser ? (
+          <div className="flex max-w-[88%] flex-col items-end gap-2">
+            {!!(message.imagePreviewUrls ?? (message.imagePreviewUrl ? [message.imagePreviewUrl] : [])).length && (
+              <div className="flex flex-wrap justify-end gap-2">
+                {(message.imagePreviewUrls ?? (message.imagePreviewUrl ? [message.imagePreviewUrl] : [])).map((url, index, all) => (
+                  <img key={`${url}-${index}`} src={url} alt={`Outfit photo ${index + 1} shared for review`} className={clsx('rounded-2xl object-contain', all.length > 3 ? 'max-h-28 max-w-[7rem]' : 'max-h-56 max-w-[min(100%,14rem)]')} />
+                ))}
+              </div>
+            )}
+            {!!text.trim() && <div className="max-w-full rounded-2xl rounded-br-md bg-dark-purple px-4 py-3 text-sm leading-relaxed text-text-primary"><MessageContent text={text} shopQueries={shopQueries} /></div>}
+          </div>
+        ) : (
+          <>
           <div className="w-7 h-7 rounded-full bg-dark-purple flex items-center justify-center flex-shrink-0 mt-0.5 mr-2.5">
             <HangerIcon size={13} className="text-butter-yellow" />
           </div>
+          <div className="max-w-[80%] rounded-2xl rounded-bl-md bg-surface px-4 py-3 text-sm leading-relaxed text-text-primary shadow-card"><MessageContent text={text} shopQueries={shopQueries} /></div>
+          </>
         )}
-        <div
-          className={clsx(
-            'max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed space-y-1',
-            isUser
-              ? 'bg-dark-purple text-text-primary rounded-br-md'
-              : 'bg-surface text-text-primary shadow-card rounded-bl-md'
-          )}
-        >
-          <MessageContent text={text} shopQueries={shopQueries} />
-        </div>
       </div>
 
       {shopQueries.map((q) => (
@@ -568,6 +710,89 @@ function MessageBubble({
       )}
     </div>
   )
+}
+
+// Groq's vision model accepts at most 3 images per message (the server enforces
+// the same cap). Up to 3 photos go as they are; more are packed into up to 3
+// numbered collage sheets so Kaia sees every piece, however many there are.
+const MAX_KAIA_IMAGES = 3
+const SHEET_WIDTH = 1440
+
+async function prepareImagesForKaia(files: File[]): Promise<{ dataUrls: string[]; note: string | null }> {
+  if (files.length <= MAX_KAIA_IMAGES) {
+    return { dataUrls: await Promise.all(files.map(imageFileToDataUrl)), note: null }
+  }
+  const perSheet = Math.ceil(files.length / MAX_KAIA_IMAGES)
+  const groups: File[][] = []
+  for (let i = 0; i < files.length; i += perSheet) groups.push(files.slice(i, i + perSheet))
+  const dataUrls = await Promise.all(groups.map((group, g) => buildContactSheet(group, g * perSheet)))
+  return {
+    dataUrls,
+    note: `(I've shared ${files.length} photos, combined into ${groups.length} collage image${groups.length === 1 ? '' : 's'}. Each photo is numbered 1–${files.length} in its top-left corner — please look at every one.)`,
+  }
+}
+
+async function buildContactSheet(files: File[], startIndex: number): Promise<string> {
+  const cols = Math.ceil(Math.sqrt(files.length))
+  const rows = Math.ceil(files.length / cols)
+  const tile = Math.floor(SHEET_WIDTH / cols)
+  const canvas = document.createElement('canvas')
+  canvas.width = tile * cols
+  canvas.height = tile * rows
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Could not prepare these images.')
+  context.fillStyle = '#fff'
+  context.fillRect(0, 0, canvas.width, canvas.height)
+
+  const pad = Math.max(4, Math.round(tile * 0.03))
+  const labelSize = Math.max(16, Math.round(tile * 0.09))
+  await Promise.all(files.map(async (file, i) => {
+    const objectUrl = URL.createObjectURL(file)
+    try {
+      const image = new Image()
+      image.src = objectUrl
+      await image.decode()
+      const x = (i % cols) * tile
+      const y = Math.floor(i / cols) * tile
+      const scale = Math.min((tile - pad * 2) / image.naturalWidth, (tile - pad * 2) / image.naturalHeight)
+      const w = image.naturalWidth * scale
+      const h = image.naturalHeight * scale
+      context.drawImage(image, x + (tile - w) / 2, y + (tile - h) / 2, w, h)
+      context.fillStyle = '#2B2B2B'
+      context.fillRect(x + pad, y + pad, labelSize * 1.6, labelSize * 1.3)
+      context.fillStyle = '#fff'
+      context.font = `600 ${labelSize}px sans-serif`
+      context.textAlign = 'center'
+      context.textBaseline = 'middle'
+      context.fillText(String(startIndex + i + 1), x + pad + labelSize * 0.8, y + pad + labelSize * 0.65)
+    } catch {
+      // An unreadable photo leaves a blank tile instead of failing the whole message.
+    } finally {
+      URL.revokeObjectURL(objectUrl)
+    }
+  }))
+  return canvas.toDataURL('image/jpeg', 0.82)
+}
+
+async function imageFileToDataUrl(file: File): Promise<string> {
+  const objectUrl = URL.createObjectURL(file)
+  try {
+    const image = new Image()
+    image.src = objectUrl
+    await image.decode()
+    const scale = Math.min(1, 1440 / Math.max(image.naturalWidth, image.naturalHeight))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(image.naturalWidth * scale)
+    canvas.height = Math.round(image.naturalHeight * scale)
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Could not prepare this image.')
+    context.fillStyle = '#fff'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL('image/jpeg', 0.82)
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
 }
 
 // Resolves a [[SHOP: ...]] tag into real product pages via the Exa-backed

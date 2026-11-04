@@ -1,10 +1,10 @@
-import { useState, useMemo } from 'react'
-import { Plus, Search, Shirt, Compass, ArrowRight, X } from 'lucide-react'
+import { useState, useMemo, useRef, useEffect } from 'react'
+import { Plus, Search, Shirt, Compass, X, ChevronDown, ChevronLeft } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { clsx } from 'clsx'
 
-import { CategoryFilter } from '@/components/wardrobe/CategoryFilter'
 import { ClothingCard } from '@/components/wardrobe/ClothingCard'
+import { useItemImage } from '@/hooks/useItemImage'
 import { AddItemModal } from '@/components/wardrobe/AddItemModal'
 import { ItemDetailModal } from '@/components/wardrobe/ItemDetailModal'
 import { MyOutfits } from '@/components/saved/MyOutfits'
@@ -12,16 +12,17 @@ import { BuildBoard } from '@/components/build/BuildBoard'
 import { ShareSheet } from '@/components/friends/ShareSheet'
 import type { ShareTarget } from '@/lib/friendService'
 import { Button } from '@/components/ui/Button'
+import { Modal } from '@/components/ui/Modal'
 import { useWardrobeStore } from '@/store/wardrobeStore'
+import { useKlosetStore } from '@/store/klosetStore'
 import { useUserStore } from '@/store/userStore'
-import { useOutfitStore } from '@/store/outfitStore'
-import { usePhotoCleanupStore } from '@/store/photoCleanupStore'
 import { deleteImage } from '@/lib/imageStorage'
 import { deleteWithUndo, notify } from '@/store/undoStore'
 import { SAMPLE_WARDROBE_ITEMS } from '@/lib/sampleData'
 import { useAuth } from '@/contexts/AuthContext'
 import { insertItem, updateItem as dbUpdateItem, deleteItem as dbDeleteItem } from '@/lib/wardrobeService'
 import type { ClothingItem, ClothingCategory } from '@/types'
+import { CategoryGlyph } from '@/components/wardrobe/categoryVisuals'
 
 type KlosetView = 'pieces' | 'build' | 'outfits'
 
@@ -36,27 +37,82 @@ export function WardrobePage() {
     setSearchParams(next === 'pieces' ? {} : { view: next }, { replace: true })
     console.log('[wardrobe] view changed', next)
   }
-  const { items, setItems, addItem, updateItem, removeItem, toggleFavourite, activeCategory, setActiveCategory } =
+  const { items, setItems, addItem, updateItem, removeItem, activeCategory, setActiveCategory } =
     useWardrobeStore()
+  const { collections, activeCollectionId, createCollection, selectCollection, addItems, removeItem: removeCollectionItem, setCollectionItems } = useKlosetStore()
+  const [creatingKloset, setCreatingKloset] = useState(false)
+  const [newKlosetName, setNewKlosetName] = useState('')
+  const [showKlosetMenu, setShowKlosetMenu] = useState(false)
+  const [completeSelectionMode, setCompleteSelectionMode] = useState(false)
+  const [showMainPicker, setShowMainPicker] = useState(false)
+  const [mainPickerIds, setMainPickerIds] = useState<string[]>([])
+  const klosetMenuRef = useRef<HTMLDivElement>(null)
+  const addMenuRef = useRef<HTMLDivElement>(null)
 
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showAddMenu, setShowAddMenu] = useState(false)
+  const [addPhotoTab, setAddPhotoTab] = useState<'upload' | 'browse'>('upload')
+  const [selectedUploadFiles, setSelectedUploadFiles] = useState<File[] | null>(null)
   const [editItem, setEditItem] = useState<ClothingItem | undefined>()
   const [detailItem, setDetailItem] = useState<ClothingItem | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
+  // My Kloset opens on the folder overview; tapping a folder shows its pieces.
+  const [showFolders, setShowFolders] = useState(true)
   const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null)
-  const photoCleanup = usePhotoCleanupStore()
+  const activeCollection = collections.find((collection) => collection.id === activeCollectionId) ?? collections[0]
+  const isMainCollection = activeCollectionId === 'main'
+  const closetItems = useMemo(
+    () => isMainCollection ? items : items.filter((item) => activeCollection?.itemIds.includes(item.id)),
+    [items, isMainCollection, activeCollection],
+  )
+
+  useEffect(() => {
+    if (!showKlosetMenu) return
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (event.target instanceof Node && !klosetMenuRef.current?.contains(event.target)) setShowKlosetMenu(false)
+    }
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    return () => document.removeEventListener('pointerdown', closeOnOutsideClick)
+  }, [showKlosetMenu])
+
+  useEffect(() => {
+    if (!showAddMenu) return
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (event.target instanceof Node && !addMenuRef.current?.contains(event.target)) setShowAddMenu(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setShowAddMenu(false) }
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [showAddMenu])
+
+  useEffect(() => {
+    if (!completeSelectionMode) return
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setCompleteSelectionMode(false)
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [completeSelectionMode])
 
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {}
-    for (const item of items) {
+    for (const item of closetItems) {
       counts[item.category] = (counts[item.category] ?? 0) + 1
     }
     return counts
-  }, [items])
+  }, [closetItems])
 
   const filteredItems = useMemo(() => {
-    let result = activeCategory === 'all' ? items : items.filter((i) => i.category === activeCategory)
+    // Search spans the entire Kloset even when a category folder was open.
+    let result = searchQuery.trim() || activeCategory === 'all'
+      ? closetItems
+      : closetItems.filter((i) => i.category === activeCategory)
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       result = result.filter(
@@ -68,14 +124,17 @@ export function WardrobePage() {
       )
     }
     return result
-  }, [items, activeCategory, searchQuery])
+  }, [closetItems, activeCategory, searchQuery])
 
   const handleAddSamples = () => {
+    const addedIds: string[] = []
     for (const sample of SAMPLE_WARDROBE_ITEMS) {
       const item = { ...sample, id: crypto.randomUUID() }
       addItem(item)
+      addedIds.push(item.id)
       if (user) insertItem(user.id, item).catch(() => {})
     }
+    if (!isMainCollection) addItems(activeCollectionId, addedIds)
   }
 
   const handleSaveItem = (item: ClothingItem) => {
@@ -84,6 +143,7 @@ export function WardrobePage() {
       if (user) dbUpdateItem(user.id, item).catch(() => {})
     } else {
       addItem(item)
+      if (!isMainCollection) addItems(activeCollectionId, [item.id])
       if (user) insertItem(user.id, item).catch(() => {})
     }
     setEditItem(undefined)
@@ -97,6 +157,19 @@ export function WardrobePage() {
 
   // Hidden straight away; the database row and photo only go once the Undo toast closes.
   const handleDelete = (id: string) => {
+    if (!isMainCollection) {
+      const collectionName = activeCollection?.name ?? 'this Kloset'
+      deleteWithUndo({
+        message: `Removed ${items.find((item) => item.id === id)?.name ?? 'piece'} from ${collectionName}`,
+        keys: [`kloset:${activeCollectionId}:${id}`],
+        remove: () => {
+          removeCollectionItem(activeCollectionId, id)
+          setDetailItem(null)
+        },
+        restore: () => addItems(activeCollectionId, [id]),
+      })
+      return
+    }
     const index = items.findIndex((i) => i.id === id)
     const item = items[index]
     if (!item) return
@@ -134,72 +207,151 @@ export function WardrobePage() {
     setDetailItem((prev) => prev ? { ...prev, timesWorn: updated.timesWorn } : null)
   }
 
-  // Saved to Supabase too, or the heart is lost on every other device.
   const handleToggleFavourite = (item: ClothingItem) => {
-    toggleFavourite(item.id)
-    if (user) dbUpdateItem(user.id, { ...item, isFavourite: !item.isFavourite }).catch(() => {})
+    const updated = { ...item, isFavourite: !item.isFavourite, updatedAt: new Date().toISOString() }
+    updateItem(item.id, { isFavourite: updated.isFavourite, updatedAt: updated.updatedAt })
+    if (user) dbUpdateItem(user.id, updated).catch(() => {})
+    setDetailItem((prev) => prev?.id === item.id ? { ...prev, isFavourite: updated.isFavourite } : prev)
   }
 
   const openAdd = () => {
     setEditItem(undefined)
+    setSelectedUploadFiles(null)
+    setAddPhotoTab('upload')
     setShowAddModal(true)
   }
 
-  const name = profile?.name?.split(' ')[0] ?? 'Your'
-  const savedCount = useOutfitStore((s) => s.savedOutfits.length)
+  const openAddBrowse = () => {
+    setEditItem(undefined)
+    setSelectedUploadFiles(null)
+    setAddPhotoTab('browse')
+    setShowAddModal(true)
+  }
 
+  const takePhoto = () => {
+    setShowAddMenu(false)
+    cameraInputRef.current?.click()
+  }
+
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const uploadInputRef = useRef<HTMLInputElement>(null)
+
+  const openCompletePiece = (item: ClothingItem) => {
+    setCompleteSelectionMode(false)
+    navigate('/stylist', { state: { mode: 'item', itemId: item.id } })
+  }
+
+  const openMainPicker = () => {
+    setMainPickerIds(activeCollection?.itemIds ?? [])
+    setShowMainPicker(true)
+  }
+  const saveMainPicker = () => {
+    setCollectionItems(activeCollectionId, mainPickerIds)
+    setShowMainPicker(false)
+  }
+
+  const name = profile?.name?.split(' ')[0] ?? 'Your'
+  const mainKlosetName = profile?.name ? `${name}'s Kloset` : 'My Kloset'
+  useEffect(() => {
+    if (activeCategory !== 'all' && !categoryCounts[activeCategory]) setActiveCategory('all')
+  }, [activeCategory, categoryCounts, setActiveCategory])
+  const handleSelectKloset = (id: string) => {
+    selectCollection(id)
+    setCreatingKloset(false)
+    setShowKlosetMenu(false)
+  }
+  const handleCreateKloset = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (createCollection(newKlosetName)) {
+      setNewKlosetName('')
+      setCreatingKloset(false)
+      setShowKlosetMenu(false)
+    }
+  }
   return (
     <div className="min-h-screen bg-warm-cream pt-16 lg:pt-20 pb-28 md:pb-12">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 pt-10 lg:pt-14 pb-6">
-          <div>
-            <h1 className="font-display text-4xl lg:text-6xl font-medium text-text-primary leading-none">
-              {name}&apos;s Kloset
-            </h1>
-            <p className="text-text-muted text-sm mt-3">
-              {items.length} {items.length === 1 ? 'piece' : 'pieces'}
-              {savedCount > 0 && <> · {savedCount} {savedCount === 1 ? 'outfit' : 'outfits'}</>}
-            </p>
+        {view === 'build' ? (
+          <div className="pt-5 pb-5 sm:pt-8">
+            <BuildBoard
+              onSaved={() => setView('outfits')}
+              onBack={() => setView('outfits')}
+              onAddPiece={openAdd}
+              availableItems={closetItems}
+            />
+          </div>
+        ) : <>
+        <div className="flex min-h-14 items-center justify-between gap-3 pb-4 pt-2">
+          <div className="flex min-w-0 items-center gap-2">
+          <div ref={klosetMenuRef} className="relative min-w-0">
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={showKlosetMenu}
+              onClick={() => setShowKlosetMenu((visible) => !visible)}
+              className="flex max-w-full items-center gap-2 text-left font-display text-2xl sm:text-3xl font-medium leading-tight text-text-primary"
+            >
+              <span className="truncate">{activeCollectionId === 'main' ? mainKlosetName : (collections.find((collection) => collection.id === activeCollectionId)?.name ?? mainKlosetName)}</span>
+              <ChevronDown size={17} className="shrink-0" aria-hidden="true" />
+            </button>
+            {showKlosetMenu && <div role="menu" className="absolute left-0 top-full z-40 mt-3 w-64 max-w-[calc(100vw-2rem)] border border-text-primary/10 bg-surface p-2 shadow-lifted">
+              {collections.map((collection) => {
+                const label = collection.id === 'main' ? mainKlosetName : collection.name
+                return <button key={collection.id} role="menuitem" onClick={() => handleSelectKloset(collection.id)} className={clsx('flex w-full items-center px-3 py-2.5 text-left text-sm transition-colors hover:bg-text-primary/5', activeCollectionId === collection.id ? 'font-medium text-text-primary' : 'text-text-muted')}>{label}</button>
+              })}
+              <div className="my-1 border-t border-text-primary/10" />
+              {creatingKloset ? <form onSubmit={handleCreateKloset} className="flex flex-col gap-2 p-2">
+                <input autoFocus required maxLength={40} value={newKlosetName} onChange={(event) => setNewKlosetName(event.target.value)} placeholder="e.g. Bali Kloset" aria-label="New Kloset name" className="min-w-0 border-b border-text-primary/25 bg-transparent px-1 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-text-primary focus:outline-none" />
+                <div className="flex items-center justify-between">
+                  <button type="button" onClick={() => { setCreatingKloset(false); setNewKlosetName('') }} className="px-2 py-1 text-xs text-text-muted hover:text-text-primary">Cancel</button>
+                  <button type="submit" className="px-2 py-1 text-xs font-medium text-text-primary hover:underline">Create Kloset</button>
+                </div>
+              </form> : <button role="menuitem" onClick={() => setCreatingKloset(true)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5"><Plus size={15} /> New Kloset</button>}
+            </div>}
+          </div>
           </div>
 
-          {view === 'pieces' && (
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                onClick={() => setShowSearch((v) => !v)}
-                aria-pressed={showSearch}
-                className={clsx(
-                  'w-11 h-11 rounded-full flex items-center justify-center ring-1 ring-inset transition-colors',
-                  showSearch
-                    ? 'bg-text-primary text-warm-cream ring-text-primary'
-                    : 'text-text-primary ring-text-primary/20 hover:ring-text-primary/50'
-                )}
-                aria-label="Search wardrobe"
-              >
-                <Search size={17} strokeWidth={1.25} />
-              </button>
-              <button
-                onClick={openAdd}
-                className="h-11 px-5 flex items-center gap-2 bg-text-primary text-warm-cream text-xs font-medium uppercase tracking-widest hover:bg-text-primary/90 transition-colors"
-              >
-                <Plus size={14} strokeWidth={1.5} />
-                Add piece
-              </button>
+          {view === 'pieces' && <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <button onClick={() => setShowSearch((visible) => !visible)} aria-pressed={showSearch} aria-label="Search wardrobe" className="flex h-10 w-10 items-center justify-center text-text-primary transition-colors hover:bg-text-primary/5">
+              {showSearch ? <X size={18} strokeWidth={1.4} /> : <Search size={18} strokeWidth={1.4} />}
+            </button>
+            <div ref={addMenuRef} className="relative">
+              {/* Both the Add button and arrow open the add options menu. */}
+              <div className="inline-flex h-9 sm:h-10 items-stretch bg-text-primary text-warm-cream">
+                <button type="button" aria-haspopup="menu" aria-expanded={showAddMenu} onClick={() => setShowAddMenu((visible) => !visible)} className="inline-flex items-center gap-1.5 pl-2.5 pr-2 sm:pl-5 sm:pr-3 text-2xs font-medium uppercase tracking-widest transition-colors hover:bg-white/10"><Plus size={14} strokeWidth={1.5} /> Add</button>
+                <button type="button" aria-haspopup="menu" aria-expanded={showAddMenu} aria-label="More ways to add" onClick={() => setShowAddMenu((visible) => !visible)} className="flex items-center border-l border-warm-cream/25 px-2 sm:px-2.5 transition-colors hover:bg-white/10"><ChevronDown size={13} /></button>
+              </div>
+              {showAddMenu && <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-48 border border-text-primary/10 bg-surface p-1 shadow-lifted">
+                <button role="menuitem" onClick={takePhoto} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Take photo</button>
+                <button role="menuitem" onClick={() => { setShowAddMenu(false); uploadInputRef.current?.click() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Upload</button>
+                <button role="menuitem" onClick={() => { setShowAddMenu(false); openAddBrowse() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Browse</button>
+                <div className="my-1 border-t border-text-primary/10" />
+                <button role="menuitem" onClick={() => { setShowAddMenu(false); setView('build') }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Create outfit</button>
+              </div>}
             </div>
-          )}
+          </div>}
         </div>
 
-        {/* View switch */}
-        <div role="tablist" aria-label="My Kloset sections" className="flex gap-8 border-b border-text-primary/10 mb-8">
-          {([['pieces', 'Pieces'], ['build', 'Build'], ['outfits', 'My Outfits']] as const).map(([value, label]) => (
+        {view === 'pieces' && showSearch && <div className="mb-4 animate-fade-up">
+          <div className="relative">
+            <Search size={16} strokeWidth={1.25} className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-text-muted" />
+            <input autoFocus type="search" placeholder="Search by name, colour, material…" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="w-full border-b border-text-primary/25 bg-transparent py-2.5 pl-7 pr-8 text-sm text-text-primary placeholder:text-text-muted transition-colors focus:border-text-primary focus:outline-none" />
+            {searchQuery && <button onClick={() => setSearchQuery('')} aria-label="Clear search" className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-text-muted hover:text-text-primary"><X size={16} strokeWidth={1.25} /></button>}
+          </div>
+        </div>}
+
+        {/* Two primary views; Build stays available from outfit creation. */}
+        <div role="tablist" aria-label="My Kloset sections" className="mb-4 flex gap-6 border-b border-text-primary/10 sm:gap-8">
+          {([['pieces', 'Pieces'], ['outfits', 'Outfits']] as const).map(([value, label]) => (
             <button
               key={value}
               role="tab"
               aria-selected={view === value}
               onClick={() => setView(value)}
               className={clsx(
-                'relative -mb-px pt-3 pb-3 text-xs uppercase tracking-widest transition-colors',
+                'relative -mb-px pt-3 pb-3 text-[10px] sm:text-xs uppercase tracking-widest transition-colors',
                 view === value
                   ? 'text-text-primary font-semibold after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-text-primary'
                   : 'text-text-muted hover:text-text-primary'
@@ -210,111 +362,118 @@ export function WardrobePage() {
           ))}
         </div>
 
-        {view === 'pieces' && photoCleanup.total > 0 && (
-          <div className="mb-6 rounded-xl border border-text-primary/10 bg-surface px-4 py-3" aria-live="polite">
-            <p className="text-sm font-medium text-text-primary">
-              {photoCleanup.active
-                ? `Removing backgrounds from existing photos… ${photoCleanup.done} of ${photoCleanup.total}`
-                : photoCleanup.failed > 0
-                ? `Background removal finished with ${photoCleanup.failed} photo${photoCleanup.failed === 1 ? '' : 's'} to retry.`
-                : `Backgrounds removed from ${photoCleanup.done} existing photo${photoCleanup.done === 1 ? '' : 's'}.`}
-            </p>
-            {photoCleanup.active && (
-              <div className="mt-2 h-1 overflow-hidden rounded-full bg-text-primary/10">
-                <div className="h-full bg-dark-purple transition-all" style={{ width: `${photoCleanup.total ? (photoCleanup.done / photoCleanup.total) * 100 : 0}%` }} />
-              </div>
-            )}
-          </div>
-        )}
+        {view === 'outfits' ? <MyOutfits /> : <>
 
-        {view === 'outfits' ? <MyOutfits /> : view === 'build' ? <BuildBoard onSaved={() => setView('outfits')} /> : <>
+        {!isMainCollection && <div className="mb-3 flex justify-end">
+          <button onClick={openMainPicker} className="inline-flex items-center gap-2 border border-text-primary/25 px-3 py-2 text-2xs font-medium uppercase tracking-widest text-text-primary transition-colors hover:border-text-primary/50">
+            <Plus size={14} /> Add from {mainKlosetName}
+          </button>
+        </div>}
 
-        {/* Search bar */}
-        {showSearch && (
-          <div className="mb-8 animate-fade-up">
-            <div className="relative">
-              <Search size={16} strokeWidth={1.25} className="absolute left-0 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
-              <input
-                autoFocus
-                type="search"
-                placeholder="Search by name, colour, material…"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-7 pr-8 py-3 border-b border-text-primary/25 focus:border-text-primary bg-transparent text-base text-text-primary placeholder:text-text-muted focus:outline-none transition-colors"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  aria-label="Clear search"
-                  className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-text-muted hover:text-text-primary"
-                >
-                  <X size={16} strokeWidth={1.25} />
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Category filter */}
-        {items.length > 0 && (
-          <div className="mb-6">
-            <CategoryFilter
-              active={activeCategory}
-              counts={categoryCounts}
-              onChange={(cat) => setActiveCategory(cat as ClothingCategory | 'all')}
-            />
+        {/* Inside a folder: a way back to the folder overview */}
+        {closetItems.length > 0 && !showFolders && !searchQuery.trim() && !completeSelectionMode && (
+          <div className="mb-5 flex items-center gap-2">
+            <button type="button" onClick={() => setShowFolders(true)} className="-ml-2 inline-flex h-10 items-center gap-1 px-2 text-sm text-text-muted transition-colors hover:text-text-primary">
+              <ChevronLeft size={17} strokeWidth={1.5} /> Folders
+            </button>
+            <span className="text-text-primary/20" aria-hidden="true">/</span>
+            <h2 className="text-sm font-medium text-text-primary">{FOLDER_LABEL[activeCategory]}</h2>
+            <span className="text-sm text-text-muted tabular-nums">{filteredItems.length}</span>
           </div>
         )}
 
         {/* Content */}
-        {items.length === 0 ? (
-          <EmptyState onAdd={openAdd} onLoadSamples={handleAddSamples} />
-        ) : filteredItems.length === 0 ? (
-          <NoResultsState query={searchQuery} category={activeCategory} onClear={() => {
+        {closetItems.length === 0 ? isMainCollection ? (
+          <EmptyState onAdd={openAdd} onLoadSamples={handleAddSamples} onStyleMe={() => navigate('/stylist')} />
+        ) : (
+          <EmptySubsetState closetName={activeCollection?.name ?? 'this Kloset'} mainKlosetName={mainKlosetName} onAddFromMain={openMainPicker} onAddPiece={openAdd} />
+        ) :
+        filteredItems.length === 0 ? (
+          <NoResultsState query={searchQuery} category={searchQuery.trim() ? 'all' : activeCategory} onClear={() => {
             setSearchQuery('')
             setActiveCategory('all')
+            setShowFolders(true)
           }} />
+        ) : showFolders && !searchQuery.trim() && !completeSelectionMode ? (
+          <FolderGrid
+            items={closetItems}
+            categoryCounts={categoryCounts}
+            onOpen={(category) => { setActiveCategory(category); setShowFolders(false) }}
+          />
         ) : (
           <>
-            {items.length >= 3 && (
-              <button
-                onClick={() => navigate('/stylist')}
-                className="group w-full mb-10 py-5 border-y border-text-primary/10 flex items-center justify-between gap-4 text-left"
-              >
-                <span>
-                  <span className="block font-display text-2xl text-text-primary">Not sure what to wear?</span>
-                  <span className="block text-sm text-text-muted mt-0.5">Your stylist can build a look from these pieces.</span>
-                </span>
-                <span className="flex items-center gap-2 text-2xs font-semibold uppercase tracking-widest text-butter-yellow flex-shrink-0">
-                  Style me
-                  <ArrowRight size={14} strokeWidth={1.25} className="transition-transform duration-300 group-hover:translate-x-1" />
-                </span>
-              </button>
-            )}
+            {completeSelectionMode && <div className="mb-4 flex min-h-10 items-center justify-between border-y border-text-primary/15 py-2 text-sm text-text-primary" role="status">
+              <span>Pick a piece to complete</span>
+              <button type="button" onClick={() => setCompleteSelectionMode(false)} className="text-xs text-text-muted underline underline-offset-4 transition-colors hover:text-text-primary">Cancel</button>
+            </div>}
+            {closetItems.length < 3 && <div className="mb-4 flex items-center justify-between gap-3 border-y border-text-primary/10 py-3 text-sm text-text-muted">
+              <span>Add a few more pieces for more complete outfit ideas.</span>
+              <button onClick={() => navigate('/stylist')} className="shrink-0 border border-text-primary/25 px-3 py-2 text-2xs font-medium uppercase tracking-widest text-text-primary hover:border-text-primary/50">Style me</button>
+            </div>}
 
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 sm:gap-x-5 gap-y-10">
               {filteredItems.map((item) => (
                 <ClothingCard
                   key={item.id}
                   item={item}
-                  onClick={() => setDetailItem(item)}
-                  onToggleFavourite={(e) => { e.stopPropagation(); handleToggleFavourite(item) }}
+                  selectionMode={completeSelectionMode}
+                  onClick={() => completeSelectionMode ? openCompletePiece(item) : setDetailItem(item)}
                   onDelete={(e) => { e.stopPropagation(); handleDelete(item.id) }}
-                  onStyleThis={(e) => { e.stopPropagation(); navigate('/stylist', { state: { mode: 'item', itemId: item.id } }) }}
+                  deleteLabel={isMainCollection ? `Delete ${item.name}` : `Remove ${item.name} from ${activeCollection?.name ?? 'this Kloset'}`}
+                  onCompletePiece={(e) => { e.stopPropagation(); openCompletePiece(item) }}
+                  isFavourite={item.isFavourite}
+                  onFavourite={() => handleToggleFavourite(item)}
                 />
               ))}
-              <AddItemCard onClick={openAdd} />
+              {!completeSelectionMode && <AddItemCard onClick={openAdd} />}
             </div>
           </>
         )}
+        </>}
         </>}
       </div>
 
       <AddItemModal
         open={showAddModal}
-        onClose={() => { setShowAddModal(false); setEditItem(undefined) }}
+        onClose={() => { setShowAddModal(false); setEditItem(undefined); setSelectedUploadFiles(null) }}
         onSave={handleSaveItem}
         editItem={editItem}
+        initialTab={addPhotoTab}
+        initialFiles={selectedUploadFiles}
+      />
+      <input
+        ref={uploadInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        aria-label="Choose clothing photos from your photo library"
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? [])
+          event.target.value = ''
+          if (!files.length) return
+          setSelectedUploadFiles(files)
+          setAddPhotoTab('upload')
+          setEditItem(undefined)
+          setShowAddModal(true)
+        }}
+      />
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        aria-label="Take a clothing photo"
+        onChange={(event) => {
+          const file = event.target.files?.[0] ?? null
+          event.target.value = ''
+          if (!file) return
+          setSelectedUploadFiles([file])
+          setAddPhotoTab('upload')
+          setEditItem(undefined)
+          setShowAddModal(true)
+        }}
       />
 
       <ItemDetailModal
@@ -322,14 +481,21 @@ export function WardrobePage() {
         open={!!detailItem}
         onClose={() => setDetailItem(null)}
         onEdit={() => detailItem && handleEdit(detailItem)}
+        onStyle={() => detailItem && openCompletePiece(detailItem)}
         onDelete={() => detailItem && handleDelete(detailItem.id)}
-        onToggleFavourite={() => {
-          if (!detailItem) return
-          handleToggleFavourite(detailItem)
-          setDetailItem((prev) => prev ? { ...prev, isFavourite: !prev.isFavourite } : null)
-        }}
         onIncrementWorn={() => detailItem && handleIncrementWorn(detailItem)}
         onSend={() => detailItem && setShareTarget({ kind: 'item', item: detailItem })}
+        deleteLabel={isMainCollection ? 'Remove from Kloset' : `Remove from ${activeCollection?.name ?? 'this Kloset'}`}
+      />
+
+      <MainClosetPicker
+        open={showMainPicker}
+        items={items}
+        selectedIds={mainPickerIds}
+        onToggle={(id) => setMainPickerIds((selected) => selected.includes(id) ? selected.filter((itemId) => itemId !== id) : [...selected, id])}
+        onClose={() => setShowMainPicker(false)}
+        onSave={saveMainPicker}
+        mainKlosetName={mainKlosetName}
       />
 
       <ShareSheet target={shareTarget} onClose={() => setShareTarget(null)} />
@@ -337,7 +503,7 @@ export function WardrobePage() {
   )
 }
 
-function EmptyState({ onAdd, onLoadSamples }: { onAdd: () => void; onLoadSamples: () => void }) {
+function EmptyState({ onAdd, onLoadSamples, onStyleMe }: { onAdd: () => void; onLoadSamples: () => void; onStyleMe: () => void }) {
   const navigate = useNavigate()
   return (
     <div className="flex flex-col items-center justify-center text-center py-20 px-4">
@@ -345,20 +511,109 @@ function EmptyState({ onAdd, onLoadSamples }: { onAdd: () => void; onLoadSamples
         <Shirt size={32} strokeWidth={1} className="text-text-primary/50" />
       </div>
       <h2 className="font-display text-2xl font-medium text-text-primary mb-8">Your Kloset is empty</h2>
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="flex flex-col items-center gap-4">
         <Button size="lg" onClick={onAdd} className="gap-2">
           <Plus size={16} />
           Add your first item
         </Button>
-        <Button variant="secondary" size="lg" onClick={() => navigate('/discover')} className="gap-2">
-          <Compass size={16} />
-          Browse inspiration
-        </Button>
-        <Button variant="secondary" size="lg" onClick={onLoadSamples}>
-          Load sample wardrobe
-        </Button>
+        <Button variant="outline" size="md" onClick={onStyleMe}>Style me</Button>
+        <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs text-text-muted">
+          <button onClick={() => navigate('/discover')} className="inline-flex items-center gap-1.5 hover:text-text-primary"><Compass size={14} /> Browse inspiration</button>
+          <button onClick={onLoadSamples} className="hover:text-text-primary">Load sample wardrobe</button>
+        </div>
       </div>
     </div>
+  )
+}
+
+function EmptySubsetState({ closetName, mainKlosetName, onAddFromMain, onAddPiece }: { closetName: string; mainKlosetName: string; onAddFromMain: () => void; onAddPiece: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center px-4 py-16 text-center">
+      <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-text-primary/8">
+        <Shirt size={28} strokeWidth={1} className="text-text-primary/50" />
+      </div>
+      <h2 className="mb-2 font-display text-2xl font-medium text-text-primary">{closetName} is empty</h2>
+      <p className="mb-6 max-w-md text-sm leading-relaxed text-text-muted">
+        Choose pieces from {mainKlosetName} to include here. New pieces you add here will also be saved in {mainKlosetName}.
+      </p>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <button onClick={onAddFromMain} className="border border-text-primary/25 px-4 py-3 text-2xs font-medium uppercase tracking-widest text-text-primary transition-colors hover:border-text-primary/50">
+          Add from {mainKlosetName}
+        </button>
+        <button onClick={onAddPiece} className="px-4 py-3 text-2xs font-medium uppercase tracking-widest text-text-muted transition-colors hover:text-text-primary">
+          Add a new piece
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function MainClosetPicker({ open, items, selectedIds, onToggle, onClose, onSave, mainKlosetName }: {
+  open: boolean
+  items: ClothingItem[]
+  selectedIds: string[]
+  onToggle: (id: string) => void
+  onClose: () => void
+  onSave: () => void
+  mainKlosetName: string
+}) {
+  const [query, setQuery] = useState('')
+  const visibleItems = items.filter((item) => {
+    const search = query.trim().toLowerCase()
+    return !search || item.name.toLowerCase().includes(search) || item.category.toLowerCase().includes(search) || item.colour.some((colour) => colour.toLowerCase().includes(search))
+  })
+
+  useEffect(() => {
+    if (!open) setQuery('')
+  }, [open])
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Add pieces from ${mainKlosetName}`}
+      maxWidth="max-w-xl"
+      footer={(
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-xs text-text-muted">{selectedIds.length} selected</span>
+          <Button variant="outline" size="sm" onClick={onSave}>Save selection</Button>
+        </div>
+      )}
+    >
+      <div className="px-6 py-5">
+        <p className="mb-4 text-sm leading-relaxed text-text-muted">Select which main-closet pieces should appear in this Kloset. Changes here won’t remove pieces from your main Kloset.</p>
+        <div className="relative mb-3">
+          <Search size={15} strokeWidth={1.25} className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-text-muted" />
+          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search your main Kloset" aria-label="Search main Kloset pieces" className="w-full border-b border-text-primary/20 bg-transparent py-2 pl-6 text-sm text-text-primary placeholder:text-text-muted focus:border-text-primary focus:outline-none" />
+        </div>
+        {items.length === 0 ? (
+          <p className="py-8 text-center text-sm text-text-muted">Your main Kloset has no pieces yet. Add pieces there first.</p>
+        ) : visibleItems.length === 0 ? (
+          <p className="py-8 text-center text-sm text-text-muted">No pieces match that search.</p>
+        ) : (
+          <div className="max-h-[52dvh] divide-y divide-text-primary/10 overflow-y-auto">
+            {visibleItems.map((item) => (
+              <MainClosetPickerRow key={item.id} item={item} selected={selectedIds.includes(item.id)} onToggle={() => onToggle(item.id)} />
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
+function MainClosetPickerRow({ item, selected, onToggle }: { item: ClothingItem; selected: boolean; onToggle: () => void }) {
+  const imageUrl = useItemImage(item)
+  return (
+    <label className="flex cursor-pointer items-center gap-3 py-3">
+      <input type="checkbox" checked={selected} onChange={onToggle} className="h-4 w-4 shrink-0 accent-butter-yellow" />
+      <span className="flex h-24 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-tile">
+        {imageUrl ? <img src={imageUrl} alt="" className="h-full w-full object-cover" /> : <Shirt size={20} strokeWidth={1} className="text-text-muted/60" />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm text-text-primary">{item.name}</span>
+      </span>
+    </label>
   )
 }
 
@@ -384,10 +639,81 @@ function NoResultsState({ query, category, onClear }: { query: string; category:
   )
 }
 
+// ─── Folders ────────────────────────────────────────────────────────────────
+
+const FOLDER_ORDER: (ClothingCategory | 'all')[] = ['tops', 'bottoms', 'dresses', 'outerwear', 'shoes', 'accessories', 'all']
+const FOLDER_LABEL: Record<string, string> = {
+  all: 'All pieces', tops: 'Tops', bottoms: 'Bottoms', dresses: 'Dresses',
+  outerwear: 'Woolens', shoes: 'Shoes', accessories: 'Accessories',
+}
+
+// New on every page load (website or app), so each visit shows different covers,
+// but stable while the page stays open so covers don't reshuffle on every render.
+const COVER_SEED = Math.floor(Math.random() * 2 ** 31)
+
+function coverScore(id: string): number {
+  let h = COVER_SEED
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 2654435761)
+  return (h ^ (h >>> 16)) >>> 0
+}
+
+/** Four pieces for a folder's cover, preferring ones with photos. */
+function pickCover(items: ClothingItem[]): ClothingItem[] {
+  const hasPhoto = (i: ClothingItem) => !!(i.imageUrl || i.imageId || i.imageStoragePath)
+  return [...items]
+    .sort((a, b) => Number(hasPhoto(b)) - Number(hasPhoto(a)) || coverScore(a.id) - coverScore(b.id))
+    .slice(0, 4)
+}
+
+function FolderGrid({ items, categoryCounts, onOpen }: {
+  items: ClothingItem[]
+  categoryCounts: Record<string, number>
+  onOpen: (category: ClothingCategory | 'all') => void
+}) {
+  const folders = FOLDER_ORDER.filter((category) => category === 'all' || (categoryCounts[category] ?? 0) > 0)
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 sm:gap-5">
+      {folders.map((category) => {
+        const inFolder = category === 'all' ? items : items.filter((item) => item.category === category)
+        return <FolderCard key={category} category={category} items={inFolder} onClick={() => onOpen(category)} />
+      })}
+    </div>
+  )
+}
+
+function FolderCard({ category, items, onClick }: { category: ClothingCategory | 'all'; items: ClothingItem[]; onClick: () => void }) {
+  const cover = useMemo(() => pickCover(items), [items])
+  const label = FOLDER_LABEL[category]
+  return (
+    <button type="button" onClick={onClick} aria-label={`${label}, ${items.length} ${items.length === 1 ? 'piece' : 'pieces'}`} className="group w-full text-left">
+      <div className="grid aspect-[16/10] w-full grid-cols-2 grid-rows-2 gap-px overflow-hidden bg-text-primary/10 ring-1 ring-inset ring-text-primary/10 transition-shadow group-hover:shadow-lifted">
+        {[0, 1, 2, 3].map((slot) => (
+          <FolderCoverTile key={cover[slot]?.id ?? `empty-${slot}`} item={cover[slot]} category={category === 'all' ? cover[slot]?.category ?? 'tops' : category} />
+        ))}
+      </div>
+      <div className="mt-3 flex items-baseline justify-between gap-3">
+        <span className="text-sm font-medium uppercase tracking-widest text-text-primary">{label}</span>
+        <span className="text-xs text-text-muted tabular-nums">{items.length} {items.length === 1 ? 'piece' : 'pieces'}</span>
+      </div>
+    </button>
+  )
+}
+
+function FolderCoverTile({ item, category }: { item?: ClothingItem; category: string }) {
+  const url = useItemImage(item)
+  return (
+    <div className="flex items-center justify-center overflow-hidden bg-surface">
+      {url
+        ? <img src={url} alt="" loading="lazy" className="h-full w-full object-contain p-2 transition-transform duration-500 group-hover:scale-[1.03]" />
+        : <CategoryGlyph category={category} size={36} className={item ? 'text-text-muted' : 'text-text-primary/15'} />}
+    </div>
+  )
+}
+
 function AddItemCard({ onClick }: { onClick: () => void }) {
   return (
-    <button onClick={onClick} className="group text-left">
-      <div className="aspect-[3/4] ring-1 ring-inset ring-text-primary/15 group-hover:ring-text-primary/40 flex flex-col items-center justify-center gap-3 transition-colors">
+    <button onClick={onClick} className="group w-full self-start text-left">
+      <div className="w-full aspect-[3/4] ring-1 ring-inset ring-text-primary/15 group-hover:ring-text-primary/40 flex flex-col items-center justify-center gap-3 transition-colors">
         <span className="w-12 h-12 rounded-full ring-1 ring-text-primary/20 group-hover:bg-text-primary group-hover:text-warm-cream group-hover:ring-text-primary flex items-center justify-center text-text-primary transition-colors duration-300">
           <Plus size={18} strokeWidth={1.25} />
         </span>

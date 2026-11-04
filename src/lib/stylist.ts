@@ -27,6 +27,7 @@ export type Mood =
 
 export interface StyleRequest {
   occasion: Occasion
+  customOccasion?: string
   weather: WeatherCondition
   mood: Mood
   stylePreference?: StylePreference
@@ -152,8 +153,7 @@ function scoreItem(
   request: StyleRequest,
   profile: UserProfile | null,
   learnedStyle: ReturnType<typeof learnStyleFromWardrobe>,
-  alreadySelected: ClothingItem[],
-  attempt: number
+  alreadySelected: ClothingItem[]
 ): number {
   let score = 0
 
@@ -187,6 +187,25 @@ function scoreItem(
   if (seasonMatch) score += 6
   else if (item.seasons.length === 0) score += 2
 
+  // Use garment descriptors to make the same closet read differently for a
+  // relaxed weekend and an evening occasion, even when an item has broad
+  // occasion tags.
+  const garmentDetails = [item.name, item.subcategory, item.fit, item.formality, item.material]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  const dressy = /formal|dress|evening|occasion|elegant|satin|silk|heel|blazer|tailored/.test(garmentDetails)
+  const relaxed = /casual|relaxed|cozy|cosy|soft|knit|sweat|sneaker|loose|comfortable/.test(garmentDetails)
+  if (['date-night', 'formal', 'special-event'].includes(request.occasion)) {
+    if (dressy) score += 5
+    if (relaxed && !dressy) score -= 2
+  } else if (['casual', 'weekend', 'travel'].includes(request.occasion)) {
+    if (relaxed) score += 4
+    if (dressy) score -= 2
+  } else if (request.occasion === 'work' && /professional|business|tailored|blazer/.test(garmentDetails)) {
+    score += 4
+  }
+
   // Colour harmony with already selected items
   for (const selected of alreadySelected) {
     for (const c1 of item.colour) {
@@ -200,13 +219,28 @@ function scoreItem(
   if (profile) {
     if (item.colour.some((c) => profile.favouriteColours.includes(c))) score += 5
     if (item.colour.some((c) => profile.avoidColours.includes(c))) score -= 15
-    score += affinityForLearnedTraits(learnedStyle, {
+    // Simply having many items with a trait doesn't prove that trait is a
+    // preference. Keep closet-wide frequency as a weak tie-breaker; explicit
+    // favourites and colour preferences carry the stronger signal.
+    score += Math.min(2, affinityForLearnedTraits(learnedStyle, {
       colours: item.colour,
       subcategory: item.subcategory,
       material: item.material,
       pattern: item.pattern,
       formality: item.formality,
-    })
+    }) * 0.2)
+  }
+  if (item.isFavourite) score += 2
+
+  // Gently rotate away from pieces worn very recently or very often, so
+  // favourites don't crowd out the rest of the closet.
+  score -= Math.min(item.timesWorn, 8) * 0.35
+  if (item.lastWorn) {
+    const daysSinceWear = (Date.now() - new Date(item.lastWorn).getTime()) / 86_400_000
+    if (Number.isFinite(daysSinceWear) && daysSinceWear >= 0) {
+      if (daysSinceWear < 7) score -= 4
+      else if (daysSinceWear < 21) score -= 2
+    }
   }
 
   // Style alignment
@@ -234,11 +268,6 @@ function scoreItem(
     score += 8
   }
 
-  // Add slight randomness per attempt so "try another" gives different results
-  // Use item id as a stable seed component so results are reproducible per attempt
-  const idSeed = item.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
-  score += ((idSeed + attempt * 37) % 7) - 3
-
   return score
 }
 
@@ -258,10 +287,20 @@ function pickBest(
 
   const scored = candidates.map((item) => ({
     item,
-    score: scoreItem(item, request, profile, learnedStyle, selected, attempt),
+    score: scoreItem(item, request, profile, learnedStyle, selected),
   }))
-  scored.sort((a, b) => b.score - a.score)
-  return scored[0].score > -100 ? scored[0].item : null
+  scored.sort((a, b) => b.score - a.score || a.item.timesWorn - b.item.timesWorn || (a.item.lastWorn ?? '').localeCompare(b.item.lastWorn ?? '') || a.item.id.localeCompare(b.item.id))
+  if (scored[0].score <= -100) return null
+
+  // Rotate across every close-fit option, rather than a short prefix of the
+  // ranked list. Capping this list made pieces later in a large wardrobe
+  // effectively invisible to daily recommendations.
+  const bestScore = scored[0].score
+  const contenders = scored
+    .filter((candidate) => bestScore - candidate.score <= 8)
+  const variationKey = `${attempt}|${request.occasion}|${category}`
+  const variationOffset = [...variationKey].reduce((total, character) => (total * 31 + character.charCodeAt(0)) >>> 0, 7)
+  return contenders[variationOffset % contenders.length].item
 }
 
 // ─── Text generation ──────────────────────────────────────────────────────────
@@ -384,7 +423,9 @@ function generateWhyItWorks(
     gym: 'Function-first without sacrificing intention. The pieces work hard so you can.',
     'special-event': 'The occasion deserves a look that will still feel right in photographs years from now. This is it.',
   }
-  const occasionLine = occasionLines[request.occasion] ?? ''
+  const occasionLine = request.customOccasion
+    ? `For ${request.customOccasion}, this look balances comfort and polish with pieces from your Kloset.`
+    : occasionLines[request.occasion] ?? ''
 
   const weatherBonus =
     request.weather === 'cold'
@@ -407,25 +448,25 @@ function generateStylingTips(
   const roles = items.map((i) => i.role)
 
   if (roles.includes('top') && roles.includes('bottom')) {
-    tips.push('Try half-tucking the top for a relaxed but intentional look.')
+    tips.push('Half-tuck the top for an easy waistline.')
   }
   if (roles.includes('outerwear')) {
-    tips.push('Wear the outer layer open to let the outfit underneath do the talking.')
+    tips.push('Wear the outer layer open to show the look underneath.')
   }
   if (roles.includes('accessory')) {
-    tips.push('Less is more with accessories — one statement piece keeps the outfit sharp.')
+    tips.push('Choose one statement accessory.')
   }
   if (request.occasion === 'work' && roles.includes('top')) {
-    tips.push('Roll the sleeves once or twice for a polished-but-relaxed finish.')
+    tips.push('Roll the sleeves for an easy, polished finish.')
   }
   if (request.occasion === 'date-night') {
-    tips.push('Add a simple fragrance — the invisible accessory that completes any look.')
+    tips.push('Add a light fragrance for a finishing touch.')
   }
   if (request.weather === 'cold') {
-    tips.push('A fine-knit turtleneck underneath layers beautifully with what you have here.')
+    tips.push('Layer a fine knit underneath on colder days.')
   }
   if (request.mood === 'confident') {
-    tips.push('Posture and intention do as much as the clothes. Wear it like you mean it.')
+    tips.push('Stand tall; confidence completes the look.')
   }
 
   return tips.slice(0, 3)

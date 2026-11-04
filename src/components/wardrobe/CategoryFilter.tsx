@@ -11,7 +11,7 @@ const FILTERS: FilterOption[] = [
   { value: 'tops', label: 'Tops' },
   { value: 'bottoms', label: 'Bottoms' },
   { value: 'dresses', label: 'Dresses' },
-  { value: 'outerwear', label: 'Outerwear' },
+  { value: 'outerwear', label: 'Woolens' },
   { value: 'shoes', label: 'Shoes' },
   { value: 'accessories', label: 'Accessories' },
 ]

@@ -4,6 +4,7 @@ import { clsx } from 'clsx'
 import { Menu, X } from 'lucide-react'
 import { CinematicClosetHero } from '@/components/hero/CinematicClosetHero'
 import { HeroCopy } from '@/components/hero/HeroCopy'
+import { HangerIcon } from '@/components/ui/HangerIcon'
 import { authNavItems, publicNavItems } from '@/components/layout/Navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { useUserStore } from '@/store/userStore'
@@ -32,7 +33,7 @@ export function LandingPage() {
 
   const handleCTA = () => {
     if (user && profile?.onboardingComplete) {
-      navigate('/wardrobe')
+      navigate('/wardrobe', { state: { fromBuildMyKloset: true } })
     } else if (user) {
       navigate('/onboarding')
     } else {
@@ -84,7 +85,10 @@ export function LandingPage() {
         <div className="mx-auto max-w-7xl px-6 lg:px-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <span className="font-brand text-lg text-dark-purple/80">Kloset</span>
+              <span className="flex items-center gap-2 font-brand text-lg text-dark-purple/80">
+                <HangerIcon size={20} />
+                Kloset
+              </span>
             </div>
             <p className="text-dark-purple/60 text-xs">&copy; {new Date().getFullYear()} Kloset. All rights reserved.</p>
           </div>
@@ -134,6 +138,7 @@ export function LandingPage() {
             ))}
           </nav>
           <div className="px-6 py-6 border-t border-butter-yellow/15">
+            <NavLink to="/privacy" onClick={() => setMenuOpen(false)} className="mb-3 block py-2 text-sm text-butter-yellow/70 transition-colors hover:text-butter-yellow">Privacy Policy</NavLink>
             {user ? (
               <button
                 onClick={handleSignOut}

@@ -68,6 +68,8 @@ create table if not exists public.wardrobe_items (
   name                text not null,
   category            text not null,
   subcategory         text,
+  neckline_closure   text,
+  construction       text,
   image_id            text,          -- IndexedDB key (local device cache)
   image_url           text,          -- legacy / external URL
   image_storage_path  text,          -- Supabase Storage path (Phase B+)

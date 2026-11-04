@@ -1,6 +1,6 @@
 import {
   Briefcase, CalendarDays, CalendarRange, Camera, Coffee, Croissant, Dumbbell, GraduationCap,
-  Hand, Heart, Hourglass, Laptop, PartyPopper, Plane, Rocket, Sparkles, Sun, type LucideIcon,
+  Hand, Heart, Hourglass, Laptop, PartyPopper, Plane, Rocket, Sun, type LucideIcon,
 } from 'lucide-react'
 import type { StylePreference, Occasion, RecommendationFrequency, UserProfile } from '@/types'
 export { COLOUR_PALETTE } from '@/lib/colourUtils'
@@ -99,7 +99,7 @@ export const occasionOptions: { value: Occasion; label: string; icon: LucideIcon
   { value: 'weekend', label: 'Brunch & cafés', icon: Croissant },
   { value: 'date-night', label: 'Dates', icon: Heart },
   { value: 'special-event', label: 'Parties', icon: PartyPopper },
-  { value: 'formal', label: 'Weddings & festive', icon: Sparkles },
+  { value: 'formal', label: 'Weddings & festive', icon: PartyPopper },
   { value: 'gym', label: 'Gym', icon: Dumbbell },
   { value: 'travel', label: 'Travel', icon: Plane },
 ]

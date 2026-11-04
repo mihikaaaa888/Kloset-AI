@@ -12,6 +12,21 @@ import cors from 'cors'
 import Anthropic from '@anthropic-ai/sdk'
 import { isProductPage } from './productPages.mjs'
 import { findOutfitProblems } from './outfitRules.mjs'
+import {
+  CATEGORY_VALUES,
+  CONSTRUCTION_VALUES,
+  FIT_VALUES,
+  FORMALITY_VALUES,
+  NECKLINE_CLOSURE_VALUES,
+  OCCASION_VALUES,
+  PATTERN_VALUES,
+  PRIMARY_COLOR_VALUES,
+  SEASON_VALUES,
+  SUBCATEGORY_VALUES,
+  VISION_MODEL_DEFAULT,
+  VISION_SYSTEM_PROMPT,
+  VISION_USER_PROMPT,
+} from './visionConfig.mjs'
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -41,6 +56,64 @@ app.get('/api/health', (_req, res) => {
   })
 })
 
+// Account deletion runs only on the server so the Supabase service key never
+// reaches the browser. Auth cascade removes the user's database rows.
+app.delete('/api/account', async (req, res) => {
+  const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '')
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const accessToken = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1]
+  if (!supabaseUrl || !serviceKey) return res.status(503).json({ error: 'Account deletion is not configured on the server.' })
+  if (!accessToken) return res.status(401).json({ error: 'Please sign in again before deleting your account.' })
+
+  try {
+    const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' }
+    const authResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: { apikey: serviceKey, Authorization: `Bearer ${accessToken}` },
+    })
+    if (!authResponse.ok) return res.status(401).json({ error: 'Your session has expired. Please sign in again.' })
+    const account = await authResponse.json()
+    if (!account?.id) return res.status(401).json({ error: 'Could not verify your account.' })
+
+    // Remove this account's private wardrobe and shared-image objects before
+    // deleting the Auth user. Bucket absence is okay for older installations.
+    const collectObjects = async (bucket, prefix) => {
+      const response = await fetch(`${supabaseUrl}/storage/v1/object/list/${bucket}`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ prefix, limit: 1000, offset: 0 }),
+      })
+      if (response.status === 404) return []
+      if (!response.ok) throw new Error('Could not prepare account photos for deletion.')
+      const entries = await response.json()
+      const paths = []
+      for (const entry of entries) {
+        const path = `${prefix}/${entry.name}`
+        if (entry.id || entry.metadata) paths.push(path)
+        else paths.push(...await collectObjects(bucket, path))
+      }
+      return paths
+    }
+    for (const bucket of ['wardrobe-images', 'shared-images']) {
+      const paths = await collectObjects(bucket, account.id)
+      for (let start = 0; start < paths.length; start += 100) {
+        const response = await fetch(`${supabaseUrl}/storage/v1/object/${bucket}`, {
+          method: 'DELETE', headers,
+          body: JSON.stringify({ prefixes: paths.slice(start, start + 100) }),
+        })
+        if (!response.ok) throw new Error('Could not delete account photos. Please try again.')
+      }
+    }
+
+    const deleteResponse = await fetch(`${supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(account.id)}`, {
+      method: 'DELETE', headers,
+    })
+    if (!deleteResponse.ok) throw new Error('Could not delete the account. Please try again.')
+    return res.json({ ok: true })
+  } catch (error) {
+    console.error('[account] deletion failed:', error?.message ?? 'unknown error')
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Could not delete your account.' })
+  }
+})
+
 // ─── Image search (Pexels) ────────────────────────────────────────────────────
 
 app.get('/api/search-images', async (req, res) => {
@@ -53,15 +126,21 @@ app.get('/api/search-images', async (req, res) => {
   }
 
   try {
+    const productQuery = /isolated product photo/i.test(q)
+      ? `${q} on plain background, no person, no outfit`
+      : `single ${q} isolated product photo on plain background, no person, no outfit`
     const response = await fetch(
-      `https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=18&page=${page}&orientation=portrait`,
+      `https://api.pexels.com/v1/search?query=${encodeURIComponent(productQuery)}&per_page=80&page=${page}&orientation=portrait`,
       { headers: { Authorization: apiKey } }
     )
 
     if (!response.ok) throw new Error(`Pexels ${response.status}`)
 
     const data = await response.json()
-    const photos = (data.photos ?? []).map((p) => ({
+    // Pexels also returns lifestyle/editorial shots for apparel queries. Only
+    // offer results whose descriptions don't indicate a model or full outfit.
+    const lifestyleDescription = /\b(woman|women|man|men|person|people|model|wearing|outfit|street style|portrait|girl|boy|couple|group)\b/i
+    const photos = (data.photos ?? []).filter((p) => p.alt && !lifestyleDescription.test(p.alt)).slice(0, 18).map((p) => ({
       id: p.id,
       url: p.src.medium,      // ~1200px wide
       thumbUrl: p.src.small,  // ~280px wide
@@ -69,7 +148,7 @@ app.get('/api/search-images', async (req, res) => {
       photographer: p.photographer,
     }))
 
-    return res.json({ photos, totalResults: data.total_results ?? 0, page })
+    return res.json({ photos, totalPages: Math.ceil((data.total_results ?? 0) / 80), page })
   } catch (e) {
     console.error('[search-images] Pexels error:', e?.message)
     return res.status(500).json({ photos: [], error: 'Image search failed.' })
@@ -78,35 +157,66 @@ app.get('/api/search-images', async (req, res) => {
 
 // ─── Analyze clothing image ───────────────────────────────────────────────────
 
-const PROMPT = `You are a professional fashion analyst. Analyse this clothing item photo and respond with raw JSON only (no markdown fences, no commentary).
+const VISION_ENUMS = {
+  category: CATEGORY_VALUES,
+  primaryColor: PRIMARY_COLOR_VALUES,
+  pattern: PATTERN_VALUES,
+  fit: FIT_VALUES,
+  formality: FORMALITY_VALUES,
+  seasons: SEASON_VALUES,
+  occasions: OCCASION_VALUES,
+  neckline_closure: NECKLINE_CLOSURE_VALUES,
+  construction: CONSTRUCTION_VALUES,
+}
 
-Rules:
-- Only describe what is clearly visible in the image
-- Use null for any field you cannot confidently determine
-- name is a short, natural item name like a retailer would use, e.g. "Black Ribbed Turtleneck" or "Camel Wool Overcoat" — colour + material/pattern + garment type, no brand names
-- primaryColor must be exactly one of: Black, White, Navy, Charcoal, Camel, Tan, Cream, Beige, Blush, Dusty Rose, Burgundy, Forest Green, Olive, Sage, Rust, Terracotta, Cobalt, Sky Blue, Lavender, Plum, Gold, Silver, Brown, Grey
-- category must be exactly one of: tops, bottoms, dresses, outerwear, shoes, accessories
-- pattern must be exactly one of: solid, striped, checked, floral, abstract, animal-print, geometric, other
-- fit must be exactly one of: slim, regular, relaxed, oversized, fitted (or null)
-- formality must be exactly one of: casual, smart casual, business, formal, black tie (or null)
-- seasons is an array from: spring, summer, autumn, winter, all-season
-- occasions is an array of the occasions this piece realistically suits, from: work, casual, formal, date-night, weekend, travel, gym, special-event — pick 1-4 that fit, based on the garment's formality and style
+function enumViolations(value) {
+  const issues = []
+  for (const [field, options] of Object.entries(VISION_ENUMS)) {
+    const fieldValue = value?.[field]
+    if (field === 'seasons' || field === 'occasions') {
+      if (fieldValue != null && (!Array.isArray(fieldValue) || fieldValue.some((entry) => !options.includes(entry)))) issues.push(field)
+    } else if (fieldValue != null && !options.includes(fieldValue)) issues.push(field)
+  }
+  const subcategory = value?.subcategory
+  if (subcategory != null && (!SUBCATEGORY_VALUES[value?.category]?.includes(subcategory))) issues.push('subcategory')
+  if (Array.isArray(value?.secondaryColors) && value.secondaryColors.some((color) => !VISION_ENUMS.primaryColor.includes(color))) issues.push('secondaryColors')
+  return [...new Set(issues)]
+}
 
-Respond with this exact JSON structure:
-{
-  "name": string | null,
-  "category": string | null,
-  "subcategory": string | null,
-  "primaryColor": string | null,
-  "secondaryColors": string[],
-  "material": string | null,
-  "pattern": string | null,
-  "fit": string | null,
-  "formality": string | null,
-  "seasons": string[],
-  "occasions": string[],
-  "confidence": { "category": number, "color": number, "material": number }
-}`
+function sanitizeVisionResult(value) {
+  const category = CATEGORY_VALUES.includes(value?.category) ? value.category : null
+  const subcategories = category ? SUBCATEGORY_VALUES[category] : null
+  const confidence = value?.confidence && typeof value.confidence === 'object' ? value.confidence : {}
+  const score = (key, legacyKey) => {
+    const raw = confidence[key] ?? (legacyKey ? confidence[legacyKey] : undefined)
+    return Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0
+  }
+  return {
+    ...value,
+    name: typeof value?.name === 'string' ? value.name : null,
+    category,
+    subcategory: subcategories?.includes(value?.subcategory) ? value.subcategory : (category ? 'other' : null),
+    neckline_closure: value?.neckline_closure == null || NECKLINE_CLOSURE_VALUES.includes(value.neckline_closure) ? value?.neckline_closure ?? null : null,
+    construction: value?.construction == null || CONSTRUCTION_VALUES.includes(value.construction) ? value?.construction ?? null : null,
+    primaryColor: VISION_ENUMS.primaryColor.includes(value?.primaryColor) ? value.primaryColor : null,
+    secondaryColors: Array.isArray(value?.secondaryColors) ? value.secondaryColors.filter((color) => VISION_ENUMS.primaryColor.includes(color)) : [],
+    material: typeof value?.material === 'string' ? value.material : null,
+    pattern: VISION_ENUMS.pattern.includes(value?.pattern) ? value.pattern : null,
+    fit: value?.fit == null || VISION_ENUMS.fit.includes(value.fit) ? value?.fit ?? null : null,
+    formality: value?.formality == null || VISION_ENUMS.formality.includes(value.formality) ? value?.formality ?? null : null,
+    seasons: Array.isArray(value?.seasons) ? value.seasons.filter((entry) => VISION_ENUMS.seasons.includes(entry)) : [],
+    occasions: Array.isArray(value?.occasions) ? value.occasions.filter((entry) => VISION_ENUMS.occasions.includes(entry)) : [],
+    confidence: {
+      ...confidence,
+      category: category ? score('category') : 0,
+      subcategory: score('subcategory'),
+      neckline_closure: score('neckline_closure'),
+      color: score('color', 'primaryColor'),
+      material: score('material'),
+      construction: score('construction'),
+    },
+  }
+}
 
 // Shared by both /api/analyze-image (upload) and /api/analyze-image-url
 // (pasted URL / Pexels pick) — same vision call either way, only the source
@@ -117,39 +227,60 @@ async function runVisionAnalysis(imageData, mediaType) {
     return { analysis: null, source: 'stub', message: 'Add GROQ_API_KEY to your .env file to enable photo analysis.' }
   }
 
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'qwen/qwen3.8-27b',
-      max_tokens: 512,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'image_url',
-            image_url: { url: `data:${mediaType};base64,${imageData}` },
-          },
-          { type: 'text', text: PROMPT },
-        ],
-      }],
-    }),
-  })
+  const model = process.env.GROQ_VISION_MODEL || VISION_MODEL_DEFAULT
+  let validationIssues = []
 
-  if (!response.ok) {
-    const err = await response.text()
-    throw new Error(`Groq ${response.status}: ${err}`)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const userText = attempt === 0
+      ? VISION_USER_PROMPT
+      : `${VISION_USER_PROMPT}\nYour previous output used invalid enum values for: ${validationIssues.join(', ')}. Re-check every enum against the system instructions and return corrected JSON.`
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        max_completion_tokens: 1200,
+        reasoning_format: 'hidden',
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: VISION_SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: `data:${mediaType};base64,${imageData}` } },
+              { type: 'text', text: userText },
+            ],
+          },
+        ],
+      }),
+    })
+
+    if (!response.ok) {
+      const err = await response.text()
+      throw new Error(`Groq ${response.status}: ${err}`)
+    }
+
+    const data = await response.json()
+    const raw = data.choices?.[0]?.message?.content ?? ''
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+    let analysis
+    try {
+      analysis = JSON.parse(cleaned)
+    } catch {
+      validationIssues = ['JSON syntax']
+      if (attempt === 0) continue
+      throw new Error('Groq returned invalid JSON twice')
+    }
+    validationIssues = enumViolations(analysis)
+    if (validationIssues.length === 0 || attempt === 1) {
+      return { analysis: sanitizeVisionResult(analysis), source: 'groq' }
+    }
   }
 
-  const data = await response.json()
-  const raw = data.choices?.[0]?.message?.content ?? ''
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
-  const analysis = JSON.parse(cleaned)
-
-  return { analysis, source: 'groq' }
+  throw new Error('Groq vision analysis could not be validated')
 }
 
 app.post('/api/analyze-image', async (req, res) => {
@@ -483,17 +614,82 @@ async function callGroq(apiKey, systemPrompt, recentMessages) {
   return data.choices?.[0]?.message?.content ?? null
 }
 
+// Kaia's image path uses Groq's multimodal model, so it works with the same
+// GROQ_API_KEY already required for garment analysis. Attach all photos to
+// the latest user turn and keep earlier turns as ordinary chat history.
+async function callGroqVision(apiKey, systemPrompt, recentMessages, imageDataUrls) {
+  const parsedImages = imageDataUrls.map((value) => value.match(/^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/))
+  if (!parsedImages.length || parsedImages.some((image) => !image)) {
+    throw new Error('Invalid image data supplied to Kaia vision')
+  }
+
+  let lastUserIdx = -1
+  recentMessages.forEach((message, index) => { if (message.role === 'user') lastUserIdx = index })
+  if (lastUserIdx < 0) throw new Error('No user message found for Kaia vision request')
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...recentMessages.map((message, index) => ({
+      role: message.role,
+      content: index === lastUserIdx
+        ? [
+            { type: 'text', text: message.content || 'Please review the attached outfit photo(s).' },
+            ...parsedImages.map((image) => ({
+              type: 'image_url',
+              image_url: { url: `data:${image[1]};base64,${image[2]}` },
+            })),
+          ]
+        : message.content,
+    })),
+  ]
+
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: process.env.GROQ_VISION_MODEL || VISION_MODEL_DEFAULT,
+      max_completion_tokens: 800,
+      reasoning_format: 'hidden',
+      messages,
+    }),
+    signal: AbortSignal.timeout(7500),
+  })
+
+  if (!response.ok) {
+    const error = new Error(`Groq vision ${response.status}: ${await response.text()}`)
+    error.status = response.status
+    throw error
+  }
+
+  const data = await response.json()
+  return data.choices?.[0]?.message?.content ?? null
+}
+
 // Fallback path when Groq is unavailable (down, erroring, or rate-limited).
 // Claude's Messages API takes the system prompt as its own field rather than
 // a role in the messages array, and requires the array to start with a user
 // turn — both handled here rather than forcing the Groq-shaped call site to
 // know about it.
-async function callClaude(apiKey, systemPrompt, recentMessages) {
+async function callClaude(apiKey, systemPrompt, recentMessages, imageDataUrls = []) {
   const anthropic = new Anthropic({ apiKey })
 
   const firstUserIdx = recentMessages.findIndex((m) => m.role === 'user')
-  const claudeMessages = (firstUserIdx <= 0 ? recentMessages : recentMessages.slice(firstUserIdx))
-    .map((m) => ({ role: m.role, content: m.content }))
+  const relevantMessages = firstUserIdx <= 0 ? recentMessages : recentMessages.slice(firstUserIdx)
+  let lastUserIdx = -1
+  relevantMessages.forEach((message, index) => { if (message.role === 'user') lastUserIdx = index })
+  const parsedImages = imageDataUrls.map((imageDataUrl) => imageDataUrl.match(/^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/))
+  const claudeMessages = relevantMessages.map((m, index) => ({
+    role: m.role,
+    content: imageDataUrls.length && parsedImages.every(Boolean) && index === lastUserIdx
+      ? [
+          { type: 'text', text: m.content },
+          ...parsedImages.map((parsedImage) => ({ type: 'image', source: { type: 'base64', media_type: parsedImage[1], data: parsedImage[2] } })),
+        ]
+      : m.content,
+  }))
 
   if (claudeMessages.length === 0) return null
 
@@ -517,6 +713,16 @@ app.post('/api/chat', async (req, res) => {
   const profileSummary = cap(rawBody.profileSummary, MAX_SUMMARY_CHARS)
   const stylePreferencesSummary = cap(rawBody.stylePreferencesSummary, MAX_SUMMARY_CHARS)
   const shopSummary = cap(rawBody.shopSummary, MAX_SUMMARY_CHARS)
+  const imageDataUrls = Array.isArray(rawBody.imageDataUrls)
+    ? rawBody.imageDataUrls
+    : (typeof rawBody.imageDataUrl === 'string' ? [rawBody.imageDataUrl] : [])
+  const parsedImages = imageDataUrls.map((imageDataUrl) => typeof imageDataUrl === 'string'
+    ? imageDataUrl.match(/^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/)
+    : null)
+  const totalImageDataLength = imageDataUrls.reduce((total, imageDataUrl) => total + (typeof imageDataUrl === 'string' ? imageDataUrl.length : 0), 0)
+  if (imageDataUrls.length > 3 || parsedImages.some((image) => !image) || totalImageDataLength > 8_000_000) {
+    return res.status(400).json({ error: 'Please choose a smaller JPG, PNG, or WebP outfit photo.' })
+  }
   // Name + category only — enough for the outfit check to know that
   // "Blue jeans" is a bottom, whatever slot the model labels it as.
   const wardrobeItems = Array.isArray(rawBody.wardrobeItems)
@@ -568,6 +774,7 @@ CRITICAL RULES:
 - You have NO live inventory access and have not "found," "seen," or "spotted" any specific external item. Describe the piece only by its colour and item type (the same words as the tag) plus the personal reasoning — don't invent fabric, fit details, or features the real listing might contradict. E.g. correct: "Tan loafers would warm up your white-and-denim look." Wrong: "Buttery soft Italian-leather loafers with a cushioned sole."
 - Don't invent specific prices, stock, or exact product names for external pieces
 - Keep responses concise (2–4 sentences for simple questions, more for outfit requests)
+- When an outfit photo is attached, review only what is visible: name the key pieces, give one or two specific styling suggestions, and be kind and body-neutral
 - When building an outfit, list pieces clearly
 - Be encouraging, warm, and fashion-forward`
 
@@ -589,8 +796,29 @@ CRITICAL RULES:
 
   // Groq first, Claude as the fallback — used for the first draft and for
   // the rewrite if the draft breaks the outfit rules.
-  const generate = async (msgs) => {
+  const generate = async (msgs, attachedImages = []) => {
     let lastError = null
+    if (attachedImages.length) {
+      if (groqKey) {
+        try {
+          const reply = await callGroqVision(groqKey, systemPrompt, msgs, attachedImages)
+          if (reply) return { reply, source: 'groq-vision' }
+          lastError = new Error('Groq vision returned an empty reply')
+        } catch (e) {
+          lastError = e
+          console.warn(`[chat] Groq vision error${e.status ? ` (${e.status})` : ''}: ${e.message}`)
+        }
+      }
+      if (claudeKey) {
+        try {
+          return { reply: await callClaude(claudeKey, systemPrompt, msgs, attachedImages), source: 'claude-vision' }
+        } catch (e) {
+          lastError = e
+          console.error('[chat] Claude vision error:', e?.message ?? e)
+        }
+      }
+      return { reply: null, source: null, lastError }
+    }
     if (groqKey) {
       try {
         const reply = await callGroq(groqKey, systemPrompt, msgs)
@@ -618,12 +846,12 @@ CRITICAL RULES:
   }
 
   const started = Date.now()
-  let { reply, source, lastError } = await generate(recentMessages)
+  let { reply, source, lastError } = await generate(recentMessages, imageDataUrls)
 
   // One rewrite at most — bounds latency, and a second draft almost always
   // fixes what it's told about. If it still slips, the user gets it anyway
   // rather than an error.
-  if (reply) {
+  if (reply && !imageDataUrls.length) {
     const problems = findOutfitProblems(reply, wardrobeItems)
     // A rewrite is a second model call; skip it when the first one was slow, or the
     // whole request overruns Netlify's 10s function limit and the phone gets nothing.

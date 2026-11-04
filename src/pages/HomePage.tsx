@@ -1,83 +1,35 @@
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Shirt, Heart, Plus, ArrowRight } from 'lucide-react'
-import { clsx } from 'clsx'
+import { Shirt, Heart, Plus, ArrowRight, Cloud, CloudDrizzle, CloudLightning, CloudOff, CloudRain, CloudSnow, CloudSun, Sun, type LucideIcon } from 'lucide-react'
 import { useUserStore } from '@/store/userStore'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useItemImage } from '@/hooks/useItemImage'
 import type { ClothingItem } from '@/types'
-
-function getGreeting(name: string): { time: string; lead: string; name: string; end: string } {
-  const hour = new Date().getHours()
-  const first = name.split(' ')[0]
-  const sep = first ? ', ' : ''
-  if (hour < 12) return { time: 'Good morning', lead: `What are we wearing today${sep}`, name: first, end: '?' }
-  if (hour < 17) return { time: 'Good afternoon', lead: `Ready to put together a look${sep}`, name: first, end: '?' }
-  return { time: 'Good evening', lead: `Let's plan tonight's outfit${sep}`, name: first, end: '.' }
-}
+import { generateOutfit, type WeatherCondition } from '@/lib/stylist'
+import { getLocalWeather } from '@/lib/weather'
 
 export function HomePage() {
   const navigate = useNavigate()
   const profile = useUserStore((s) => s.profile)
   const items = useWardrobeStore((s) => s.items)
 
-  const greeting = getGreeting(profile?.name ?? '')
-
-  const recent = [...items]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 4)
-
   const favourites = items.filter((i) => i.isFavourite).slice(0, 4)
 
   return (
-    <div className="min-h-screen bg-warm-cream pt-16 lg:pt-20 pb-24 md:pb-0">
-      {/* ── Greeting — full-bleed yellow band ── */}
-      <header className="bg-deep-purple">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 pt-14 pb-16 lg:pt-20 lg:pb-24">
-          <p className="text-2xs uppercase tracking-ultra-wide text-butter-yellow font-medium mb-4">{greeting.time}</p>
-          <h1 className="font-display text-4xl sm:text-5xl lg:text-7xl font-medium text-text-primary leading-[1.02] max-w-4xl">
-            {greeting.lead}
-            {greeting.name && <em className="italic text-butter-yellow">{greeting.name}</em>}
-            {greeting.end}
-          </h1>
-          {items.length > 0 && (
-            <p className="text-2xs uppercase tracking-widest text-text-muted mt-6">
-              {items.length} pieces in your Kloset
-              {favourites.length > 0 && ` · ${favourites.length} favourited`}
-            </p>
-          )}
-        </div>
-      </header>
-
+    <div className="min-h-screen bg-warm-cream pt-28 lg:pt-32 pb-24 md:pb-0">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 pb-12 lg:pb-16">
 
-        {/* ── Quick actions — editorial numbered row, no cards ── */}
-        <nav className="grid grid-cols-1 sm:grid-cols-3 -mt-8 lg:-mt-10 mb-20 shadow-lifted" aria-label="Get styled">
-          <QuickAction
-            index="01"
-            tone="cream"
-            title="Style my wardrobe"
-            subtitle="An outfit from what you already own."
-            onClick={() => navigate('/stylist', { state: { mode: 'wardrobe' } })}
-            disabled={items.length < 2}
-            disabledHint="Add 2+ pieces first"
-          />
-          <QuickAction
-            index="02"
-            tone="sage"
-            title="Style an item"
-            subtitle="A full look around one piece."
-            onClick={() => navigate('/stylist', { state: { mode: 'item' } })}
-            disabled={items.length === 0}
-            disabledHint="Add a piece first"
-          />
-          <QuickAction
-            index="03"
-            tone="forest"
-            title="Chat with Kaia"
-            subtitle="Ask your stylist anything."
-            onClick={() => navigate('/stylist', { state: { mode: 'chat' } })}
-          />
-        </nav>
+        <DailyOutfitCard
+          items={items}
+          profile={profile}
+          onAskStylist={(outfitItemIds) => navigate('/stylist', {
+            state: {
+              mode: 'chat',
+              outfitItemIds,
+              initialPrompt: 'Can you check this outfit?',
+            },
+          })}
+        />
 
         {/* ── Wardrobe empty state ── */}
         {items.length === 0 && (
@@ -89,16 +41,6 @@ export function HomePage() {
             <button onClick={() => navigate('/wardrobe')} className="text-tab text-tab-active sm:text-sm">
               <Plus size={13} /> Add your first piece
             </button>
-          </section>
-        )}
-
-        {/* ── Recent additions ── */}
-        {recent.length > 0 && (
-          <section className="mb-20">
-            <SectionHeader title="Recently added" action={{ label: 'View all', onClick: () => navigate('/wardrobe') }} />
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-8">
-              {recent.map((item) => <WardrobeThumb key={item.id} item={item} onClick={() => navigate('/wardrobe')} />)}
-            </div>
           </section>
         )}
 
@@ -114,73 +56,265 @@ export function HomePage() {
 
       </div>
 
-      {/* ── Personal shopping — full-bleed forest-green band ── */}
-      <button onClick={() => navigate('/discover')} className="group block w-full text-left bg-butter-yellow hover:bg-soft-butter transition-colors duration-300">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-14 lg:py-20 flex flex-col sm:flex-row sm:items-end justify-between gap-6">
-          <div>
-            <p className="text-2xs uppercase tracking-ultra-wide text-deep-purple/80 font-medium mb-3">Personal shopping</p>
-            <h3 className="font-display text-5xl lg:text-6xl font-medium text-dark-purple leading-none">
-              Shop <em className="italic">for you</em>
-            </h3>
-            <p className="text-dark-purple/75 text-sm mt-4 max-w-md">
-              New pieces, finds for what you own, or rentals — picked for your style and budget.
-            </p>
-          </div>
-          <span className="flex items-center gap-2 text-2xs uppercase tracking-widest font-semibold text-dark-purple flex-shrink-0">
-            Shop now
-            <ArrowRight size={14} className="transition-transform duration-300 group-hover:translate-x-1" />
-          </span>
-        </div>
-      </button>
     </div>
   )
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-const ACTION_TONES = {
-  cream: { panel: 'bg-dark-purple hover:bg-deep-purple', index: 'text-butter-yellow', title: 'text-text-primary', sub: 'text-text-muted', cta: 'text-butter-yellow' },
-  sage: { panel: 'bg-soft-butter hover:bg-butter-yellow', index: 'text-dark-purple/70', title: 'text-dark-purple', sub: 'text-dark-purple/75', cta: 'text-dark-purple' },
-  forest: { panel: 'bg-butter-yellow hover:bg-soft-butter', index: 'text-deep-purple/70', title: 'text-dark-purple', sub: 'text-dark-purple/70', cta: 'text-deep-purple' },
-} as const
+type CurrentWeather = { temperature: number; label: string; condition: WeatherCondition; code: number; dateKey: string }
 
-/** Square colour-block panel — a numbered editorial tile, no rounded card. */
-function QuickAction({
-  index,
-  tone,
-  title,
-  subtitle,
-  onClick,
-  disabled,
-  disabledHint,
-}: {
-  index: string
-  tone: keyof typeof ACTION_TONES
-  title: string
-  subtitle: string
-  onClick: () => void
-  disabled?: boolean
-  disabledHint?: string
+function stableHash(value: string): number {
+  return [...value].reduce((hash, character) => (Math.imul(hash, 31) + character.charCodeAt(0)) >>> 0, 7)
+}
+
+function weatherDescription(code: number): string {
+  if (code === 0) return 'Clear sky'
+  if (code === 1) return 'Mostly clear'
+  if (code === 2) return 'Partly cloudy'
+  if (code === 3) return 'Overcast'
+  if (code === 45 || code === 48) return 'Foggy'
+  if (code >= 51 && code <= 57) return 'Drizzle'
+  if (code >= 61 && code <= 67) return 'Rain'
+  if (code >= 71 && code <= 77) return 'Snow'
+  if (code >= 80 && code <= 82) return 'Rain showers'
+  if (code === 85 || code === 86) return 'Snow showers'
+  if (code >= 95) return 'Thunderstorm'
+  return 'Current conditions'
+}
+
+function weatherIcon(code: number): LucideIcon {
+  if (code <= 1) return Sun
+  if (code === 2) return CloudSun
+  if (code === 3 || code === 45 || code === 48) return Cloud
+  if (code >= 51 && code <= 57) return CloudDrizzle
+  if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return CloudRain
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return CloudSnow
+  if (code >= 95) return CloudLightning
+  return CloudSun
+}
+
+/** Practical, outfit-specific finishing ideas based on the pieces on today's rack. */
+function buildStylingTips(outfit: ClothingItem[], weather: CurrentWeather | null): string[] {
+  if (outfit.length === 0) return []
+
+  const tops = outfit.filter((item) => item.category === 'tops')
+  const bottoms = outfit.filter((item) => item.category === 'bottoms')
+  const dresses = outfit.filter((item) => item.category === 'dresses')
+  const outerwear = outfit.filter((item) => item.category === 'outerwear')
+  const shoes = outfit.filter((item) => item.category === 'shoes')
+  const accessories = outfit.filter((item) => item.category === 'accessories')
+  const printed = outfit.filter((item) => item.pattern !== 'solid')
+  const solid = outfit.filter((item) => item.pattern === 'solid')
+  const sharedColour = outfit
+    .flatMap((item) => item.colour.map((colour) => ({ itemId: item.id, colour: colour.trim(), key: colour.trim().toLowerCase() })))
+    .find(({ itemId, key }) => key && outfit.some((item) => item.id !== itemId && item.colour.some((colour) => colour.trim().toLowerCase() === key)))
+  const tips: string[] = []
+
+  if (tops.length && bottoms.length) {
+    const top = tops[0]
+    const bottom = bottoms[0]
+    const relaxedTop = /relaxed|oversized|loose/i.test(top.fit ?? top.name)
+    const relaxedBottom = /relaxed|oversized|wide|loose/i.test(bottom.fit ?? bottom.name)
+    if (relaxedTop && relaxedBottom) {
+      tips.push('Add shape with a half-tuck or rolled sleeves.')
+    } else if (relaxedTop) {
+      tips.push('Balance the relaxed top with a half-tuck or slim belt.')
+    } else if (relaxedBottom) {
+      tips.push('Define the waist to balance the relaxed silhouette.')
+    } else {
+      tips.push('Try a small front tuck to define the waist.')
+    }
+  } else if (dresses.length) {
+    tips.push('Let the dress lead; add one simple finishing detail.')
+  } else if (tops.length) {
+    tips.push('Try a cuff or relaxed half-tuck to add shape.')
+  } else if (bottoms.length) {
+    tips.push('Keep the top simple and define the waist.')
+  }
+
+  if (printed.length && solid.length) {
+    tips.push('Let the print lead; keep accessories simple.')
+  } else if (sharedColour) {
+    tips.push(`Repeat ${sharedColour.colour} in one small accessory.`)
+  } else if (printed.length) {
+    tips.push('Keep accessories pared back around the print.')
+  } else if (accessories.length) {
+    tips.push('Let one accessory be the finishing touch.')
+  } else if (shoes.length) {
+    tips.push('Echo a shoe colour in one small detail.')
+  } else {
+    tips.push('Add a belt, scarf, or light layer to finish the look.')
+  }
+
+  if (outerwear.length) {
+    tips.push('Wear the outer layer open; push the sleeves back.')
+  } else if (weather?.condition === 'rainy') {
+    tips.push('Choose a light rain layer and shoes with grip.')
+  } else if (weather?.condition === 'cold' || weather?.condition === 'cool') {
+    tips.push('Add a warm layer; wear it open indoors.')
+  } else if (weather?.condition === 'hot') {
+    tips.push('Keep layers light and choose breathable accessories.')
+  } else if (accessories.length) {
+    tips.push('Roll a cuff for an easy, considered finish.')
+  } else {
+    tips.push('Finish with a rolled cuff or slim belt.')
+  }
+
+  return tips.slice(0, 3)
+}
+
+function DailyOutfitCard({ items, profile, onAskStylist }: {
+  items: ClothingItem[]
+  profile: Parameters<typeof generateOutfit>[2]
+  onAskStylist: (itemIds: string[]) => void
 }) {
-  const t = ACTION_TONES[tone]
+  const [weather, setWeather] = useState<CurrentWeather | null>(null)
+  const [weatherError, setWeatherError] = useState(false)
+  const [recommendation, setRecommendation] = useState<string[] | null>(null)
+  const [recommendationLoading, setRecommendationLoading] = useState(false)
+  const [today, setToday] = useState(() => new Date())
+  const dateLabel = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(today)
+  const recommendedItems = recommendation?.length
+    ? items.filter((item) => recommendation.includes(item.id))
+    : []
+  const useRecommendationGrid = recommendedItems.length > 3
+  const stylingTips = buildStylingTips(recommendedItems, weather)
+
+  useEffect(() => {
+    const now = new Date()
+    const nextLocalDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+    const timer = window.setTimeout(() => setToday(new Date()), nextLocalDay.getTime() - now.getTime() + 50)
+    return () => window.clearTimeout(timer)
+  }, [today.getDate(), today.getMonth(), today.getFullYear()])
+
+  useEffect(() => {
+    const weatherDateKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    setWeather(null)
+    setWeatherError(false)
+    getLocalWeather().then(({ temperature, code, condition }) => {
+      setWeather({ temperature, label: weatherDescription(code), condition, code, dateKey: weatherDateKey })
+    }).catch(() => setWeatherError(true))
+  }, [today.getDate(), today.getMonth(), today.getFullYear()])
+
+  useEffect(() => {
+    const dayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    if ((!weather && !weatherError) || (weather && weather.dateKey !== dayKey) || items.length < 2) return
+    let cancelled = false
+    const wardrobeSignature = items.map((item) => [
+      item.id,
+      item.category,
+      item.colour.join(','),
+      item.pattern,
+      item.formality ?? '',
+      item.fit ?? '',
+      item.occasions.join(','),
+      item.seasons.join(','),
+      item.timesWorn,
+      item.lastWorn ?? '',
+      item.isFavourite ? 'favourite' : '',
+    ].join(':')).sort().join('|')
+    const wardrobeKey = stableHash(wardrobeSignature).toString(36)
+    // Bump the cache version when recommendation rules change so today's rack
+    // is recalculated instead of preserving the older repetitive selection.
+    const cacheKey = `kloset:daily-outfit:v4:${profile?.id ?? profile?.name ?? 'guest'}:${dayKey}:${wardrobeKey}`
+    try {
+      const cached = localStorage.getItem(cacheKey)
+      if (cached) {
+        const cachedIds = JSON.parse(cached) as string[]
+        if (Array.isArray(cachedIds) && cachedIds.every((id) => typeof id === 'string')) {
+          setRecommendation(cachedIds)
+          setRecommendationLoading(false)
+          return
+        }
+      }
+    } catch {
+      // Continue with a fresh recommendation if local storage is unavailable.
+    }
+
+    setRecommendationLoading(true)
+    const dailyAttempt = stableHash(`${profile?.id ?? profile?.name ?? 'guest'}|${dayKey}|${wardrobeKey}`)
+    void generateOutfit({ occasion: 'casual', weather: weather?.condition ?? 'warm', mood: 'relaxed' }, items, profile, dailyAttempt)
+      .then(({ suggestion }) => {
+        if (cancelled) return
+        const itemIds = suggestion?.items.map(({ item }) => item.id) ?? []
+        setRecommendation(itemIds)
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(itemIds))
+        } catch {
+          // The daily seed still keeps the recommendation stable within this date.
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setRecommendation([])
+      })
+      .finally(() => {
+        if (!cancelled) setRecommendationLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [weather, weatherError, items, profile, today.getDate(), today.getMonth(), today.getFullYear()])
+
   return (
-    <button
-      onClick={disabled ? undefined : onClick}
-      disabled={disabled}
-      className={clsx(
-        'group text-left p-8 lg:p-10 min-h-[15rem] flex flex-col transition-colors duration-300',
-        t.panel,
-        disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
-      )}
-    >
-      <span className={clsx('font-display italic text-3xl', t.index)}>{index}</span>
-      <span className={clsx('block font-display text-3xl lg:text-4xl font-medium leading-tight mt-auto', t.title)}>{title}</span>
-      <span className={clsx('block text-sm mt-2', t.sub)}>{disabled && disabledHint ? disabledHint : subtitle}</span>
-      <span className={clsx('mt-6 inline-flex items-center gap-2 text-2xs uppercase tracking-widest font-semibold', t.cta)}>
-        Start
-        <ArrowRight size={13} className="transition-transform duration-300 group-hover:translate-x-1" />
-      </span>
-    </button>
+    <section className="mb-16 lg:mb-20" aria-labelledby="daily-outfit-title">
+      <h2 id="daily-outfit-title" className="m-0 text-left font-display text-3xl sm:text-4xl lg:text-5xl font-medium leading-tight text-text-primary">
+        Today’s outfit <em className="italic text-butter-yellow">recommendation</em>
+      </h2>
+      <p className="mt-4 ml-0 text-left text-2xs uppercase tracking-ultra-wide text-text-muted">{dateLabel}</p>
+      <div className="mt-3 ml-0 flex items-center gap-2 text-left text-sm text-text-muted" aria-live="polite">
+        {weather ? (() => {
+          const Icon = weatherIcon(weather.code)
+          return <><Icon size={18} className="text-deep-purple" /><span>{weather.label} · {Math.round(weather.temperature)}°C</span></>
+        })() : <><CloudOff size={18} className="text-deep-purple" /><span>{weatherError ? 'Weather unavailable — allow location access to see local conditions.' : 'Checking today’s weather…'}</span></>}
+      </div>
+      <div className="daily-outfit-shell mt-6">
+        <div className={`daily-outfit-layout${useRecommendationGrid ? ' daily-outfit-layout--many' : ''}`}>
+          <div className={`daily-outfit-items${useRecommendationGrid ? ' daily-outfit-items--many' : ''}`} aria-live="polite">
+          {recommendedItems.length ? (
+            recommendedItems.map((item) => <RecommendationPiece key={item.id} item={item} />)
+          ) : items.length < 2 ? (
+            <p className="text-sm text-text-muted">Add at least two pieces to your Kloset for a personal outfit recommendation.</p>
+          ) : recommendationLoading || (!weather && !weatherError) ? (
+            <p className="text-sm text-text-muted">Putting together today’s look from your Kloset…</p>
+          ) : (
+            <p className="text-sm text-text-muted">Add a top and bottom, or a dress, for a complete outfit recommendation.</p>
+          )}
+          </div>
+          <aside className="daily-outfit-tips border border-text-primary/10 bg-surface p-5 sm:p-6" aria-labelledby="styling-tips-title">
+          <div className="mb-4 text-[#355E3B] dark:text-[#9BC89D]">
+            <h3 id="styling-tips-title" className="text-2xs font-semibold uppercase tracking-ultra-wide">Styling tips</h3>
+          </div>
+          {stylingTips.length ? <ul className="space-y-4">
+            {stylingTips.map((tip) => (
+              <li key={tip} className="flex gap-3 text-sm leading-relaxed text-text-muted">
+                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-butter-yellow" aria-hidden="true" />
+                <span>{tip}</span>
+              </li>
+            ))}
+          </ul> : <p className="text-sm leading-relaxed text-text-muted">Outfit-specific tips will appear here with today’s look.</p>}
+          </aside>
+          <button
+          onClick={() => onAskStylist(recommendedItems.map((item) => item.id))}
+          className="daily-outfit-ask mt-12 flex h-12 w-full items-center justify-between bg-[#355E3B] px-5 text-sm font-medium tracking-wide text-[#FFFDD0] transition-colors hover:bg-[#2B4E31] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#355E3B]"
+        >
+          <span>Ask stylist</span>
+          <ArrowRight size={18} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function RecommendationPiece({ item }: { item: ClothingItem }) {
+  const imageUrl = useItemImage(item)
+
+  return (
+    <div className="daily-outfit-piece min-w-0">
+      <div className="aspect-[4/5] overflow-hidden bg-surface">
+        {imageUrl ? <img src={imageUrl} alt={item.name} className="h-full w-full object-contain p-3" /> : <div className="flex h-full w-full items-center justify-center"><Shirt size={28} className="text-text-primary/25" /></div>}
+      </div>
+      <span className="mt-2 block truncate text-sm font-medium text-text-primary">{item.name}</span>
+    </div>
   )
 }
 
