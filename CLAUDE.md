@@ -24,6 +24,7 @@ Copy `.env.example` to `.env` (gitignored — never commit it).
 - `CLAUDE_API_KEY` — chat fallback when Groq errors/rate-limits (server only).
 - `EXA_API_KEY` — live shopping search (`/api/web-shop-search`) (server only).
 - `PEXELS_API_KEY` — image search (`/api/search-images`); not listed in `.env.example`.
+- `CRON_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM` — daily inactive-account job (`/api/cron/inactive-accounts`, scheduled in `vercel.json`; logic in `server/accounts.mjs`, needs `supabase/inactive_accounts.sql`). Without them it refuses to run. Tests: `node --test server/accounts.test.mjs`.
 
 Never prefix server keys with `VITE_` — that would ship them to the browser. Hosted, these are set in the Netlify/Vercel dashboard (Vite env vars need a rebuild to change).
 

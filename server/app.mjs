@@ -7,11 +7,13 @@
  * site's environment variables in production.
  */
 
+import { timingSafeEqual } from 'node:crypto'
 import express from 'express'
 import cors from 'cors'
 import Anthropic from '@anthropic-ai/sdk'
 import { isProductPage } from './productPages.mjs'
 import { findOutfitProblems } from './outfitRules.mjs'
+import { deleteAccountData, sweepInactiveAccounts } from './accounts.mjs'
 import {
   CATEGORY_VALUES,
   CONSTRUCTION_VALUES,
@@ -66,7 +68,6 @@ app.delete('/api/account', async (req, res) => {
   if (!accessToken) return res.status(401).json({ error: 'Please sign in again before deleting your account.' })
 
   try {
-    const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' }
     const authResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
       headers: { apikey: serviceKey, Authorization: `Bearer ${accessToken}` },
     })
@@ -74,43 +75,37 @@ app.delete('/api/account', async (req, res) => {
     const account = await authResponse.json()
     if (!account?.id) return res.status(401).json({ error: 'Could not verify your account.' })
 
-    // Remove this account's private wardrobe and shared-image objects before
-    // deleting the Auth user. Bucket absence is okay for older installations.
-    const collectObjects = async (bucket, prefix) => {
-      const response = await fetch(`${supabaseUrl}/storage/v1/object/list/${bucket}`, {
-        method: 'POST', headers,
-        body: JSON.stringify({ prefix, limit: 1000, offset: 0 }),
-      })
-      if (response.status === 404) return []
-      if (!response.ok) throw new Error('Could not prepare account photos for deletion.')
-      const entries = await response.json()
-      const paths = []
-      for (const entry of entries) {
-        const path = `${prefix}/${entry.name}`
-        if (entry.id || entry.metadata) paths.push(path)
-        else paths.push(...await collectObjects(bucket, path))
-      }
-      return paths
-    }
-    for (const bucket of ['wardrobe-images', 'shared-images']) {
-      const paths = await collectObjects(bucket, account.id)
-      for (let start = 0; start < paths.length; start += 100) {
-        const response = await fetch(`${supabaseUrl}/storage/v1/object/${bucket}`, {
-          method: 'DELETE', headers,
-          body: JSON.stringify({ prefixes: paths.slice(start, start + 100) }),
-        })
-        if (!response.ok) throw new Error('Could not delete account photos. Please try again.')
-      }
-    }
-
-    const deleteResponse = await fetch(`${supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(account.id)}`, {
-      method: 'DELETE', headers,
-    })
-    if (!deleteResponse.ok) throw new Error('Could not delete the account. Please try again.')
+    await deleteAccountData(supabaseUrl, serviceKey, account.id)
     return res.json({ ok: true })
   } catch (error) {
     console.error('[account] deletion failed:', error?.message ?? 'unknown error')
     return res.status(500).json({ error: error instanceof Error ? error.message : 'Could not delete your account.' })
+  }
+})
+
+// Daily job (vercel.json `crons`): warn accounts inactive for 3 years, delete them 30 days later.
+// Vercel sends CRON_SECRET as a bearer token. ?dryRun=1 reports what would happen without acting.
+app.get('/api/cron/inactive-accounts', async (req, res) => {
+  const secret = process.env.CRON_SECRET
+  const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '')
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const resendKey = process.env.RESEND_API_KEY
+  const emailFrom = process.env.EMAIL_FROM
+  if (!secret) return res.status(503).json({ error: 'CRON_SECRET is not configured.' })
+
+  const given = Buffer.from(String(req.headers.authorization || ''))
+  const expected = Buffer.from(`Bearer ${secret}`)
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) return res.status(401).json({ error: 'Unauthorized' })
+
+  // No email means no warnings, so nothing may run at all.
+  if (!supabaseUrl || !serviceKey || !resendKey || !emailFrom) {
+    return res.status(503).json({ error: 'Inactive-account job is not configured.' })
+  }
+  try {
+    return res.json(await sweepInactiveAccounts({ supabaseUrl, serviceKey, resendKey, emailFrom, dryRun: req.query.dryRun === '1' }))
+  } catch (error) {
+    console.error('[inactive-accounts] run failed:', error?.message ?? error)
+    return res.status(500).json({ error: 'Inactive-account job failed.' })
   }
 })
 
