@@ -1,5 +1,6 @@
 {
   "buildCommand": "npm run build",
+  "installCommand": "ONNXRUNTIME_NODE_INSTALL=skip npm install",
   "outputDirectory": "dist",
   "rewrites": [
     {
