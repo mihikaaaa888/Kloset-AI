@@ -5,6 +5,8 @@
 [build.environment]
   # @capacitor/cli requires Node 22+; the site default can be older.
   NODE_VERSION = "22"
+  # onnxruntime-node (via transformers) downloads a GPU binary we never use: the models run in the browser.
+  ONNXRUNTIME_NODE_INSTALL = "skip"
 
 [functions]
   node_bundler = "esbuild"

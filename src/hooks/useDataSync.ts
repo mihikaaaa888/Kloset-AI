@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useUserStore } from '@/store/userStore'
 import { useWardrobeStore } from '@/store/wardrobeStore'
-import { fetchProfile, upsertProfile } from '@/lib/profileService'
+import { fetchProfile, markAccountActive, upsertProfile } from '@/lib/profileService'
 import { fetchWardrobe, backfillPhotos, updateItem } from '@/lib/wardrobeService'
 import { isPendingDelete } from '@/store/undoStore'
 import { SAMPLE_PHOTOS } from '@/lib/sampleData'
@@ -34,6 +34,7 @@ export function useDataSync() {
 
     if (user.id === prevUserIdRef.current) return
     prevUserIdRef.current = user.id
+    markAccountActive(user.id)
 
     // A profile cached in this browser from a different account must never show for this one.
     const cached = useUserStore.getState().profile

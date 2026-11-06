@@ -95,6 +95,13 @@ export async function upsertProfile(userId: string, profile: UserProfile): Promi
   return true
 }
 
+// Inactive accounts are deleted after 3 years (server/accounts.mjs). Signing in isn't a good enough
+// signal, since a remembered session never signs in again, so opening the app records it too.
+export function markAccountActive(userId: string): void {
+  void supabase.from('profiles').update({ last_active_at: new Date().toISOString() }).eq('id', userId)
+    .then(({ error }) => { if (error) console.warn('[profile] could not record activity — run supabase/inactive_accounts.sql', error.message) })
+}
+
 // ─── Profile photo ────────────────────────────────────────────────────────────
 // The file lives in the wardrobe-images bucket (private, one folder per user; see
 // supabase/wardrobe_photos.sql). profiles.avatar_path (supabase/profile_photo.sql) names the current one.
