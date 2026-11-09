@@ -1,56 +1,74 @@
 # Kloset
 
-AI-powered personal wardrobe and styling web app. Vite + React 18 + TypeScript SPA with an Express API, Supabase for auth/data/storage.
+AI-powered personal wardrobe and styling web app. Vite + React 18 + TypeScript SPA, an Express API in `server/`, and Supabase for auth, data and photo storage. Prices are INR (₹); rent is per week.
 
-## Commands
+The git repo root is this folder (`Kloset-AI/`). Run git and npm commands from here, never from the folder above.
 
-```bash
-npm install
-npm run dev:all     # Vite (5173) + API (3001) together — use this for full functionality
-npm run dev         # frontend only; /api calls fail
-npm run server      # API only (node server/index.mjs)
-npm run type-check  # tsc --noEmit
-npm run build       # tsc && vite build (what Netlify/Vercel run)
-```
+## Safety rules (always)
 
-Vite proxies `/api` to `localhost:3001` in dev. There are no tests; `type-check` and `build` are the checks.
+1. **Never open, print or `source` `.env`.** Key names are in `.env.example`; ask the user if you think you need a value.
+2. **Never commit, push, merge or open a PR unless the user asks.** Say what changed and let them decide.
+3. **Server keys never go in `src/` or get a `VITE_` prefix** (that ships them to the browser). Only the Supabase URL and anon key are public.
+4. **Don't delete or overwrite data, files or branches without asking.** Look at the target first.
+5. **Don't weaken security to make something work.** If a check blocks you, say why and ask (see "Security" below).
+6. If the request is unclear, ask one short question instead of guessing.
 
-## Environment
+## Check your work
 
-Copy `.env.example` to `.env` (gitignored — never commit it).
+| Command | When |
+|---------|------|
+| `npm run type-check` | After every code change. Fix errors you caused; report ones you didn't. |
+| `npm run build` | After bigger changes (what Netlify/Vercel run). |
+| `node --test server/accounts.test.mjs` | After touching `server/accounts.mjs`. |
 
-- `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` — browser-side. **Required**: `src/lib/supabase.ts` throws at import if missing, so the app is blank without them. The anon key is public by design; RLS protects data.
-- `GROQ_API_KEY` — vision analysis of clothing photos and primary stylist chat (server only).
-- `CLAUDE_API_KEY` — chat fallback when Groq errors/rate-limits (server only).
-- `EXA_API_KEY` — live shopping search (`/api/web-shop-search`) (server only).
-- `PEXELS_API_KEY` — image search (`/api/search-images`); not listed in `.env.example`.
-- `CRON_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM` — daily inactive-account job (`/api/cron/inactive-accounts`, scheduled in `vercel.json`; logic in `server/accounts.mjs`, needs `supabase/inactive_accounts.sql`). Without them it refuses to run. Tests: `node --test server/accounts.test.mjs`.
+CI (`.github/workflows/ci.yml`) runs the tests, build, a secret scan and `npm audit` on every PR. There is no linter and no browser test, so say plainly when something was not tried in a browser.
 
-Never prefix server keys with `VITE_` — that would ship them to the browser. Hosted, these are set in the Netlify/Vercel dashboard (Vite env vars need a rebuild to change).
+Start everything with `npm run dev:all` (site on :5173, API on :3001). `npm run dev` alone has no `/api`.
 
-## Architecture
+## Where things are
 
-- `src/App.tsx` — router. Public: `/`, `/login`, `/signup`, `/forgot-password`, `/reset-password`. Protected (`RequireAuth`): `/home`, `/onboarding`, `/wardrobe`, `/stylist`, `/discover`, `/friends`, `/profile`. Pages are lazy-loaded. `/saved` redirects to `/wardrobe?view=outfits`.
-- `src/contexts/AuthContext.tsx` + `src/hooks/useDataSync.ts` — on login, load profile and wardrobe from Supabase into Zustand stores; clear on logout.
-- `src/store/` — Zustand stores (user, wardrobe, outfits, chat, board), persisted to localStorage as a cache. Supabase is the source of truth.
-- `src/lib/*Service.ts` — Supabase access (wardrobe, profile, friends, images). `imageStorage.ts` keeps photos in IndexedDB and mirrors them to the private `wardrobe-images` Supabase bucket.
-- `src/lib/stylist.ts` — mock outfit engine with a swap-in interface for an LLM. `chatService.ts` talks to `/api/chat` ("Kaia" the stylist chat).
-- `server/app.mjs` — one Express app shared by local dev (`server/index.mjs`, port 3001), Netlify (`netlify/functions/api.mjs`) and Vercel (`api/[...path].mjs`). Routes: `/api/health`, `/api/search-images`, `/api/analyze-image`, `/api/analyze-image-url`, `/api/web-shop-search`, `/api/chat`.
-- `server/outfitRules.mjs` validates chat outfit suggestions (e.g. no jeans + trousers). `productPages.mjs` filters search results to real product pages.
-- `supabase/` — `schema.sql`, `friends.sql`, `wardrobe_photos.sql`; run in the SQL editor in that order. All idempotent.
-- `docs/exa-web-shopping-search.md` — spec for the Exa search feature.
+- `src/App.tsx`: routes. Public: `/`, `/privacy`, `/login`, `/signup`, `/forgot-password`, `/reset-password`. Signed-in only (`RequireAuth`): `/home`, `/onboarding`, `/wardrobe`, `/stylist`, `/discover`, `/friends`, `/profile`. `/saved` redirects to `/wardrobe?view=outfits`.
+- `src/pages/`, `src/components/` (UI primitives in `components/ui/`): screens and pieces. Reuse an existing primitive before writing a new one.
+- `src/store/`: Zustand stores, cached in localStorage. Supabase is the source of truth.
+- `src/lib/`: services. `*Service.ts` talk to Supabase; `chatService.ts` talks to "Kaia" the stylist chat; `stylist.ts` is the mock outfit engine; `imageStorage.ts` keeps photos in IndexedDB and mirrors them to the private `wardrobe-images` bucket.
+- `src/contexts/AuthContext.tsx` + `src/hooks/useDataSync.ts`: load data on login, clear on logout.
+- `server/app.mjs`: the one Express app, used locally (`server/index.mjs`), on Netlify (`netlify/functions/api.mjs`) and on Vercel (`api/[...path].mjs`). `outfitRules.mjs` validates outfit suggestions; `productPages.mjs` keeps only real product links; `accounts.mjs` is the inactive-account job.
+- `supabase/`: SQL, run in the SQL editor in this order: `schema.sql`, `friends.sql`, `wardrobe_photos.sql`, `profile_photo.sql`, `vision_analysis_fields.sql`, `inactive_accounts.sql`, `security_hardening.sql`. All safe to re-run.
+- `public/`: static files, plus `robots.txt` and `sitemap.xml` (domain `https://trykloset.com`; add new public pages to the sitemap, and new signed-in pages to `robots.txt`).
+- `docs/exa-web-shopping-search.md`: spec for the shop search.
+
+## Security (built in, keep it that way)
+
+- **API routes that spend paid credits** (chat, photo analysis, shop/image search, cutouts) need a signed-in user. Call them with `apiFetch` from `src/lib/apiUrl.ts`, never bare `fetch`. New routes of this kind must use `requireUser` in `server/app.mjs`.
+- **Fetching a user-supplied URL on the server** must go through the SSRF guard (`assertPublicUrl` / `fetchPublicImage`).
+- **New external site the browser must reach** (API, images, fonts, scripts): add it to the Content-Security-Policy in both `vercel.json` and `netlify.toml`, or the browser will block it.
+- **Every new table needs row-level security** and policies that tie rows to `auth.uid()`; put them in a new idempotent `supabase/*.sql` file. Update policies need `with check`, not only `using`.
+- Render user content as React text. No `dangerouslySetInnerHTML`, `innerHTML` or `eval`.
+- Validate and cap input sizes on the server, not only in the browser.
+
+## Conventions
+
+- Path alias `@/` → `src/`. Tailwind for styling; match the cream / butter-yellow / dark-purple palette.
+- TypeScript strict: no `any`, handle null and undefined explicitly.
+- Log with prefixes like `[shop]`, `[webShopService]`; never log tokens, keys or passwords. Production builds strip `console.log`.
+- Don't add a dependency for a few lines of code.
 
 ## Shop catalog (Discover → "New pieces")
 
 `src/lib/catalogData.ts` holds hand-written items in `RAW_CATALOG_ITEMS`, enriched at load (price, rent price, links).
 
-- `PRODUCT_PICKS` maps item id → real retailer `image`, product `url` and `brand` (shown as a tag on the card). Items without a pick fall back to the Unsplash pools — those photos are generic.
-- Items have `gender: 'women' | 'men'` (default women). `ALL_CATALOG_ITEMS` is everything; `CATALOG_ITEMS` is **women's only** and is what outfit builders, chat and "Complete the look" use; `MEN_CATALOG_ITEMS` is men's. Discover has a Women/Men toggle over `ALL_CATALOG_ITEMS`.
-- Product photos are hotlinked from retailer CDNs and can break; `ShopItemCard` shows a "Photo unavailable" placeholder on error or for logo-like images (tiny / very wide). Cards set `referrerPolicy="no-referrer"`.
-- To add items: add the raw entry, then find a real product via Exa (`/search`, `includeDomains` for the retailers), verify the image URL returns an image over ~15KB, and add it to `PRODUCT_PICKS`. Don't trust a 200 alone — one Westside "image" was the store logo.
+- `PRODUCT_PICKS` maps item id → real retailer `image`, product `url` and `brand`. Items without a pick fall back to generic Unsplash photos.
+- Items have `gender: 'women' | 'men'` (default women). `ALL_CATALOG_ITEMS` is everything; `CATALOG_ITEMS` is **women's only** and feeds outfit builders, chat and "Complete the look"; `MEN_CATALOG_ITEMS` is men's.
+- Photos are hotlinked and can break; `ShopItemCard` shows a "Photo unavailable" placeholder on error or for logo-like images.
+- To add items: add the raw entry, find a real product via Exa (`includeDomains` for the retailers), check the image URL returns an image over ~15KB (a 200 alone isn't enough; one "image" was a store logo), then add it to `PRODUCT_PICKS`.
 
-## Conventions
+## Environment
 
-- Path alias `@/` → `src/`. Tailwind for styling; match the existing cream/butter-yellow/dark-purple palette and the existing UI primitives in `src/components/ui/`.
-- Prices are INR (₹). Rent is per week.
-- Keep server secrets out of `src/`. Log prefixes like `[shop]`, `[webShopService]` are used for console debugging.
+Copy `.env.example` to `.env` (gitignored). `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are required or the app is blank. Server-only keys: `GROQ_API_KEY` (photo analysis, chat), `CLAUDE_API_KEY` (chat fallback), `EXA_API_KEY` (shop search), `PEXELS_API_KEY` (image search), `PHOTOROOM_API_KEY` (cutouts), `SUPABASE_SERVICE_ROLE_KEY` (account deletion, cron), `CRON_SECRET` / `RESEND_API_KEY` / `EMAIL_FROM` (inactive-account job). A new key goes into `.env.example` with an empty value, in the same change that first reads it.
+
+## Working well
+
+- Look before you edit: find the existing component, service or pattern and follow it.
+- Make the smallest change that fully solves the problem, and finish its callers.
+- When there are real alternatives (data model, new dependency, caching), give two or three options with a recommendation and let the user pick before coding.
+- Finish by saying what changed, what was checked, and what was not.

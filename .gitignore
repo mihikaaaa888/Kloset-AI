@@ -25,3 +25,9 @@ test-results/
 .idea/
 .vscode/
 *.swp
+
+# Keys and certificates
+*.pem
+*.key
+*.p12
+*.mobileprovision
