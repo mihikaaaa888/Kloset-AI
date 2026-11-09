@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Eye, EyeOff, ArrowRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
+import { GoogleSignInButton } from '@/components/ui/GoogleSignInButton'
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -44,6 +45,8 @@ export function LoginPage() {
           <h1 className="font-display text-3xl font-medium text-text-primary mb-1">Welcome back</h1>
           <p className="text-text-muted text-sm">Sign in to your Kloset</p>
         </div>
+
+        <GoogleSignInButton />
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
