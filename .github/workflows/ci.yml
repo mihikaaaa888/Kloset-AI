@@ -42,9 +42,7 @@ jobs:
 
   audit:
     runs-on: ubuntu-latest
-    # Informational for now: `npm audit` currently reports 1 high / 3 moderate. Remove
-    # continue-on-error once they're fixed so new ones block merges.
-    continue-on-error: true
+    # Blocks on high/critical in production deps. 2 moderate react-router advisories remain (fix needs a breaking upgrade).
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
