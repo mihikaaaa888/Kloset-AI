@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /home
+Disallow: /onboarding
+Disallow: /wardrobe
+Disallow: /stylist
+Disallow: /discover
+Disallow: /friends
+Disallow: /profile
+Disallow: /reset-password
+Disallow: /forgot-password
+
+Sitemap: https://trykloset.com/sitemap.xml
