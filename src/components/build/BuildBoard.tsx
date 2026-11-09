@@ -1,4 +1,4 @@
-import { apiUrl } from '@/lib/apiUrl'
+import { apiFetch, apiUrl } from '@/lib/apiUrl'
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent } from 'react'
 import { ArrowLeft, ArrowUpToLine, Minus, MoreHorizontal, Palette, Plus, RotateCcw, RotateCw, Search, Share2, Trash2, Undo2, X } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -649,7 +649,7 @@ function InspirationResults({ filter, onPick }: { filter: Filter; onPick: (c: Ca
     let cancelled = false
     setLoading(true)
     setMessage(null)
-    fetch(apiUrl(`/api/search-images?q=${encodeURIComponent(query)}`))
+    apiFetch(apiUrl(`/api/search-images?q=${encodeURIComponent(query)}`))
       .then((res) => res.json())
       .then((data) => {
         if (cancelled) return

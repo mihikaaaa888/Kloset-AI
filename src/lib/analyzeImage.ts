@@ -1,4 +1,4 @@
-import { apiUrl } from '@/lib/apiUrl'
+import { apiFetch, apiUrl } from '@/lib/apiUrl'
 
 export interface ClothingAnalysis {
   name: string | null
@@ -68,7 +68,7 @@ export async function analyzeImage(original: Blob): Promise<ClothingAnalysis | n
 
   const imageData = await blobToBase64(blob)
 
-  const res = await fetch(apiUrl('/api/analyze-image'), {
+  const res = await apiFetch(apiUrl('/api/analyze-image'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ imageData, mediaType }),
@@ -90,7 +90,7 @@ export async function analyzeImage(original: Blob): Promise<ClothingAnalysis | n
  * restriction that blocks a client-side fetch() of most third-party images.
  */
 export async function analyzeImageFromUrl(url: string): Promise<ClothingAnalysis | null> {
-  const res = await fetch(apiUrl('/api/analyze-image-url'), {
+  const res = await apiFetch(apiUrl('/api/analyze-image-url'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url }),
