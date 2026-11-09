@@ -25,7 +25,7 @@ export const POLICY_BLOCKS: PolicyBlock[] = [
   { type: 'p', text: 'We collect only what the Service needs to work. Most of it comes from you. Some is generated automatically when your device connects to our servers.' },
   { type: 'table', rows: [
     ['Category', 'What it includes', 'Where it comes from'],
-    ['Account', 'Email address; password (stored only as a secure hash by our authentication provider); sign-in session tokens', 'You, at sign-up'],
+    ['Account', 'Email address; password (stored only as a secure hash by our authentication provider); sign-in session tokens. If you continue with Google, we receive your name, email address and profile picture from Google instead of a password', 'You, at sign-up, or Google if you choose to continue with Google'],
     ['Profile', 'Name; age; occupation; lifestyle; whether you prefer feminine, masculine or both styles; style preferences and favourite and avoided colours; pieces you picked in the style quiz; how often you want suggestions; optional profile photo', 'You, during onboarding and in Profile'],
     ['Wardrobe', 'Photos of your clothing; item details (name, category, colour, material, pattern, fit, formality, seasons, occasions, brand, notes); favourites; how many times you wore an item and the date you last wore it', 'You, plus details our AI suggests from your photos (Section 4)'],
     ['Outfits and boards', 'Saved outfits, collections, outfit boards and the pieces placed on them', 'You'],
@@ -84,6 +84,7 @@ export const POLICY_BLOCKS: PolicyBlock[] = [
     ['Vercel', 'Hosts the website and our API', 'All requests passing through our servers, including photos and messages in transit; IP address; request logs', 'United States, with a global network'],
     ['Groq', 'AI photo tagging and Kaia chat', 'Clothing photos; chat content and the wardrobe and profile details listed in Section 4', 'United States'],
     ['Anthropic', 'Backup provider for Kaia chat', 'Same as Groq, only when Groq is unavailable', 'United States'],
+    ['Google', 'Sign-in, only if you choose to continue with Google', 'Your sign-in request; Google confirms your identity and sends us your name, email address and profile picture', 'United States'],
     ['Exa', 'Product search', 'Short product search terms', 'United States'],
     ['Resend', 'Sends account notices by email', 'Your email address and the notice we send you', 'United States'],
     ['Pexels', 'Inspiration photos and image search', 'Search terms (sent by our server); your IP address when images load', 'European Union'],

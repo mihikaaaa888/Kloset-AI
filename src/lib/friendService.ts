@@ -101,6 +101,8 @@ export interface FriendMessage {
 }
 
 export async function listFriendMessages(friendId: string, myId: string): Promise<FriendMessage[]> {
+  // The ids go into a PostgREST filter string, so they must be plain UUIDs.
+  if (![friendId, myId].every((id) => /^[0-9a-f-]{36}$/i.test(id))) throw new Error('Invalid user id')
   const { data, error } = await supabase.from('friend_messages').select('id,sender_id,recipient_id,body,created_at')
     .or(`and(sender_id.eq.${myId},recipient_id.eq.${friendId}),and(sender_id.eq.${friendId},recipient_id.eq.${myId})`)
     .order('created_at', { ascending: true })

@@ -8,6 +8,7 @@
  */
 
 import { timingSafeEqual } from 'node:crypto'
+import { lookup } from 'node:dns/promises'
 import express from 'express'
 import cors from 'cors'
 import Anthropic from '@anthropic-ai/sdk'
@@ -45,9 +46,70 @@ app.use(cors({
 }))
 app.use(express.json({ limit: '15mb' }))
 
+app.disable('x-powered-by')
+app.set('trust proxy', 1) // Vercel/Netlify sit in front; needed so req.ip is the client, not the proxy
+
+// This API only returns JSON, so lock every response down.
+app.use((_req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
+    'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
+    'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
+    'Cache-Control': 'no-store',
+  })
+  next()
+})
+
+// Per-IP rate limit. shortcut: counters live in one instance's memory, so on serverless the
+// effective limit is per warm instance; move to Redis/Upstash if abuse shows up.
+const hits = new Map()
+app.use('/api', (req, res, next) => {
+  const now = Date.now()
+  let entry = hits.get(req.ip)
+  if (!entry || entry.reset < now) {
+    entry = { count: 0, reset: now + 60_000 }
+    hits.set(req.ip, entry)
+    if (hits.size > 5000) for (const [ip, e] of hits) if (e.reset < now) hits.delete(ip)
+  }
+  if (++entry.count > 60) return res.status(429).json({ error: 'Too many requests. Please slow down.' })
+  next()
+})
+
+// Routes that spend paid third-party credits require a signed-in user. The token is checked
+// against Supabase; a verified token is remembered for a minute to avoid a round trip per call.
+const verifiedTokens = new Map()
+async function requireUser(req, res, next) {
+  const token = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1]
+  if (!token) return res.status(401).json({ error: 'Please sign in to use this feature.' })
+  if ((verifiedTokens.get(token) ?? 0) > Date.now()) return next()
+
+  const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '')
+  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY
+  if (!supabaseUrl || !anonKey) return res.status(503).json({ error: 'Auth is not configured on the server.' })
+  try {
+    const r = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: anonKey, Authorization: `Bearer ${token}` } })
+    if (!r.ok) return res.status(401).json({ error: 'Your session has expired. Please sign in again.' })
+  } catch {
+    return res.status(503).json({ error: 'Could not verify your session.' })
+  }
+  if (verifiedTokens.size > 1000) verifiedTokens.clear()
+  verifiedTokens.set(token, Date.now() + 60_000)
+  next()
+}
+app.use(
+  ['/api/search-images', '/api/analyze-image', '/api/analyze-image-url', '/api/refine-garment-image', '/api/remove-background', '/api/web-shop-search', '/api/chat'],
+  requireUser,
+)
+
+
 // ─── Health check ─────────────────────────────────────────────────────────────
 
 app.get('/api/health', (_req, res) => {
+  if (process.env.NODE_ENV === 'production' || process.env.VERCEL || process.env.NETLIFY) {
+    return res.json({ ok: true })
+  }
   res.json({
     ok: true,
     hasGroqKey: !!process.env.GROQ_API_KEY,
@@ -79,7 +141,7 @@ app.delete('/api/account', async (req, res) => {
     return res.json({ ok: true })
   } catch (error) {
     console.error('[account] deletion failed:', error?.message ?? 'unknown error')
-    return res.status(500).json({ error: error instanceof Error ? error.message : 'Could not delete your account.' })
+    return res.status(500).json({ error: 'Could not delete your account.' })
   }
 })
 
@@ -295,10 +357,41 @@ app.post('/api/analyze-image', async (req, res) => {
     console.error('[analyze-image] Groq error:', e?.message ?? e)
     return res.status(500).json({
       error: 'Photo analysis failed. You can still add the item manually.',
-      details: e instanceof Error ? e.message : String(e),
     })
   }
 })
+
+// SSRF guard for server-side fetches of user-supplied URLs: only public http(s) hosts.
+// shortcut: DNS is checked before the fetch, not pinned to it (rebinding window); pin via a custom agent if this becomes a target.
+function isPrivateAddress(ip) {
+  const l = ip.toLowerCase()
+  if (l.includes(':')) {
+    if (l.startsWith('::ffff:')) return l.includes('.') ? isPrivateAddress(l.slice(7)) : true
+    return l === '::' || l === '::1' || l.startsWith('fc') || l.startsWith('fd') || l.startsWith('fe8') || l.startsWith('fe9') || l.startsWith('fea') || l.startsWith('feb')
+  }
+  const [a, b] = l.split('.').map(Number)
+  return a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127)
+}
+
+async function assertPublicUrl(parsed) {
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('bad protocol')
+  const addresses = await lookup(parsed.hostname, { all: true })
+  if (!addresses.length || addresses.some((a) => isPrivateAddress(a.address))) throw new Error('blocked address')
+}
+
+async function fetchPublicImage(startUrl) {
+  let current = new URL(startUrl)
+  for (let hop = 0; hop < 4; hop++) {
+    await assertPublicUrl(current)
+    const r = await fetch(current, { redirect: 'manual', signal: AbortSignal.timeout(8000) })
+    if (r.status >= 300 && r.status < 400 && r.headers.get('location')) {
+      current = new URL(r.headers.get('location'), current)
+      continue
+    }
+    return r
+  }
+  throw new Error('too many redirects')
+}
 
 // Fetches an arbitrary image URL (pasted by the user, or picked from a Pexels
 // search result) server-side and runs the same vision analysis on it — done
@@ -314,14 +407,17 @@ app.post('/api/analyze-image-url', async (req, res) => {
   let parsed
   try {
     parsed = new URL(url)
-    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('bad protocol')
+    await assertPublicUrl(parsed)
   } catch {
     return res.status(400).json({ error: 'Invalid image URL.' })
   }
 
   try {
-    const imgRes = await fetch(parsed.toString())
+    const imgRes = await fetchPublicImage(parsed.toString())
     if (!imgRes.ok) throw new Error(`Fetch ${imgRes.status}`)
+    if (Number(imgRes.headers.get('content-length') || 0) > 12 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Image is too large to analyse.' })
+    }
 
     const contentType = (imgRes.headers.get('content-type') || '').split(';')[0].trim()
     const mediaType = ['image/jpeg', 'image/png', 'image/webp'].includes(contentType)
@@ -340,7 +436,6 @@ app.post('/api/analyze-image-url', async (req, res) => {
     console.error('[analyze-image-url] error:', e?.message ?? e)
     return res.status(500).json({
       error: 'Photo analysis failed. You can still add the item manually.',
-      details: e instanceof Error ? e.message : String(e),
     })
   }
 })
