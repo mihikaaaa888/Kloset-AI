@@ -6,6 +6,8 @@ interface OnboardingLayoutProps {
   step: number
   totalSteps: number
   onBack?: () => void
+  /** When set, a "Skip" link replaces the step counter so the rest of the survey can be skipped. */
+  onSkip?: () => void
   children: ReactNode
 }
 
@@ -13,6 +15,7 @@ export function OnboardingLayout({
   step,
   totalSteps,
   onBack,
+  onSkip,
   children,
 }: OnboardingLayoutProps) {
   const progress = (step / totalSteps) * 100
@@ -50,9 +53,18 @@ export function OnboardingLayout({
             </span>
           </div>
 
-          <span className="text-xs text-charcoal-400 tabular-nums">
-            {step} / {totalSteps}
-          </span>
+          {onSkip ? (
+            <button
+              onClick={onSkip}
+              className="text-sm font-medium text-charcoal-500 hover:text-charcoal-900 transition-colors"
+            >
+              Skip
+            </button>
+          ) : (
+            <span className="text-xs text-charcoal-400 tabular-nums">
+              {step} / {totalSteps}
+            </span>
+          )}
         </div>
       </div>
 
