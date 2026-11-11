@@ -1,0 +1,1506 @@
+{
+  "key": "colour_harmony",
+  "version": "1.0.0",
+  "sourceName": "Kloset_Colour_Harmony_Engine_Spec.xlsx",
+  "sourceFormat": "xlsx",
+  "importedAt": "2026-11-11",
+  "engineConfig": {
+    "algorithmVersion": "colour-harmony-v1.0.0",
+    "scoringConfigVersion": "colour-harmony-config-v1.0.0",
+    "pairwiseWeights": {
+      "hue": 0.3,
+      "contrast": 0.25,
+      "chroma": 0.2,
+      "temperature": 0.15,
+      "neutralAnchor": 0.1
+    },
+    "huePriors": [
+      {
+        "angle": 0,
+        "score": 64,
+        "width": 20
+      },
+      {
+        "angle": 30,
+        "score": 84,
+        "width": 22
+      },
+      {
+        "angle": 60,
+        "score": 78,
+        "width": 22
+      },
+      {
+        "angle": 120,
+        "score": 72,
+        "width": 26
+      },
+      {
+        "angle": 150,
+        "score": 76,
+        "width": 28
+      },
+      {
+        "angle": 180,
+        "score": 74,
+        "width": 30
+      }
+    ],
+    "outfitWeights": {
+      "pairwiseColour": 0.55,
+      "balance": 0.2,
+      "pattern": 0.1,
+      "occasion": 0.1,
+      "preference": 0.05
+    },
+    "scoreBands": [
+      {
+        "min": 85,
+        "label": "Strong candidate"
+      },
+      {
+        "min": 70,
+        "label": "Good candidate"
+      },
+      {
+        "min": 55,
+        "label": "Context-dependent"
+      },
+      {
+        "min": 0,
+        "label": "Lower priority"
+      }
+    ],
+    "fallbackProfileConfidence": 0.45,
+    "neutralChromaThreshold": 0.035,
+    "sourceNotes": [
+      "Weights are tunable starting defaults, not validated fashion laws.",
+      "Use perceptual OKLab/OKLCH-derived features; hue is inactive near the neutral axis and active weights are renormalized.",
+      "User preference, garment context, pattern complexity, occasion, and image confidence remain separate signals.",
+      "The LLM explains measured deterministic scores; it does not invent numeric scores."
+    ]
+  },
+  "sheets": [
+    {
+      "name": "START HERE",
+      "rows": [
+        {
+          "row": 1,
+          "cells": {
+            "A1": "KLOSET | COLOUR HARMONY ENGINE"
+          }
+        },
+        {
+          "row": 2,
+          "cells": {
+            "A2": "Implementation workbook • A machine-readable starting specification plus scoring logic, taxonomies, test cases and output contract."
+          }
+        },
+        {
+          "row": 4,
+          "cells": {
+            "A4": "Topic",
+            "B4": "Guidance",
+            "C4": "Implementation notes"
+          }
+        },
+        {
+          "row": 5,
+          "cells": {
+            "A5": "Purpose",
+            "B5": "Generate colour-aware outfit recommendations from wardrobe images without requiring users or the Kloset team to upload hand-curated colour palettes."
+          }
+        },
+        {
+          "row": 6,
+          "cells": {
+            "A6": "How to use this workbook",
+            "B6": "Treat the workbook as a product/engineering specification. The tables are reference data and tunable defaults, not immutable fashion laws."
+          }
+        },
+        {
+          "row": 7,
+          "cells": {
+            "A7": "Recommended processing flow",
+            "B7": "Garment image → garment segmentation → colour sampling → dominant-colour extraction → perceptual colour conversion → pairwise compatibility → outfit-level ranking → stylist explanation."
+          }
+        },
+        {
+          "row": 8,
+          "cells": {
+            "A8": "Important design principle",
+            "B8": "Use deterministic colour calculations to rank candidates; use the LLM to explain, contextualise and refine the recommendations. Do not ask the LLM to invent the numeric score."
+          }
+        },
+        {
+          "row": 9,
+          "cells": {
+            "A9": "Score interpretation",
+            "B9": "A score is a ranking signal, not an objective truth about taste. Keep user feedback, garment context, print/pattern complexity and occasion as separate signals."
+          }
+        },
+        {
+          "row": 10,
+          "cells": {
+            "A10": "Do not hard-code universal rules",
+            "B10": "Hue-wheel relationships, warm/cool labels and contrast targets are useful priors. They must not be treated as strict pass/fail rules."
+          }
+        },
+        {
+          "row": 11,
+          "cells": {
+            "A11": "Suggested first release",
+            "B11": "Start with dominant-colour extraction and pairwise top/bottom scoring. Add multi-colour garments, footwear, accessories, occasion and personalisation after validating the baseline."
+          }
+        },
+        {
+          "row": 12,
+          "cells": {
+            "A12": "Workbook tabs",
+            "B12": "SCORING MODEL = weights and equations; HUE RELATIONSHIPS = hue-angle priors; COLOUR TAXONOMY = neutrals/temperature; FEATURES = extraction and feature definitions; OUTFIT LOGIC = outfit-level aggregation; TEST CASES = QA examples; OUTPUT SCHEMA = JSON contract; PSEUDOCODE = implementation outline; SCORE CALCULATOR = editable example calculator."
+          }
+        },
+        {
+          "row": 13,
+          "cells": {
+            "A13": "Colour-space recommendation",
+            "B13": "Use CIELAB / CIEDE2000 or OKLab/OKLCH for perceptual comparisons. Keep the original RGB/HEX values for display and debugging. Do not calculate perceptual distances directly in raw RGB."
+          }
+        },
+        {
+          "row": 14,
+          "cells": {
+            "A14": "Versioning",
+            "B14": "Record algorithm_version, extraction_model_version and scoring_config_version with every recommendation so results can be compared and tuned."
+          }
+        },
+        {
+          "row": 17,
+          "cells": {
+            "A17": "This workbook contains tunable defaults. Validate against real outfits, user ratings and stylist review before treating any threshold as production-ready."
+          }
+        }
+      ],
+      "formulas": {}
+    },
+    {
+      "name": "SCORING MODEL",
+      "rows": [
+        {
+          "row": 1,
+          "cells": {
+            "A1": "PAIRWISE COLOUR COMPATIBILITY"
+          }
+        },
+        {
+          "row": 2,
+          "cells": {
+            "A2": "Default pairwise score. Each component is 0–100; weights sum to 1.0. Tune only after validation."
+          }
+        },
+        {
+          "row": 4,
+          "cells": {
+            "A4": "Component",
+            "B4": "Weight",
+            "C4": "Feature",
+            "D4": "How to calculate",
+            "E4": "Notes",
+            "F4": "Default status"
+          }
+        },
+        {
+          "row": 5,
+          "cells": {
+            "A5": "Hue harmony",
+            "B5": 0.3,
+            "C5": "Angular relationship between hues",
+            "D5": "Use circular hue distance and soft harmony priors. If one/both colours are near-achromatic, reduce hue's influence and redistribute its weight across active components.",
+            "E5": "Tunable starting point",
+            "F5": "Starting default"
+          }
+        },
+        {
+          "row": 6,
+          "cells": {
+            "A6": "Lightness / contrast",
+            "B6": 0.25,
+            "C6": "Separation in perceptual lightness",
+            "D6": "Use ΔL* or ΔL in OKLab. Reward readable separation; do not assume maximum contrast is always best.",
+            "E6": "Tunable starting point",
+            "F6": "Starting default"
+          }
+        },
+        {
+          "row": 7,
+          "cells": {
+            "A7": "Chroma / saturation",
+            "B7": 0.2,
+            "C7": "Compatibility of colour intensity",
+            "D7": "Use chroma (C*) or OKLCH C. Reward intentional balance; a muted base plus a vivid accent can score well.",
+            "E7": "Tunable starting point",
+            "F7": "Starting default"
+          }
+        },
+        {
+          "row": 8,
+          "cells": {
+            "A8": "Temperature relationship",
+            "B8": 0.15,
+            "C8": "Warm/cool/neutral undertone relationship",
+            "D8": "Use continuous temperature estimates where possible. Do not automatically penalise warm-cool combinations.",
+            "E8": "Tunable starting point",
+            "F8": "Starting default"
+          }
+        },
+        {
+          "row": 9,
+          "cells": {
+            "A9": "Neutral / anchor compatibility",
+            "B9": 0.1,
+            "C9": "Whether neutrals provide a coherent anchor",
+            "D9": "Treat black, white, grey, navy, beige, cream and brown as context-sensitive anchors, not magic universal matches.",
+            "E9": "Tunable starting point",
+            "F9": "Starting default"
+          }
+        },
+        {
+          "row": 12,
+          "cells": {
+            "A12": "Pair score formula",
+            "B12": "CCS = Σ(weight_i × component_score_i) / Σ(active_weight_i)"
+          }
+        },
+        {
+          "row": 14,
+          "cells": {
+            "A14": "Missing / unreliable feature handling",
+            "B14": "If hue is unreliable because a colour is near-achromatic, mark hue as inactive for that pair and renormalise the remaining weights. Never silently substitute a zero score for missing data."
+          }
+        },
+        {
+          "row": 17,
+          "cells": {
+            "A17": "Score",
+            "B17": "Label",
+            "C17": "Action"
+          }
+        },
+        {
+          "row": 18,
+          "cells": {
+            "A18": "85–100",
+            "B18": "Strong candidate",
+            "C18": "Prioritise, subject to outfit context and user preferences."
+          }
+        },
+        {
+          "row": 19,
+          "cells": {
+            "A19": "70–84",
+            "B19": "Good candidate",
+            "C19": "Recommend normally; explain the colour relationship."
+          }
+        },
+        {
+          "row": 20,
+          "cells": {
+            "A20": "55–69",
+            "B20": "Context-dependent",
+            "C20": "Recommend if silhouette, print, occasion or user preference supports it."
+          }
+        },
+        {
+          "row": 21,
+          "cells": {
+            "A21": "Below 55",
+            "B21": "Lower priority",
+            "C21": "Usually rank lower; do not hard-reject if user explicitly likes the combination."
+          }
+        }
+      ],
+      "formulas": {}
+    },
+    {
+      "name": "HUE RELATIONSHIPS",
+      "rows": [
+        {
+          "row": 1,
+          "cells": {
+            "A1": "HUE RELATIONSHIP PRIORS"
+          }
+        },
+        {
+          "row": 2,
+          "cells": {
+            "A2": "Use circular hue distance in degrees (0–360). These are soft priors, not deterministic rules."
+          }
+        },
+        {
+          "row": 4,
+          "cells": {
+            "A4": "Relationship",
+            "B4": "Approximate hue separation",
+            "C4": "Interpretation",
+            "D4": "Styling guidance",
+            "E4": "Algorithm treatment"
+          }
+        },
+        {
+          "row": 5,
+          "cells": {
+            "A5": "Monochromatic / same hue",
+            "B5": "0°",
+            "C5": "Very close hues",
+            "D5": "Can work through changes in lightness and chroma; avoid flatness by checking tonal separation and texture.",
+            "E5": "Treat as tonal harmony; contrast still matters."
+          }
+        },
+        {
+          "row": 6,
+          "cells": {
+            "A6": "Analogous",
+            "B6": "15°–45°",
+            "C6": "Nearby hues, often around 15°–45°",
+            "D6": "Usually cohesive and low-friction; exact preferred range depends on colour distribution.",
+            "E6": "Soft positive prior."
+          }
+        },
+        {
+          "row": 7,
+          "cells": {
+            "A7": "Near-analogous",
+            "B7": "45°–75°",
+            "C7": "Adjacent colour families",
+            "D7": "Can feel harmonious; inspect saturation and lightness balance.",
+            "E7": "Soft positive prior."
+          }
+        },
+        {
+          "row": 8,
+          "cells": {
+            "A8": "Triadic",
+            "B8": "Approximately 120°",
+            "C8": "Three hues roughly 120° apart",
+            "D8": "Most relevant at outfit level with three distinct colour families; use one dominant and two smaller accents.",
+            "E8": "Evaluate at outfit level."
+          }
+        },
+        {
+          "row": 9,
+          "cells": {
+            "A9": "Split complementary",
+            "B9": "Approximately 150° / 210°",
+            "C9": "Two colours around a complement",
+            "D9": "Can create contrast with less direct opposition; often better when one hue is an accent.",
+            "E9": "Soft positive prior."
+          }
+        },
+        {
+          "row": 10,
+          "cells": {
+            "A10": "Complementary",
+            "B10": "Approximately 180°",
+            "C10": "Opposing hues",
+            "D10": "Can be vivid; lower score if both colours are highly saturated and similarly dominant.",
+            "E10": "Positive prior; saturation/dominance temper it."
+          }
+        },
+        {
+          "row": 11,
+          "cells": {
+            "A11": "Neutral / no reliable hue",
+            "B11": "N/A",
+            "C11": "Low chroma or near-achromatic",
+            "D11": "Hue angle becomes unstable; deactivate hue scoring or give it very low confidence.",
+            "E11": "Do not assign arbitrary hue."
+          }
+        },
+        {
+          "row": 13,
+          "cells": {
+            "A13": "Implementation recommendation",
+            "B13": "Calculate circular distance d = min(|h1-h2|, 360-|h1-h2|). Evaluate closeness to several relationship anchors with smooth curves, then combine using relationship-specific priors. Avoid a single hard-coded lookup such as '180° = always 100'."
+          }
+        }
+      ],
+      "formulas": {}
+    },
+    {
+      "name": "COLOUR TAXONOMY",
+      "rows": [
+        {
+          "row": 1,
+          "cells": {
+            "A1": "COLOUR TAXONOMY & LABELS"
+          }
+        },
+        {
+          "row": 2,
+          "cells": {
+            "A2": "Starting labels for explainability and fallback logic. Derive labels from measured colour values; do not classify by garment name alone."
+          }
+        },
+        {
+          "row": 4,
+          "cells": {
+            "A4": "Colour family",
+            "B4": "Broad category",
+            "C4": "Detection cue",
+            "D4": "Styling considerations",
+            "E4": "Do not assume"
+          }
+        },
+        {
+          "row": 5,
+          "cells": {
+            "A5": "Black",
+            "B5": "Neutral / achromatic",
+            "C5": "Very low lightness",
+            "D5": "Can anchor bright, muted or tonal outfits; check whether the overall look becomes too dark.",
+            "E5": "Hue score usually inactive."
+          }
+        },
+        {
+          "row": 6,
+          "cells": {
+            "A6": "White",
+            "B6": "Neutral / achromatic",
+            "C6": "Very high lightness, low chroma",
+            "D6": "Useful for clean contrast and light palettes; optical white differs from warm ivory.",
+            "E6": "Undertone can matter."
+          }
+        },
+        {
+          "row": 7,
+          "cells": {
+            "A7": "Grey",
+            "B7": "Neutral / achromatic",
+            "C7": "Low chroma, middle lightness",
+            "D7": "Can bridge warm and cool colours; undertone may be warm, cool or neutral.",
+            "E7": "Do not assume grey is temperature-free."
+          }
+        },
+        {
+          "row": 8,
+          "cells": {
+            "A8": "Navy",
+            "B8": "Near-neutral / blue family",
+            "C8": "Dark blue, often moderate/low chroma",
+            "D8": "Often behaves as a versatile anchor; do not treat all blues as identical.",
+            "E8": "Still has a hue."
+          }
+        },
+        {
+          "row": 9,
+          "cells": {
+            "A9": "Beige",
+            "B9": "Near-neutral / warm or neutral",
+            "C9": "Low-to-moderate chroma, light-to-mid value",
+            "D9": "Undertone matters: yellow, pink, grey or green-beige can change compatibility.",
+            "E9": "Estimate undertone."
+          }
+        },
+        {
+          "row": 10,
+          "cells": {
+            "A10": "Cream / ivory",
+            "B10": "Near-neutral / warm",
+            "C10": "Light, low chroma, yellow/red bias",
+            "D10": "Often softer than pure white; assess undertone against adjacent colours.",
+            "E10": "Not identical to white."
+          }
+        },
+        {
+          "row": 11,
+          "cells": {
+            "A11": "Brown",
+            "B11": "Near-neutral / warm",
+            "C11": "Low-to-mid lightness, variable chroma",
+            "D11": "Ranges from cool taupe to warm caramel; derive undertone rather than applying one label.",
+            "E11": "Broad family; measure coordinates."
+          }
+        },
+        {
+          "row": 12,
+          "cells": {
+            "A12": "Red",
+            "B12": "Chromatic",
+            "C12": "Hue family label",
+            "D12": "Separate burgundy, brick, scarlet and coral using measured hue/lightness/chroma.",
+            "E12": "Do not use one red prototype."
+          }
+        },
+        {
+          "row": 13,
+          "cells": {
+            "A13": "Orange",
+            "B13": "Chromatic / usually warm",
+            "C13": "Hue family label",
+            "D13": "Separate rust, terracotta, peach and vivid orange.",
+            "E13": "Undertone and chroma vary."
+          }
+        },
+        {
+          "row": 14,
+          "cells": {
+            "A14": "Yellow",
+            "B14": "Chromatic / usually warm",
+            "C14": "Hue family label",
+            "D14": "Mustard, butter yellow and lemon have different lightness/chroma profiles.",
+            "E14": "Undertone and lightness vary."
+          }
+        },
+        {
+          "row": 15,
+          "cells": {
+            "A15": "Green",
+            "B15": "Chromatic / variable temperature",
+            "C15": "Hue family label",
+            "D15": "Olive, sage, emerald and mint should not share one generic profile.",
+            "E15": "Measure each garment."
+          }
+        },
+        {
+          "row": 16,
+          "cells": {
+            "A16": "Blue",
+            "B16": "Chromatic / often cool",
+            "C16": "Hue family label",
+            "D16": "Navy, cobalt, powder blue and teal differ materially.",
+            "E16": "Teal may be green-biased."
+          }
+        },
+        {
+          "row": 17,
+          "cells": {
+            "A17": "Purple",
+            "B17": "Chromatic / often cool or red-biased",
+            "C17": "Hue family label",
+            "D17": "Lavender, lilac, plum and violet have different undertones.",
+            "E17": "Measure each garment."
+          }
+        },
+        {
+          "row": 18,
+          "cells": {
+            "A18": "Pink",
+            "B18": "Chromatic / variable temperature",
+            "C18": "Hue family label",
+            "D18": "Dusty rose, blush, hot pink and mauve vary widely.",
+            "E18": "Measure each garment."
+          }
+        },
+        {
+          "row": 21,
+          "cells": {
+            "A21": "Temperature labels",
+            "B21": "Prefer continuous undertone/temperature features. If the model only supports labels, use warm / cool / neutral / uncertain and attach confidence. A garment may be mixed or appear different under lighting."
+          }
+        }
+      ],
+      "formulas": {}
+    },
+    {
+      "name": "FEATURES",
+      "rows": [
+        {
+          "row": 1,
+          "cells": {
+            "A1": "IMAGE & COLOUR FEATURE EXTRACTION"
+          }
+        },
+        {
+          "row": 2,
+          "cells": {
+            "A2": "Definitions and data quality requirements for each garment's colour profile."
+          }
+        },
+        {
+          "row": 4,
+          "cells": {
+            "A4": "Feature",
+            "B4": "Representation",
+            "C4": "Method",
+            "D4": "Quality / edge-case handling",
+            "E4": "Priority"
+          }
+        },
+        {
+          "row": 5,
+          "cells": {
+            "A5": "Garment segmentation",
+            "B5": "Mask / polygon / alpha mask",
+            "C5": "Isolate garment pixels from background, skin, hanger and shadows.",
+            "D5": "Store mask confidence; if segmentation confidence is low, flag for review or lower recommendation confidence.",
+            "E5": "Required"
+          }
+        },
+        {
+          "row": 6,
+          "cells": {
+            "A6": "Pixel sampling",
+            "B6": "Sampled garment pixels",
+            "C6": "Sample across garment area; avoid excessive sampling of shadows, highlights and background.",
+            "D6": "Use robust sampling and ignore transparent/background pixels.",
+            "E6": "Required"
+          }
+        },
+        {
+          "row": 7,
+          "cells": {
+            "A7": "Dominant colours",
+            "B7": "3–5 clusters initially",
+            "C7": "Run K-means or a comparable clustering method on perceptual colour values.",
+            "D7": "Store each cluster's share; merge near-duplicate clusters; retain multiple colours for prints.",
+            "E7": "Required"
+          }
+        },
+        {
+          "row": 8,
+          "cells": {
+            "A8": "Primary colour",
+            "B8": "Highest-area cluster",
+            "C8": "Cluster with greatest garment pixel share, after excluding background.",
+            "D8": "Do not let a tiny logo or button define the garment's primary colour.",
+            "E8": "Required"
+          }
+        },
+        {
+          "row": 9,
+          "cells": {
+            "A9": "Secondary colours",
+            "B9": "Next most important clusters",
+            "C9": "Retain clusters above a tunable area threshold or top-N clusters.",
+            "D9": "For printed garments, retain colour proportions rather than only one dominant colour.",
+            "E9": "Recommended"
+          }
+        },
+        {
+          "row": 10,
+          "cells": {
+            "A10": "Colour representation",
+            "B10": "RGB, HEX, Lab / OKLCH",
+            "C10": "Store raw RGB/HEX for rendering and perceptual coordinates for comparison.",
+            "D10": "Include colour-space name and conversion version.",
+            "E10": "Required"
+          }
+        },
+        {
+          "row": 11,
+          "cells": {
+            "A11": "Lightness",
+            "B11": "L* or OKLab L",
+            "C11": "Perceptual lightness feature.",
+            "D11": "Use consistent colour space across all garments.",
+            "E11": "Required"
+          }
+        },
+        {
+          "row": 12,
+          "cells": {
+            "A12": "Chroma",
+            "B12": "C* or OKLCH C",
+            "C12": "Colourfulness / saturation-like feature.",
+            "D12": "Do not confuse RGB saturation with perceptual chroma.",
+            "E12": "Required"
+          }
+        },
+        {
+          "row": 13,
+          "cells": {
+            "A13": "Hue angle",
+            "B13": "h° in OKLCH / Lab",
+            "C13": "Circular hue angle for chromatic colours.",
+            "D13": "Mark hue as null/low-confidence near the neutral axis.",
+            "E13": "Required"
+          }
+        },
+        {
+          "row": 14,
+          "cells": {
+            "A14": "Temperature / undertone",
+            "B14": "Warm/cool/neutral + confidence",
+            "C14": "Estimate from colour coordinates, optionally refined by vision model.",
+            "D14": "Treat as uncertain for near-neutrals, mixed colours and difficult lighting.",
+            "E14": "Recommended"
+          }
+        },
+        {
+          "row": 15,
+          "cells": {
+            "A15": "Pattern / print flag",
+            "B15": "Solid / patterned / unknown",
+            "C15": "Detect whether garment contains multiple colours, stripes, checks, floral or other print.",
+            "D15": "Patterned items require multi-colour compatibility, not just dominant hue.",
+            "E15": "Recommended"
+          }
+        },
+        {
+          "row": 16,
+          "cells": {
+            "A16": "Material / texture",
+            "B16": "Optional visual attribute",
+            "C16": "Texture and sheen can influence perceived colour and formality.",
+            "D16": "Do not infer exact fabric composition from image unless separately verified.",
+            "E16": "Optional"
+          }
+        },
+        {
+          "row": 17,
+          "cells": {
+            "A17": "Lighting quality",
+            "B17": "Exposure / white balance confidence",
+            "C17": "Detect severe colour cast, shadows, overexposure or low light.",
+            "D17": "Low-quality image should lower confidence; avoid false precision.",
+            "E17": "Required"
+          }
+        },
+        {
+          "row": 18,
+          "cells": {
+            "A18": "Colour profile confidence",
+            "B18": "0–1",
+            "C18": "Combine segmentation, lighting and cluster stability confidence.",
+            "D18": "Use to down-weight uncertain scores or request another image if necessary.",
+            "E18": "Required"
+          }
+        }
+      ],
+      "formulas": {}
+    },
+    {
+      "name": "OUTFIT LOGIC",
+      "rows": [
+        {
+          "row": 1,
+          "cells": {
+            "A1": "OUTFIT-LEVEL RANKING"
+          }
+        },
+        {
+          "row": 2,
+          "cells": {
+            "A2": "Pairwise colour scores are only one input. Rank complete outfits using all relevant pairs and visual balance."
+          }
+        },
+        {
+          "row": 4,
+          "cells": {
+            "A4": "Signal",
+            "B4": "Suggested feature",
+            "C4": "How to calculate",
+            "D4": "Guardrail",
+            "E4": "Priority"
+          }
+        },
+        {
+          "row": 5,
+          "cells": {
+            "A5": "Pairwise colour score",
+            "B5": "CCS(i,j)",
+            "C5": "Calculate all meaningful garment pairs in an outfit (top-bottom, top-layer, bottom-shoe, etc.).",
+            "D5": "Use garment-role weights; not every pair is equally visually important.",
+            "E5": "Core"
+          }
+        },
+        {
+          "row": 6,
+          "cells": {
+            "A6": "Pair aggregation",
+            "B6": "Pairwise mean / weighted mean",
+            "C6": "Aggregate pair scores with higher weights for visually dominant pairs.",
+            "D6": "Avoid allowing many low-importance accessory pairs to overwhelm the main outfit.",
+            "E6": "Core"
+          }
+        },
+        {
+          "row": 7,
+          "cells": {
+            "A7": "Dominant colour balance",
+            "B7": "Dominance distribution",
+            "C7": "Estimate whether one colour dominates and others support it.",
+            "D7": "A useful starting heuristic is one dominant colour, one supporting colour and one accent; not a mandatory 60/30/10 rule.",
+            "E7": "Core"
+          }
+        },
+        {
+          "row": 8,
+          "cells": {
+            "A8": "Neutral anchoring",
+            "B8": "Neutral share / anchor score",
+            "C8": "Measure whether neutrals support chromatic colours where relevant.",
+            "D8": "Do not require neutrals; cohesive all-colour outfits can be excellent.",
+            "E8": "Recommended"
+          }
+        },
+        {
+          "row": 9,
+          "cells": {
+            "A9": "Pattern complexity",
+            "B9": "Pattern interaction score",
+            "C9": "Check whether multiple prints compete in scale, colour count or contrast.",
+            "D9": "Use separate print compatibility model; avoid overconfident colour-only judgement.",
+            "E9": "Recommended"
+          }
+        },
+        {
+          "row": 10,
+          "cells": {
+            "A10": "Occasion fit",
+            "B10": "Context score",
+            "C10": "Use user-selected occasion, dress code and formality.",
+            "D10": "Occasion must not override explicit user preference.",
+            "E10": "Recommended"
+          }
+        },
+        {
+          "row": 11,
+          "cells": {
+            "A11": "Weather / season",
+            "B11": "Context score",
+            "C11": "Use only when user requests or context makes it relevant.",
+            "D11": "Do not assume season dictates colour rules.",
+            "E11": "Optional"
+          }
+        },
+        {
+          "row": 12,
+          "cells": {
+            "A12": "Personal preference",
+            "B12": "Personalisation score",
+            "C12": "Learn from saves, skips, likes, dislikes and edits.",
+            "D12": "User preference should progressively outweigh generic defaults, with sufficient evidence.",
+            "E12": "Core over time"
+          }
+        },
+        {
+          "row": 13,
+          "cells": {
+            "A13": "Final outfit score",
+            "B13": "OS",
+            "C13": "Combine colour harmony, balance, occasion and personalisation.",
+            "D13": "Keep component scores visible for debugging and explanation.",
+            "E13": "Core"
+          }
+        },
+        {
+          "row": 16,
+          "cells": {
+            "A16": "Suggested initial outfit formula",
+            "B16": "OS = 0.55 × pairwise_colour_aggregate + 0.20 × balance + 0.10 × pattern_compatibility + 0.10 × occasion_fit + 0.05 × personal_preference"
+          }
+        },
+        {
+          "row": 18,
+          "cells": {
+            "A18": "Important",
+            "B18": "This is a launch default, not a universal truth. If occasion or personal preference is unavailable, renormalise active weights. Keep user preference as its own feature so the model can learn over time."
+          }
+        }
+      ],
+      "formulas": {}
+    },
+    {
+      "name": "TEST CASES",
+      "rows": [
+        {
+          "row": 1,
+          "cells": {
+            "A1": "QA TEST CASES"
+          }
+        },
+        {
+          "row": 2,
+          "cells": {
+            "A2": "Use these as qualitative sanity checks. Expected results are directional, not fixed numeric scores."
+          }
+        },
+        {
+          "row": 4,
+          "cells": {
+            "A4": "Pair / scenario",
+            "B4": "Feature profile",
+            "C4": "Directional expectation",
+            "D4": "What the engine should do",
+            "E4": "QA note"
+          }
+        },
+        {
+          "row": 5,
+          "cells": {
+            "A5": "Navy + beige",
+            "B5": "Dark cool near-neutral + light warm near-neutral",
+            "C5": "Likely strong",
+            "D5": "Contrast and neutral-anchor behaviour should support the pairing.",
+            "E5": "Check beige undertone."
+          }
+        },
+        {
+          "row": 6,
+          "cells": {
+            "A6": "Sage + cream",
+            "B6": "Muted green + warm light neutral",
+            "C6": "Likely strong",
+            "D6": "Moderate chroma and soft contrast; avoid treating all greens alike.",
+            "E6": "Check sage hue and cream undertone."
+          }
+        },
+        {
+          "row": 7,
+          "cells": {
+            "A7": "Burgundy + dusty pink",
+            "B7": "Deep red-purple + muted pink",
+            "C7": "Likely strong",
+            "D7": "Related hue families with tonal contrast.",
+            "E7": "Avoid flattening if lightness is too similar."
+          }
+        },
+        {
+          "row": 8,
+          "cells": {
+            "A8": "Cobalt + orange",
+            "B8": "High-chroma blue + orange",
+            "C8": "Context-dependent / bold",
+            "D8": "Complementary relationship may score well, but saturation and dominance balance matter.",
+            "E8": "One colour may need to be an accent."
+          }
+        },
+        {
+          "row": 9,
+          "cells": {
+            "A9": "Black + charcoal",
+            "B9": "Two dark near-neutrals",
+            "C9": "Context-dependent",
+            "D9": "Hue score should be inactive; low lightness separation may make outfit visually flat.",
+            "E9": "Texture and material can help."
+          }
+        },
+        {
+          "row": 10,
+          "cells": {
+            "A10": "Neon green + neon orange",
+            "B10": "High-chroma warm/cool contrast",
+            "C10": "Often lower unless intentionally bold",
+            "D10": "Do not award a high score from complementary hue alone.",
+            "E10": "Check user preference and occasion."
+          }
+        },
+        {
+          "row": 11,
+          "cells": {
+            "A11": "Olive + rust",
+            "B11": "Muted yellow-green + earthy orange-red",
+            "C11": "Likely strong",
+            "D11": "Earthy chroma and warm relationship may create cohesion.",
+            "E11": "Undertones matter."
+          }
+        },
+        {
+          "row": 12,
+          "cells": {
+            "A12": "Lavender + butter yellow",
+            "B12": "Soft cool purple + soft warm yellow",
+            "C12": "Likely strong / playful",
+            "D12": "Hue contrast can work with controlled chroma and lightness.",
+            "E12": "Avoid assuming warm-cool is a penalty."
+          }
+        },
+        {
+          "row": 13,
+          "cells": {
+            "A13": "Printed floral + solid neutral",
+            "B13": "Multi-colour print + neutral",
+            "C13": "Likely strong",
+            "D13": "Use all meaningful print colours; solid neutral can anchor.",
+            "E13": "Dominant colour alone may miss print accents."
+          }
+        },
+        {
+          "row": 14,
+          "cells": {
+            "A14": "Two busy prints",
+            "B14": "Multiple colours and patterns",
+            "C14": "Context-dependent",
+            "D14": "Colour score alone is insufficient; pattern scale and density need separate analysis.",
+            "E14": "Do not auto-reject."
+          }
+        }
+      ],
+      "formulas": {}
+    },
+    {
+      "name": "OUTPUT SCHEMA",
+      "rows": [
+        {
+          "row": 1,
+          "cells": {
+            "A1": "RECOMMENDATION DATA CONTRACT"
+          }
+        },
+        {
+          "row": 2,
+          "cells": {
+            "A2": "Suggested JSON object for each garment profile and outfit recommendation. Adapt field names to the existing Kloset backend."
+          }
+        },
+        {
+          "row": 4,
+          "cells": {
+            "A4": "Field",
+            "B4": "Type",
+            "C4": "Definition",
+            "D4": "Priority"
+          }
+        },
+        {
+          "row": 5,
+          "cells": {
+            "A5": "garment_id",
+            "B5": "string",
+            "C5": "Stable identifier for the wardrobe item.",
+            "D5": "Required"
+          }
+        },
+        {
+          "row": 6,
+          "cells": {
+            "A6": "image_id",
+            "B6": "string",
+            "C6": "Reference to source image / asset.",
+            "D6": "Required"
+          }
+        },
+        {
+          "row": 7,
+          "cells": {
+            "A7": "segmentation_confidence",
+            "B7": "number 0–1",
+            "C7": "Confidence that garment pixels were isolated correctly.",
+            "D7": "Required"
+          }
+        },
+        {
+          "row": 8,
+          "cells": {
+            "A8": "lighting_confidence",
+            "B8": "number 0–1",
+            "C8": "Confidence that lighting and white balance preserve colour.",
+            "D8": "Required"
+          }
+        },
+        {
+          "row": 9,
+          "cells": {
+            "A9": "dominant_colours",
+            "B9": "array",
+            "C9": "Each entry: {hex, rgb, lab_or_oklch, area_share, confidence}.",
+            "D9": "Required"
+          }
+        },
+        {
+          "row": 10,
+          "cells": {
+            "A10": "primary_colour",
+            "B10": "object",
+            "C10": "Reference to highest-area valid colour cluster.",
+            "D10": "Required"
+          }
+        },
+        {
+          "row": 11,
+          "cells": {
+            "A11": "secondary_colours",
+            "B11": "array",
+            "C11": "Other meaningful clusters, especially for prints.",
+            "D11": "Recommended"
+          }
+        },
+        {
+          "row": 12,
+          "cells": {
+            "A12": "is_patterned",
+            "B12": "boolean",
+            "C12": "Whether garment is multi-colour / printed.",
+            "D12": "Recommended"
+          }
+        },
+        {
+          "row": 13,
+          "cells": {
+            "A13": "colour_temperature",
+            "B13": "enum",
+            "C13": "warm | cool | neutral | mixed | uncertain.",
+            "D13": "Recommended"
+          }
+        },
+        {
+          "row": 14,
+          "cells": {
+            "A14": "temperature_confidence",
+            "B14": "number 0–1",
+            "C14": "Confidence in temperature label.",
+            "D14": "Recommended"
+          }
+        },
+        {
+          "row": 15,
+          "cells": {
+            "A15": "pair_score",
+            "B15": "number 0–100",
+            "C15": "Pairwise colour compatibility score.",
+            "D15": "Required"
+          }
+        },
+        {
+          "row": 16,
+          "cells": {
+            "A16": "component_scores",
+            "B16": "object",
+            "C16": "{hue, contrast, chroma, temperature, neutral_anchor}, each 0–100 or null.",
+            "D16": "Required"
+          }
+        },
+        {
+          "row": 17,
+          "cells": {
+            "A17": "active_weights",
+            "B17": "object",
+            "C17": "Weights actually used after missing-feature renormalisation.",
+            "D17": "Required"
+          }
+        },
+        {
+          "row": 18,
+          "cells": {
+            "A18": "pair_explanation",
+            "B18": "string",
+            "C18": "Short explanation grounded in measured features.",
+            "D18": "Recommended"
+          }
+        },
+        {
+          "row": 19,
+          "cells": {
+            "A19": "outfit_score",
+            "B19": "number 0–100",
+            "C19": "Final outfit-level score.",
+            "D19": "Required"
+          }
+        },
+        {
+          "row": 20,
+          "cells": {
+            "A20": "outfit_components",
+            "B20": "object",
+            "C20": "{colour, balance, pattern, occasion, preference}.",
+            "D20": "Required"
+          }
+        },
+        {
+          "row": 21,
+          "cells": {
+            "A21": "score_confidence",
+            "B21": "number 0–1",
+            "C21": "Confidence after combining image and feature confidence.",
+            "D21": "Required"
+          }
+        },
+        {
+          "row": 22,
+          "cells": {
+            "A22": "algorithm_version",
+            "B22": "string",
+            "C22": "Version of scoring logic.",
+            "D22": "Required"
+          }
+        },
+        {
+          "row": 23,
+          "cells": {
+            "A23": "scoring_config_version",
+            "B23": "string",
+            "C23": "Version of weights and thresholds.",
+            "D23": "Required"
+          }
+        },
+        {
+          "row": 28,
+          "cells": {
+            "A28": "Example pair explanation",
+            "B28": "The muted sage and warm cream form a low-intensity palette. The cream provides lightness contrast while keeping the overall combination soft."
+          }
+        }
+      ],
+      "formulas": {}
+    },
+    {
+      "name": "PSEUDOCODE",
+      "rows": [
+        {
+          "row": 1,
+          "cells": {
+            "A1": "IMPLEMENTATION OUTLINE"
+          }
+        },
+        {
+          "row": 2,
+          "cells": {
+            "A2": "Language-agnostic flow. Engineering team can implement in the existing backend and expose a scoring service."
+          }
+        },
+        {
+          "row": 4,
+          "cells": {
+            "A4": "Stage",
+            "B4": "Engineering requirement",
+            "C4": "Output / note"
+          }
+        },
+        {
+          "row": 5,
+          "cells": {
+            "A5": "1. Ingest",
+            "B5": "Receive garment image and metadata. Store image_id, garment_id and user_id.",
+            "C5": "Log stage result and confidence"
+          }
+        },
+        {
+          "row": 6,
+          "cells": {
+            "A6": "2. Segment",
+            "B6": "Run garment segmentation. Exclude background, skin, mannequin/hanger and obvious shadow pixels where possible.",
+            "C6": "Log stage result and confidence"
+          }
+        },
+        {
+          "row": 7,
+          "cells": {
+            "A7": "3. Quality gate",
+            "B7": "Estimate segmentation and lighting confidence. If too low, mark colour profile uncertain and avoid precise scoring.",
+            "C7": "Log stage result and confidence"
+          }
+        },
+        {
+          "row": 8,
+          "cells": {
+            "A8": "4. Extract",
+            "B8": "Sample garment pixels. Cluster in a perceptual colour space. Store top 3–5 colour clusters and area_share.",
+            "C8": "Log stage result and confidence"
+          }
+        },
+        {
+          "row": 9,
+          "cells": {
+            "A9": "5. Convert",
+            "B9": "Store original RGB/HEX and convert to a consistent perceptual space. Derive hue, lightness and chroma.",
+            "C9": "Log stage result and confidence"
+          }
+        },
+        {
+          "row": 10,
+          "cells": {
+            "A10": "6. Label",
+            "B10": "Assign broad family and temperature labels with confidence. For near-neutrals, hue may be null.",
+            "C10": "Log stage result and confidence"
+          }
+        },
+        {
+          "row": 11,
+          "cells": {
+            "A11": "7. Compare",
+            "B11": "For each candidate garment pair, calculate hue, lightness, chroma, temperature and neutral-anchor component scores.",
+            "C11": "Log stage result and confidence"
+          }
+        },
+        {
+          "row": 12,
+          "cells": {
+            "A12": "8. Handle missing data",
+            "B12": "Drop inactive components and renormalise weights. Propagate image/profile confidence.",
+            "C12": "Log stage result and confidence"
+          }
+        },
+        {
+          "row": 13,
+          "cells": {
+            "A13": "9. Build outfits",
+            "B13": "Generate role-valid combinations (e.g., top + bottom + optional layer + shoes/accessories).",
+            "C13": "Log stage result and confidence"
+          }
+        },
+        {
+          "row": 14,
+          "cells": {
+            "A14": "10. Aggregate",
+            "B14": "Calculate weighted pair aggregate, colour balance, pattern interaction, occasion and preference signals.",
+            "C14": "Log stage result and confidence"
+          }
+        },
+        {
+          "row": 15,
+          "cells": {
+            "A15": "11. Rank",
+            "B15": "Sort candidates by final outfit score; apply diversity so top results are not near-duplicates.",
+            "C15": "Log stage result and confidence"
+          }
+        },
+        {
+          "row": 16,
+          "cells": {
+            "A16": "12. Explain",
+            "B16": "Pass the measured features and component scores to the LLM. Ask it to explain only evidence-backed reasons.",
+            "C16": "Log stage result and confidence"
+          }
+        },
+        {
+          "row": 17,
+          "cells": {
+            "A17": "13. Learn",
+            "B17": "Capture like/save/skip/edit feedback. Update preference signals gradually; do not rewrite generic colour theory weights from one interaction.",
+            "C17": "Log stage result and confidence"
+          }
+        },
+        {
+          "row": 18,
+          "cells": {
+            "A18": "14. Monitor",
+            "B18": "Track recommendation acceptance, save rate, outfit completion, edit rate, low-confidence rate and user-reported mismatch.",
+            "C18": "Log stage result and confidence"
+          }
+        },
+        {
+          "row": 21,
+          "cells": {
+            "A21": "Diversity requirement",
+            "B21": "When returning several outfits, avoid returning five variations of the same palette. Add a diversity penalty or cluster results by palette before selecting the final set."
+          }
+        }
+      ],
+      "formulas": {}
+    },
+    {
+      "name": "SCORE CALCULATOR",
+      "rows": [
+        {
+          "row": 1,
+          "cells": {
+            "A1": "EDITABLE PAIR SCORE CALCULATOR"
+          }
+        },
+        {
+          "row": 2,
+          "cells": {
+            "A2": "Enter component scores from 0–100. This sheet calculates a weighted pair score using the default weights."
+          }
+        },
+        {
+          "row": 4,
+          "cells": {
+            "A4": "Garment A",
+            "B4": "Garment B",
+            "C4": "Hue (0–100)",
+            "D4": "Contrast (0–100)",
+            "E4": "Chroma (0–100)",
+            "F4": "Temperature (0–100)",
+            "G4": "Neutral (0–100)",
+            "H4": "Pair score",
+            "I4": "Interpretation"
+          }
+        },
+        {
+          "row": 5,
+          "cells": {
+            "A5": "Navy top",
+            "B5": "Beige trousers",
+            "C5": 85,
+            "D5": 90,
+            "E5": 80,
+            "F5": 78,
+            "G5": 95,
+            "H5": 85.2,
+            "I5": "Strong candidate"
+          }
+        },
+        {
+          "row": 6,
+          "cells": {
+            "A6": "Sage shirt",
+            "B6": "Cream trousers",
+            "C6": 88,
+            "D6": 72,
+            "E6": 90,
+            "F6": 82,
+            "G6": 95,
+            "H6": 84.2,
+            "I6": "Good candidate"
+          }
+        },
+        {
+          "row": 7,
+          "cells": {
+            "A7": "Neon green top",
+            "B7": "Neon orange trousers",
+            "C7": 70,
+            "D7": 90,
+            "E7": 25,
+            "F7": 40,
+            "G7": 40,
+            "H7": 58.5,
+            "I7": "Context-dependent"
+          }
+        },
+        {
+          "row": 8,
+          "cells": {
+            "A8": "Black top",
+            "B8": "Charcoal trousers",
+            "D8": 25,
+            "E8": 80,
+            "F8": 70,
+            "G8": 90,
+            "H8": 59.642857142857146,
+            "I8": "Context-dependent"
+          }
+        },
+        {
+          "row": 21,
+          "cells": {
+            "A21": "Note",
+            "B21": "The calculator accepts blank component scores and renormalises the remaining weights. For production, implement confidence-aware feature activation and store the active weights with each score."
+          }
+        }
+      ],
+      "formulas": {
+        "H5": "IF(COUNT(C5:G5)=0,\"\",SUMPRODUCT(C5:G5,{0.3,0.25,0.2,0.15,0.1})/SUMPRODUCT(--ISNUMBER(C5:G5),{0.3,0.25,0.2,0.15,0.1}))",
+        "I5": "IF(H5=\"\",\"\",IF(H5>=85,\"Strong candidate\",IF(H5>=70,\"Good candidate\",IF(H5>=55,\"Context-dependent\",\"Lower priority\"))))",
+        "H6": "IF(COUNT(C6:G6)=0,\"\",SUMPRODUCT(C6:G6,{0.3,0.25,0.2,0.15,0.1})/SUMPRODUCT(--ISNUMBER(C6:G6),{0.3,0.25,0.2,0.15,0.1}))",
+        "I6": "",
+        "H7": "IF(COUNT(C7:G7)=0,\"\",SUMPRODUCT(C7:G7,{0.3,0.25,0.2,0.15,0.1})/SUMPRODUCT(--ISNUMBER(C7:G7),{0.3,0.25,0.2,0.15,0.1}))",
+        "I7": "",
+        "H8": "IF(COUNT(C8:G8)=0,\"\",SUMPRODUCT(C8:G8,{0.3,0.25,0.2,0.15,0.1})/SUMPRODUCT(--ISNUMBER(C8:G8),{0.3,0.25,0.2,0.15,0.1}))",
+        "I8": "",
+        "H9": "IF(COUNT(C9:G9)=0,\"\",SUMPRODUCT(C9:G9,{0.3,0.25,0.2,0.15,0.1})/SUMPRODUCT(--ISNUMBER(C9:G9),{0.3,0.25,0.2,0.15,0.1}))",
+        "I9": "",
+        "H10": "IF(COUNT(C10:G10)=0,\"\",SUMPRODUCT(C10:G10,{0.3,0.25,0.2,0.15,0.1})/SUMPRODUCT(--ISNUMBER(C10:G10),{0.3,0.25,0.2,0.15,0.1}))",
+        "I10": "",
+        "H11": "IF(COUNT(C11:G11)=0,\"\",SUMPRODUCT(C11:G11,{0.3,0.25,0.2,0.15,0.1})/SUMPRODUCT(--ISNUMBER(C11:G11),{0.3,0.25,0.2,0.15,0.1}))",
+        "I11": "",
+        "H12": "IF(COUNT(C12:G12)=0,\"\",SUMPRODUCT(C12:G12,{0.3,0.25,0.2,0.15,0.1})/SUMPRODUCT(--ISNUMBER(C12:G12),{0.3,0.25,0.2,0.15,0.1}))",
+        "I12": "",
+        "H13": "IF(COUNT(C13:G13)=0,\"\",SUMPRODUCT(C13:G13,{0.3,0.25,0.2,0.15,0.1})/SUMPRODUCT(--ISNUMBER(C13:G13),{0.3,0.25,0.2,0.15,0.1}))",
+        "I13": "",
+        "H14": "IF(COUNT(C14:G14)=0,\"\",SUMPRODUCT(C14:G14,{0.3,0.25,0.2,0.15,0.1})/SUMPRODUCT(--ISNUMBER(C14:G14),{0.3,0.25,0.2,0.15,0.1}))",
+        "I14": "",
+        "H15": "IF(COUNT(C15:G15)=0,\"\",SUMPRODUCT(C15:G15,{0.3,0.25,0.2,0.15,0.1})/SUMPRODUCT(--ISNUMBER(C15:G15),{0.3,0.25,0.2,0.15,0.1}))",
+        "I15": "",
+        "H16": "IF(COUNT(C16:G16)=0,\"\",SUMPRODUCT(C16:G16,{0.3,0.25,0.2,0.15,0.1})/SUMPRODUCT(--ISNUMBER(C16:G16),{0.3,0.25,0.2,0.15,0.1}))",
+        "I16": "",
+        "H17": "IF(COUNT(C17:G17)=0,\"\",SUMPRODUCT(C17:G17,{0.3,0.25,0.2,0.15,0.1})/SUMPRODUCT(--ISNUMBER(C17:G17),{0.3,0.25,0.2,0.15,0.1}))",
+        "I17": "",
+        "H18": "IF(COUNT(C18:G18)=0,\"\",SUMPRODUCT(C18:G18,{0.3,0.25,0.2,0.15,0.1})/SUMPRODUCT(--ISNUMBER(C18:G18),{0.3,0.25,0.2,0.15,0.1}))",
+        "I18": ""
+      }
+    }
+  ]
+}
