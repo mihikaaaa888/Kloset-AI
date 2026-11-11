@@ -59,6 +59,7 @@ const SLOT_ALIASES: Record<string, string> = {
   bottoms: 'bottom',
   dress: 'dress',
   outerwear: 'outerwear',
+  woolens: 'outerwear',
   layer: 'outerwear',
   jacket: 'outerwear',
   shoes: 'shoes',
@@ -82,7 +83,9 @@ const SLOT_LABEL: Record<string, string> = {
   shoes: 'Shoes',
   accessory: 'Accessory',
 }
-const SLOT_ITEM_RE = /^\**\s*([a-z]+)\s*\**\s*[:–—-]\s*\**\s*(.+)$/i
+// Accept the markdown variants Kaia may return (e.g. `**Top:** ...`),
+// optional notes in a slot label (`Outerwear (optional): ...`), and plain text.
+const SLOT_ITEM_RE = /^\s*\**\s*([a-z]+)(?:\s*\(([^)]*)\))?\s*\**\s*[:–—-]\s*\**\s*(.+?)\s*\**\s*$/i
 const TO_BUY_RE = /\(\s*to buy\s*\)/i
 
 interface OutfitPiece {
@@ -97,8 +100,10 @@ function parseOutfitPieces(items: string[]): OutfitPiece[] | null {
     const m = item.match(SLOT_ITEM_RE)
     const slot = m && SLOT_ALIASES[m[1].toLowerCase()]
     if (!m || !slot) return null
-    const raw = m[2].replace(/\*+/g, '').trim()
-    pieces.push({ slot, name: raw.replace(TO_BUY_RE, '').trim(), toBuy: TO_BUY_RE.test(raw) })
+    const note = m[2] ?? ''
+    const raw = m[3].replace(/\*+/g, '').trim()
+    const name = raw.replace(TO_BUY_RE, '').split(/\s+[–—]\s+/)[0].trim()
+    pieces.push({ slot, name, toBuy: /to\s+buy/i.test(note) || TO_BUY_RE.test(raw) })
   }
   return pieces.length >= 2 ? pieces : null
 }
@@ -513,7 +518,7 @@ const TABLE_ROW_RE = /^\s*\|.*\|\s*$/
 const TABLE_SEPARATOR_RE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/
 const HEADING_RE = /^(#{1,6})\s+(.+)$/
 const HR_RE = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/
-const UL_ITEM_RE = /^\s*[-*+]\s+(.+)$/
+const UL_ITEM_RE = /^\s*[-*+•●▪]\s+(.+)$/
 const OL_ITEM_RE = /^\s*\d+[.)]\s+(.+)$/
 
 function splitTableRow(line: string): string[] {
