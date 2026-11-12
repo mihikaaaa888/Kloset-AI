@@ -69,6 +69,8 @@ export default {
         // every digit for a "PERSONAL USE ONLY" watermark, so never use it on
         // text that can contain numbers.
         brand: ['"Mutalis Fashion"', '"Times New Roman"', 'serif'],
+        // Landing hero masthead: a variable avant-garde display face (wght 400-800).
+        syne: ['Syne', 'Montserrat', 'sans-serif'],
         // Handwritten answers on the profile card.
         hand: ['"Reenie Beanie"', 'cursive'],
       },
