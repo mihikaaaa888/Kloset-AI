@@ -5,7 +5,8 @@
 /* Personal-use display font, used only for the "Kloset" wordmark (its digits are watermarked). */
 @font-face {
   font-family: 'Mutalis Fashion';
-  src: url('/fonts/MutalisFashion.otf') format('opentype');
+  /* Letters-only WOFF2 subset (10KB); the full OTF (134KB) is only a fallback. */
+  src: url('/fonts/MutalisFashion-latin.woff2') format('woff2'), url('/fonts/MutalisFashion.otf') format('opentype');
   font-weight: normal;
   font-style: normal;
   font-display: swap;
@@ -326,4 +327,408 @@
 @keyframes undo-countdown {
   from { transform: scaleX(1); }
   to { transform: scaleX(0); }
+}
+
+/* ── Landing page ("/") ─────────────────────────────────────────────────────
+   Scroll reveals, hanger swings, the washing-machine drum and the iron's steam.
+   Everything here collapses to static under prefers-reduced-motion. */
+@layer components {
+  .reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+  .reveal[data-shown] {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* Hangers swing from their hook; --dir is +1 or -1 for the push direction. */
+  .hanger-swing {
+    animation: hanger-swing 1.6s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+  }
+  .hang-in {
+    animation: hang-in 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: var(--d, 0ms);
+  }
+  .chip-pop {
+    animation: chip-pop 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: var(--d, 0ms);
+  }
+  .fade-swap {
+    animation: swap-in 0.5s ease-out both;
+  }
+  .typing-dot {
+    animation: typing-dot 1s ease-in-out infinite;
+    animation-delay: var(--d, 0ms);
+  }
+  .scan-line {
+    animation: scan-line 1.6s cubic-bezier(0.65, 0, 0.35, 1) 2 both;
+  }
+  .drum-spin {
+    animation: drum-spin 2.4s cubic-bezier(0.45, 0, 0.2, 1) both;
+  }
+  .machine-shake {
+    animation: machine-shake 0.16s linear 15;
+  }
+
+  /* A tape measure along the top edge that fills as you scroll (where supported). */
+  .tape-progress {
+    display: none;
+  }
+  @supports (animation-timeline: scroll()) {
+    .tape-progress {
+      display: block;
+      transform-origin: left;
+      animation: tape-grow linear both;
+      animation-timeline: scroll(root);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reveal { opacity: 1; transform: none; transition: none; }
+    .hanger-swing, .hang-in, .chip-pop, .fade-swap, .typing-dot, .scan-line,
+    .drum-spin, .machine-shake { animation: none; }
+  }
+}
+
+@keyframes hanger-swing {
+  0% { transform: rotate(0deg); }
+  15% { transform: rotate(calc(var(--dir, 1) * 8deg)); }
+  35% { transform: rotate(calc(var(--dir, 1) * -5deg)); }
+  55% { transform: rotate(calc(var(--dir, 1) * 3deg)); }
+  75% { transform: rotate(calc(var(--dir, 1) * -1.2deg)); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes hang-in {
+  0% { opacity: 0; transform: translateY(-40px) rotate(-6deg); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes chip-pop {
+  0% { opacity: 0; transform: scale(0.6) translateY(6px); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes swap-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes typing-dot {
+  0%, 60%, 100% { opacity: 0.25; transform: none; }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+@keyframes scan-line {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+@keyframes drum-spin {
+  to { transform: rotate(1080deg); }
+}
+@keyframes machine-shake {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(-1.5px, 1px); }
+  50% { transform: translate(1.5px, -1px); }
+  75% { transform: translate(-1px, 0); }
+}
+@keyframes tape-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+/* ── Landing: eyes, bubbles, pinned rail ──────────────────────────────────── */
+@layer components {
+  .eye-lid {
+    transform: scaleY(0);
+    animation: blink 5.2s infinite;
+    animation-delay: var(--d, 0ms);
+  }
+
+  /* Layers that drift against the cursor, deeper ones further. */
+  .parallax {
+    transform: translate3d(calc(var(--px, 0) * var(--depth, 20) * -1px), calc(var(--py, 0) * var(--depth, 20) * -1px), 0);
+    transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .bubble {
+    animation: bubble-rise var(--dur, 9s) linear infinite;
+    animation-delay: var(--d, 0s);
+  }
+
+  /* Pinned horizontal pan for the closet rail (fallback: swipe sideways). */
+  .pan-sticky {
+    position: relative;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .pan-sticky::-webkit-scrollbar {
+    display: none;
+  }
+  @supports (view-timeline-name: --a) {
+    @media (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
+      .pan-section {
+        height: 340vh;
+        view-timeline-name: --pan;
+      }
+      .pan-sticky {
+        position: sticky;
+        top: 0;
+        height: 100dvh;
+        overflow: hidden;
+      }
+      .pan-track {
+        animation: pan-x linear both;
+        animation-timeline: --pan;
+        animation-range: contain 0% contain 100%;
+      }
+      .pan-words {
+        animation: pan-x-slow linear both;
+        animation-timeline: --pan;
+        animation-range: contain 0% contain 100%;
+      }
+      .pan-progress {
+        transform-origin: left;
+        animation: tape-grow linear both;
+        animation-timeline: --pan;
+        animation-range: contain 0% contain 100%;
+      }
+    }
+  }
+
+  /* Scissors follow the dashed cut line as the section scrolls by. */
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      .scissors-run {
+        animation: cut-along linear both;
+        animation-timeline: view();
+        animation-range: entry 20% exit 40%;
+      }
+    }
+  }
+
+  @supports (animation-timeline: scroll()) {
+    @media (prefers-reduced-motion: no-preference) {
+      .stitch-spin {
+        animation: stitch-spin linear both;
+        animation-timeline: scroll(root);
+      }
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .eye-lid, .bubble { animation: none; }
+    .parallax { transform: none; }
+  }
+}
+
+@keyframes blink {
+  0%, 93%, 100% { transform: scaleY(0); }
+  95.5% { transform: scaleY(1); }
+}
+@keyframes bubble-rise {
+  0% { transform: translateY(0) translateX(0); opacity: 0; }
+  10% { opacity: 1; }
+  50% { transform: translateY(-50vh) translateX(18px); }
+  100% { transform: translateY(-105vh) translateX(-10px); opacity: 0; }
+}
+@keyframes pan-x {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(-100% + 100vw)); }
+}
+@keyframes pan-x-slow {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(-50% + 50vw)); }
+}
+@keyframes cut-along {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(100cqw - 100%)); }
+}
+@keyframes stitch-spin {
+  to { transform: rotate(540deg); }
+}
+
+/* ── Landing: editorial ornaments (frames, ticket buttons, fabric-filled type) ── */
+@layer components {
+  /* Double-ruled paper frame: an outer rule, a gap of paper, an inner rule. */
+  .frame-2 {
+    --rule: rgb(var(--c-butter-yellow));
+    --paper: #fffdf3;
+    background-color: var(--paper);
+    border-radius: 4px;
+    box-shadow:
+      inset 0 0 0 1px var(--rule),
+      inset 0 0 0 6px var(--paper),
+      inset 0 0 0 7px var(--rule),
+      0 24px 40px -24px rgb(36 27 41 / 0.45);
+  }
+
+  /* Ticket button: forest pill with a sewn cream inner rule. */
+  .btn-ticket {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    white-space: nowrap;
+    border-radius: 9999px;
+    background-color: rgb(var(--c-butter-yellow));
+    color: #fffdf3;
+    font-weight: 600;
+    font-size: 0.8rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    box-shadow:
+      inset 0 0 0 4px rgb(var(--c-butter-yellow)),
+      inset 0 0 0 5px rgb(255 253 243 / 0.7),
+      0 10px 24px -10px rgb(36 27 41 / 0.55);
+    transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s;
+  }
+  .btn-ticket:hover { background-color: rgb(var(--c-soft-butter)); transform: translateY(-2px) rotate(-1deg); }
+  .btn-ticket:active { transform: scale(0.98); }
+  .btn-ticket:focus-visible { outline: 2px solid rgb(var(--c-butter-yellow)); outline-offset: 3px; }
+
+  /* Type filled with a photo of fabric. */
+  .text-fill {
+    background-image: var(--fill-image);
+    background-size: cover;
+    background-position: center;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Things that drift at their own speed as they pass (--speed in px). */
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      .drift {
+        animation: drift-y linear both;
+        animation-timeline: view();
+      }
+      .drift-x {
+        animation: drift-x linear both;
+        animation-timeline: view();
+      }
+      .stamp-spin {
+        animation: stamp-spin linear both;
+        animation-timeline: scroll(root);
+      }
+    }
+  }
+}
+
+@keyframes drift-y {
+  from { translate: 0 calc(var(--speed, 40) * 1px); }
+  to { translate: 0 calc(var(--speed, 40) * -1px); }
+}
+@keyframes drift-x {
+  from { translate: 6vw 0; }
+  to { translate: -10vw 0; }
+}
+@keyframes stamp-spin {
+  to { transform: rotate(720deg); }
+}
+
+/* ── Landing: paper tag press (stamp squash, sunburst rays, paper confetti) ── */
+@layer components {
+  .tag-stamp { animation: tag-stamp 0.42s cubic-bezier(0.22, 1, 0.36, 1); }
+  .burst-ray {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 4px;
+    height: var(--len);
+    margin-left: -2px;
+    margin-top: calc(var(--len) / -2);
+    border-radius: 2px;
+    background: var(--c);
+    box-shadow: 0 1px 1px rgb(10 25 12 / 0.25);
+    animation: ray-burst 0.8s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+  }
+  .burst-bit {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 8px;
+    height: 6px;
+    background: var(--c);
+    box-shadow: 0 1px 1px rgb(10 25 12 / 0.25);
+    animation: bit-fly 0.95s cubic-bezier(0.15, 0.7, 0.4, 1) forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tag-stamp { animation: none; }
+    .burst-ray, .burst-bit { display: none; }
+  }
+}
+@keyframes tag-stamp {
+  0% { transform: scale(1); }
+  35% { transform: scale(0.88, 0.94); }
+  70% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+@keyframes ray-burst {
+  0% { transform: rotate(var(--a)) translateY(calc(var(--r0) * -1)) scaleY(0.2); opacity: 1; }
+  55% { opacity: 1; }
+  100% { transform: rotate(var(--a)) translateY(calc(var(--r1) * -1)) scaleY(1); opacity: 0; }
+}
+@keyframes bit-fly {
+  0% { transform: translate(-50%, -50%) rotate(0deg) scale(0.6); opacity: 1; }
+  75% { opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) rotate(var(--rot)) scale(1); opacity: 0; }
+}
+
+/* Cream ticket button, for dark backgrounds. */
+@layer components {
+  .btn-ticket-light {
+    background-color: #fffdf3;
+    color: rgb(var(--c-butter-yellow));
+    box-shadow:
+      inset 0 0 0 4px #fffdf3,
+      inset 0 0 0 5px rgb(var(--c-butter-yellow) / 0.55),
+      0 14px 30px -12px rgb(0 0 0 / 0.6);
+  }
+  .btn-ticket-light:hover { background-color: #f5edc4; }
+}
+
+/* Hand-drawn hints: the arrow inks itself in when first seen, then the note bobs. */
+@layer components {
+  .hint-draw { stroke-dasharray: 1; stroke-dashoffset: 1; }
+  [data-shown] .hint-draw { animation: hint-ink 0.8s cubic-bezier(0.65, 0, 0.35, 1) 0.2s forwards; }
+  [data-shown] .hint-draw-late { animation-duration: 0.3s; animation-delay: 0.95s; }
+  .hint-bob { animation: hint-bob 3.2s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .hint-draw { stroke-dashoffset: 0; }
+    [data-shown] .hint-draw { animation: none; }
+    .hint-bob { animation: none; }
+  }
+}
+@keyframes hint-ink { to { stroke-dashoffset: 0; } }
+@keyframes hint-bob {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -4px; }
+}
+
+/* Paper blobs in the hero: a slow turn with a gentle breath (transform only). */
+@layer components {
+  .blob-spin {
+    transform-origin: 50% 50%;
+    animation: blob-spin 80s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .blob-spin { animation: none; }
+  }
+}
+@keyframes blob-spin {
+  0% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(180deg) scale(1.06); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+/* Cursor blob orbs: each swirls through three waypoints and breathes. */
+@layer components {
+  .blob-orbit { animation: blob-orbit 10s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .blob-orbit { animation: none; }
+  }
+}
+@keyframes blob-orbit {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(var(--o1)) scale(1.14); }
+  50% { transform: translate(var(--o2)) scale(0.9); }
+  75% { transform: translate(var(--o3)) scale(1.08); }
 }

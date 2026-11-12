@@ -1,10 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { clsx } from 'clsx'
-import { Menu, X } from 'lucide-react'
-import { CinematicClosetHero } from '@/components/hero/CinematicClosetHero'
-import { HeroCopy } from '@/components/hero/HeroCopy'
+import { X } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
+import { LandingNav, LANDING_SECTIONS } from '@/components/landing/LandingNav'
+import { LandingHero } from '@/components/landing/LandingHero'
+import { FeatureWalkthrough } from '@/components/landing/FeatureWalkthrough'
+import { LaundryDay } from '@/components/landing/LaundryDay'
+import { EverythingElse } from '@/components/landing/EverythingElse'
+import { ClosetDoorsCTA } from '@/components/landing/ClosetDoorsCTA'
+import { ClosetRail } from '@/components/landing/ClosetRail'
+import { Checker } from '@/components/landing/ornaments'
 import { authNavItems, publicNavItems } from '@/components/layout/Navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { useUserStore } from '@/store/userStore'
@@ -14,7 +20,24 @@ export function LandingPage() {
   const { user, signOut } = useAuth()
   const profile = useUserStore((s) => s.profile)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [doorOpen, setDoorOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  // Fade sections up as they scroll into view (see .reveal in globals.css).
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          entry.target.setAttribute('data-shown', '')
+          observer.unobserve(entry.target)
+        }
+      },
+      { rootMargin: '0px 0px -10% 0px', threshold: 0.1 }
+    )
+    root.querySelectorAll('.reveal').forEach((el) => observer.observe(el))
+    return () => observer.disconnect()
+  }, [])
 
   // Close the sidebar on Escape, and stop the page behind it from scrolling while open.
   useEffect(() => {
@@ -49,49 +72,36 @@ export function LandingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-warm-cream">
+    <div ref={rootRef} className="min-h-screen bg-warm-cream">
+      <a href="#features" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-24 focus:z-50 focus:rounded-full focus:bg-butter-yellow focus:px-4 focus:py-2 focus:text-dark-purple">
+        Skip to features
+      </a>
+      <LandingNav signedIn={!!user} onCTA={handleCTA} onOpenMenu={() => setMenuOpen(true)} menuOpen={menuOpen} />
 
-      {/* ── Hero ──────────────────────────────────────────────────────────── */}
-      <CinematicClosetHero onDoorOpenChange={setDoorOpen} />
+      <main>
+        <LandingHero onCTA={handleCTA} />
+        <FeatureWalkthrough />
+        <ClosetRail />
+        <LaundryDay />
+        <EverythingElse />
+        <ClosetDoorsCTA onCTA={handleCTA} />
+      </main>
 
-      {/* Brand bar belongs to the rack page and appears after the door is fully open. */}
-      <header className={clsx(
-        'fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between bg-[#355f43] px-5 text-[#fffbd5] shadow-[0_2px_16px_rgba(26,46,33,0.14)] transition-[opacity,visibility] duration-500',
-        doorOpen ? 'visible opacity-100' : 'invisible pointer-events-none opacity-0'
-      )}>
-        <span className="font-brand text-xl tracking-wide">
-          Kloset
-        </span>
-        <button
-          onClick={() => setMenuOpen(true)}
-          aria-expanded={menuOpen}
-          aria-controls="landing-sidebar"
-          aria-label="Open menu"
-          className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full text-[#fffbd5] transition-colors hover:bg-[#fffbd5]/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fffbd5]"
-        >
-          <Menu size={22} strokeWidth={1.8} />
-        </button>
-      </header>
-
-      {/* ── Intro copy and CTA ──────────────────────────────────────────────── */}
-      <section className="py-10 md:py-16 lg:py-20 bg-butter-yellow">
-        <div className="mx-auto max-w-7xl px-6 lg:px-8">
-          <HeroCopy onCTA={handleCTA} animate={false} align="center" tone="green" />
-        </div>
-      </section>
-
-      {/* ── Footer ────────────────────────────────────────────────────────── */}
-      <footer className="bg-butter-yellow border-t border-dark-purple/15 py-10">
-        <div className="mx-auto max-w-7xl px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="flex items-center gap-2 font-brand text-lg text-dark-purple/80">
-                <HangerIcon size={20} />
-                Kloset
-              </span>
-            </div>
-            <p className="text-dark-purple/60 text-xs">&copy; {new Date().getFullYear()} Kloset. All rights reserved.</p>
-          </div>
+      <Checker />
+      <footer className="px-4 py-10 sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 md:flex-row">
+          <span className="flex items-center gap-2 font-brand text-lg text-butter-yellow">
+            <HangerIcon size={20} />
+            Kloset
+          </span>
+          <nav aria-label="Footer" className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-text-muted">
+            {LANDING_SECTIONS.map((s) => (
+              <a key={s.id} href={`#${s.id}`} className="transition-colors hover:text-text-primary">{s.label}</a>
+            ))}
+            <NavLink to="/privacy" className="transition-colors hover:text-text-primary">Privacy</NavLink>
+            {!user && <NavLink to="/login" className="transition-colors hover:text-text-primary">Sign in</NavLink>}
+          </nav>
+          <p className="text-xs text-text-muted">&copy; {new Date().getFullYear()} Kloset. All rights reserved.</p>
         </div>
       </footer>
 
@@ -122,6 +132,17 @@ export function LandingPage() {
             </button>
           </div>
           <nav className="flex flex-col px-6 py-6 flex-1 overflow-y-auto" aria-label="Site">
+            {LANDING_SECTIONS.map((s) => (
+              <a
+                key={s.id}
+                href={`#${s.id}`}
+                onClick={() => setMenuOpen(false)}
+                className="block py-3 text-base uppercase tracking-wider text-butter-yellow/70 transition-colors hover:text-butter-yellow"
+              >
+                {s.label}
+              </a>
+            ))}
+            <span className="my-3 h-px bg-butter-yellow/15" aria-hidden="true" />
             {(user && profile?.onboardingComplete ? authNavItems : publicNavItems).map((item) => (
               <NavLink
                 key={item.to}
@@ -152,7 +173,7 @@ export function LandingPage() {
                 onClick={() => setMenuOpen(false)}
                 className="flex items-center justify-center px-4 py-3 rounded-2xl text-sm font-medium uppercase tracking-widest bg-butter-yellow text-dark-purple hover:bg-soft-butter transition-colors"
               >
-                Get Started
+                Build my Kloset
               </NavLink>
             )}
           </div>
