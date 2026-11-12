@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { clsx } from 'clsx'
-import { Home, Shirt, User, Menu, X, Compass, Users, Settings, LogOut } from 'lucide-react'
+import { Home, Shirt, User, Menu, X, Compass, Users, Settings, LogOut, Heart } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { useUserStore } from '@/store/userStore'
 import { useAuth } from '@/contexts/AuthContext'
@@ -186,6 +186,7 @@ export function Navigation() {
             </div>
             <div className="flex flex-col px-3 py-4">
               {[
+                { label: 'For you', icon: <Heart size={18} />, onClick: () => navigate('/for-you') },
                 { label: 'Profile', icon: <User size={18} />, onClick: () => navigate('/profile') },
                 { label: 'Settings', icon: <Settings size={18} />, onClick: () => navigate('/profile?settings=1') },
                 { label: 'Privacy Policy', icon: <span className="w-[18px] text-center text-sm">ⓘ</span>, onClick: () => navigate('/privacy') },

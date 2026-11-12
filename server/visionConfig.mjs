@@ -6,7 +6,7 @@ export const SUBCATEGORY_VALUES = {
   tops: ['t-shirt', 'shirt', 'polo', 'blouse', 'tank', 'other'],
   bottoms: ['jeans', 'trousers', 'shorts', 'skirt', 'leggings', 'joggers', 'other'],
   dresses: ['mini dress', 'midi dress', 'maxi dress', 'wrap dress', 'shirt dress', 'slip dress', 'other'],
-  outerwear: ['sweater', 'sweatshirt', 'hoodie', 'cardigan', 'coat', 'jacket', 'blazer', 'raincoat', 'puffer', 'parka', 'trench coat', 'other'],
+  outerwear: ['sweater', 'knit top', 'turtleneck', 'sweatshirt', 'hoodie', 'cardigan', 'coat', 'jacket', 'blazer', 'raincoat', 'puffer', 'parka', 'trench coat', 'other'],
   shoes: ['sneakers', 'boots', 'heels', 'flats', 'sandals', 'loafers', 'other'],
   accessories: ['bag', 'belt', 'hat', 'scarf', 'jewelry', 'sunglasses', 'watch', 'other'],
 }
@@ -32,7 +32,8 @@ ${Object.entries(SUBCATEGORY_VALUES).map(([category, values]) => `- ${category}:
 - construction must be one of: ${CONSTRUCTION_VALUES.join(', ')}, null.
 - quarter-zip knit = subcategory sweater and neckline_closure quarter-zip.
 - hooded fleece = subcategory hoodie.
-- Woolens is the user-facing name for the internal outerwear category. Classify sweaters, sweatshirts, hoodies, cardigans, jackets, blazers, and coats as outerwear/Woolens.
+- Woolens is the user-facing name for the internal outerwear category. Classify sweaters, knitted tops, all turtlenecks, sweatshirts, hoodies, cardigans, jackets, blazers, and coats as outerwear/Woolens, even when lightweight.
+- Use the outerwear subcategory "knit top" for knitted tops that are not more specifically a sweater or cardigan; use "turtleneck" for a turtleneck garment and set neckline_closure to turtleneck when visible.
 - cardigan means an open-front knit; classify it as outerwear/Woolens.
 - overshirt is a shirt unless it is coat-weight; only coat-weight overshirts are outerwear.
 - Confidence values are numbers from 0 to 1. Include separate confidence for category, subcategory, neckline_closure, color, material, and construction.

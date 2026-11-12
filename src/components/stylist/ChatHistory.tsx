@@ -36,9 +36,11 @@ export function ChatHistory({ onPick, className }: { onPick?: () => void; classN
       <button
         type="button"
         onClick={() => { newChat(); onPick?.() }}
-        className="mb-4 flex w-full items-center gap-2 rounded-xl border border-text-primary/15 bg-surface px-3 py-2.5 text-sm text-text-primary transition-colors hover:border-text-primary/40"
+        aria-label="New chat"
+        title="New chat"
+        className="mb-4 flex h-10 w-10 items-center justify-center rounded-full border border-text-primary/15 bg-surface text-text-primary transition-colors hover:border-text-primary/40"
       >
-        <Plus size={15} /> New chat
+        <Plus size={18} />
       </button>
 
       <div className="-mr-2 flex-1 overflow-y-auto pr-2">

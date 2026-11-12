@@ -475,6 +475,21 @@ const RAW_CATALOG_ITEMS: RawCatalogItem[] = [
     formality: 'Smart Casual',
   },
   {
+    id: 'cat-sho-003',
+    name: 'Nude Block-Heel Pumps',
+    category: 'shoes',
+    subcategory: 'Heels',
+    colours: ['Tan'],
+    material: 'Leather',
+    pattern: 'solid',
+    seasons: ['spring', 'summer', 'autumn', 'winter'],
+    occasions: ['work', 'formal', 'date-night', 'special-event'],
+    styleAesthetics: ['classic', 'business', 'romantic'],
+    description: 'A polished block heel for weddings, date nights, and office dress codes.',
+    priceRange: 'mid',
+    formality: 'Formal',
+  },
+  {
     id: 'cat-sho-004',
     name: 'Black Leather Loafers',
     category: 'shoes',
@@ -1227,9 +1242,10 @@ function enrichCatalogItem(item: RawCatalogItem, categoryIndex: number): Catalog
   const pick = PRODUCT_PICKS[item.id]
   // Prefer a curated product-specific image. For generic fallbacks, require a
   // colour match so the catalog never shows an obviously unrelated garment.
-  const imageUrl = pick?.image ?? (bestScore > 0
+  const matchedImageUrl = bestScore > 0
     ? `https://images.unsplash.com/${chosen.id}?w=600&q=80&auto=format&fit=crop`
-    : '')
+    : ''
+  const imageUrl = pick?.image ?? matchedImageUrl
 
   const hash = hashString(item.id)
   const [lo, hi] = PRICE_BAND[item.priceRange]
@@ -1241,7 +1257,7 @@ function enrichCatalogItem(item: RawCatalogItem, categoryIndex: number): Catalog
   const shopUrl = pick?.url ?? `https://www.google.com/search?tbm=shop&q=${query}`
   const rentUrl = `https://www.google.com/search?q=${encodeURIComponent(`rent ${item.name}`)}`
 
-  return { ...item, gender: item.gender ?? 'women', brand: pick?.brand, imageUrl, estimatedPrice, rentPricePerWeek, shopUrl, rentUrl }
+  return { ...item, gender: item.gender ?? 'women', brand: pick?.brand, imageUrl, imageFallbackUrl: pick ? matchedImageUrl || undefined : undefined, estimatedPrice, rentPricePerWeek, shopUrl, rentUrl }
 }
 
 const categoryCounters: Partial<Record<ClothingCategory, number>> = {}

@@ -1,0 +1,33 @@
+{
+  "source": "kloset_schema_workbook-2.xlsx / Indian Wear sheet",
+  "scope": "The source guide focuses mainly on women's Indian wear; kurta guidance also applies to men. Treat every rule as a starting point and adapt to the user's identity, wardrobe, region, comfort, invite and stated preferences.",
+  "garments": [
+    { "terms": ["kurti"], "slot": "top", "pairing": "jeans, leggings, straight trousers or palazzo", "notes": "Short kurtis suit daily wear and college; longer, plain cuts work better in offices." },
+    { "terms": ["kurta"], "slot": "top", "pairing": "churidar, salwar, palazzo or straight trousers", "notes": "Straight cuts suit office settings; fabric and embellishment set the formality." },
+    { "terms": ["kurta set", "co-ord set", "salwar suit", "anarkali", "sharara set", "saree", "lehenga"], "slot": "one-piece or coordinated set", "notes": "Keep as one outfit item when its parts are not worn separately; otherwise tag the separates individually." },
+    { "terms": ["palazzo"], "slot": "bottom", "pairing": "kurti, kurta or short kameez" },
+    { "terms": ["churidar", "salwar", "patiala"], "slot": "bottom", "pairing": "kameez or kurta" },
+    { "terms": ["dupatta"], "slot": "accessory", "notes": "Optional for everyday looks; useful with festive sets and for head covering at a Gurudwara." },
+    { "terms": ["juttis", "kolhapuris"], "slot": "footwear", "notes": "Kolhapuris suit casual days and haldi; embellished juttis pair well with festive looks." },
+    { "terms": ["indo-western", "fusion"], "slot": "varies", "notes": "May be a coordinated set or separate pieces; identify actual garment slots before pairing." }
+  ],
+  "occasionGuidance": [
+    { "occasion": "regular office", "best": "structured straight kurta set, long kurti with formal trousers, plain salwar suit, or a work-appropriate saree", "avoid": "heavy embellishment, partywear and visibly crumpled fabrics", "formality": "smart casual; formal for traditional workplaces" },
+    { "occasion": "college", "best": "short cotton/rayon kurti with jeans or leggings, kurta with palazzo, or an easy co-ord", "avoid": "heavy embellishment and restrictive cuts", "formality": "casual; smart casual for presentations" },
+    { "occasion": "haldi", "best": "washable cotton/chanderi kurta set or light kurta with palazzo", "colours": "yellow, marigold, mustard, orange; green can work", "avoid": "precious silk, white and items likely to stain badly", "footwear": "comfortable flats or kolhapuris" },
+    { "occasion": "mehendi", "best": "light lehenga, sharara, printed kurta set, chikankari co-ord, salwar suit or light Anarkali", "colours": "green and bright colours", "note": "Dressiness varies; ask the host if unsure and prioritize sitting comfort." },
+    { "occasion": "sangeet", "best": "cape/festive lehenga, embellished saree, sharara, festive kurta set or saree gown", "colours": "jewel tones and festive metallic accents", "footwear": "comfortable heels or flats that allow dancing" },
+    { "occasion": "wedding ceremony", "best": "saree, lehenga, Anarkali or embroidered suit with churidar", "colours": "rich/jewel tones; avoid white, ivory, black at religious ceremonies, and head-to-toe bridal red", "notes": "Ask about community and dress code when relevant; recommend a dupatta when appropriate. Never match the bride's known colour." },
+    { "occasion": "reception", "best": "indo-western set, gown, saree gown, contemporary saree, lighter lehenga or formal western dress", "colours": "jewel tones and metallics; black depends on the family and setting", "footwear": "heels or comfortable formal footwear" }
+  ],
+  "stylingRules": [
+    "Use the user's actual wardrobe first. Recommend shopping only for a genuine gap or an explicit request.",
+    "For Indian outfits, use the tagged garment and formality; do not treat every kurta, saree or co-ord as equally formal.",
+    "At most one bold-colour focal item and one prominent pattern are starter heuristics, not hard laws; use taste and the occasion.",
+    "Never apply wedding colour conventions without context; ask about the function/theme when it would change the outfit.",
+    "Wedding follow-ups: ask the function first if unknown; then ask community only for a ceremony and role only when it changes the guidance. Ask one question at a time, no more than three, and include a 'Not sure' path.",
+    "For office, distinguish corporate/MNC, traditional workplace and tech/startup when it changes whether structured Indian wear or fusion is appropriate.",
+    "Do not assume a saree is comfortable for the user; offer pre-draped styles or a suit/lehenga alternative when relevant.",
+    "The source is mostly retailer/boutique guidance and marks many recommendations as starter assumptions. Be culturally sensitive, avoid overgeneralizing across regions, and invite correction."
+  ]
+}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Check, ImagePlus, MessageCircle, Send, Smile, Trash2, UserPlus, X } from 'lucide-react'
@@ -19,6 +19,7 @@ import {
   respondToRequest,
   sendFriendRequest,
   listFriendMessages,
+  listLatestFriendActivity,
   sendFriendMessage,
   sendShare,
   type FriendMessage,
@@ -45,13 +46,15 @@ export function FriendsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [openShare, setOpenShare] = useState<Share | null>(null)
+  const [friendActivity, setFriendActivity] = useState<Record<string, string>>({})
 
   const load = useCallback(async () => {
     try {
-      const [conns, sh] = await Promise.all([listConnections(), listShares()])
+      const [conns, sh, activity] = await Promise.all([listConnections(), listShares(), user?.id ? listLatestFriendActivity(user.id) : Promise.resolve({})])
       // Anything waiting on an Undo toast is still in the database; keep it hidden.
       setConnections(conns.filter((c) => !isPendingDelete(`friends:conn:${c.id}`)))
       setShares(sh.filter((s) => !isPendingDelete(`friends:share:${s.id}`)))
+      setFriendActivity(activity)
       setError(null)
       const paths = sh.flatMap((s) => s.payload.pieces.map((p) => p.imagePath).filter((p): p is string => !!p))
       setImages(await resolveSharedImages(paths))
@@ -61,7 +64,7 @@ export function FriendsPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [user?.id])
 
   useEffect(() => { load() }, [load])
 
@@ -69,7 +72,10 @@ export function FriendsPage() {
   const sent = useMemo(() => shares.filter((s) => s.direction === 'sent'), [shares])
   const incoming = connections.filter((c) => c.status === 'pending' && c.direction === 'incoming')
   const outgoing = connections.filter((c) => c.status === 'pending' && c.direction === 'outgoing')
-  const friends = connections.filter((c) => c.status === 'accepted')
+  const friends = useMemo(() => connections.filter((c) => c.status === 'accepted').sort((a, b) => {
+    const activityDifference = Date.parse(friendActivity[b.otherId] ?? b.createdAt) - Date.parse(friendActivity[a.otherId] ?? a.createdAt)
+    return Number.isNaN(activityDifference) ? 0 : activityDifference
+  }), [connections, friendActivity])
   const unseen = received.filter((s) => !s.seenAt)
   const chatWith = (location.state as { chatWith?: string } | null)?.chatWith
 
@@ -260,6 +266,7 @@ function FriendsChat({ friends, myId, initialFriendId, shares, images, onOpenSha
       setDraft('')
       setEmojiOpen(false)
       await loadMessages()
+      await onRefresh()
     } catch (err) { setError((err as Error).message) }
     finally { setSending(false) }
   }
@@ -316,18 +323,20 @@ function FriendsChat({ friends, myId, initialFriendId, shares, images, onOpenSha
         </header>
         {error && <p role="alert" className="mx-4 mt-3 text-xs text-red-700">{error}</p>}
         <div ref={listRef} onScroll={(e) => { const el = e.currentTarget; stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80 }} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 py-4 sm:px-5" aria-live="polite">
-          {loadingMessages ? <p className="m-auto text-sm text-text-muted">Loading messages…</p> : messages.length ? messages.map((message) => {
+          {loadingMessages ? <p className="m-auto text-sm text-text-muted">Loading messages…</p> : messages.length ? messages.map((message, messageIndex) => {
             const sharedId = message.body.match(/^\[\[KLOSET_SHARE:([^\]]+)\]\]$/)?.[1]
             const shared = sharedId ? shares.find((share) => share.id === sharedId) : null
-            return <div key={message.id} className={clsx('max-w-[88%] shrink-0 rounded-2xl px-3 py-3 text-sm sm:max-w-[75%]', message.senderId === myId ? 'ml-auto bg-text-primary text-warm-cream' : 'mr-auto bg-text-primary/5 text-text-primary')}>
+            const previousMessage = messages[messageIndex - 1]
+            const showDate = !previousMessage || !sameCalendarDay(previousMessage.createdAt, message.createdAt)
+            return <Fragment key={message.id}>{showDate && <div className="sticky top-0 z-[1] mx-auto rounded-lg bg-warm-cream/95 px-3 py-1 text-[10px] text-text-muted shadow-sm">{chatDateLabel(message.createdAt)}</div>}<div className={clsx('max-w-[88%] shrink-0 rounded-2xl px-3 py-2.5 text-sm sm:max-w-[75%]', message.senderId === myId ? 'ml-auto bg-text-primary text-warm-cream' : 'mr-auto bg-text-primary/5 text-text-primary')}>
               {shared ? <button type="button" onClick={() => onOpenShare(shared)} className="block w-56 max-w-full overflow-hidden rounded-xl bg-surface text-left text-text-primary sm:w-64">
                 <div className={clsx('grid aspect-[4/5] gap-px overflow-hidden bg-text-primary/10', shared.payload.pieces.length > 1 ? 'grid-cols-2' : 'grid-cols-1')}>
                   {shared.payload.pieces.slice(0, 4).map((piece, index) => <PieceImage key={`${shared.id}-${index}`} piece={piece} images={images} glyphSize={28} />)}
                 </div>
                 <div className="px-3 py-2.5"><p className="truncate font-medium">{shared.payload.title}</p><p className="mt-0.5 text-xs text-text-muted">{shared.kind === 'outfit' ? 'Outfit' : 'Photo'} · tap to view</p>{shared.message && <p className="mt-1 text-xs text-text-muted">{shared.message}</p>}</div>
               </button> : sharedId ? <p className="text-xs opacity-75">Shared an outfit</p> : <p className="whitespace-pre-wrap break-words">{message.body}</p>}
-              <time className="mt-1 block text-right text-[10px] opacity-65">{new Date(message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>
-            </div>
+              <time className="mt-1 block text-right text-[10px] opacity-65">{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
+            </div></Fragment>
           }) : <div className="m-auto max-w-xs text-center"><MessageCircle size={24} className="mx-auto mb-3 text-text-muted/50"/><p className="text-sm text-text-muted">No messages yet. Say hello to {activeFriend.otherName}.</p></div>}
         </div>
         <form onSubmit={send} className="relative flex shrink-0 items-center gap-1.5 border-t border-text-primary/10 p-3 sm:gap-2 sm:p-4">
@@ -732,6 +741,23 @@ function padTo4<T>(arr: T[]): (T | null)[] {
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function sameCalendarDay(a: string, b: string) {
+  const left = new Date(a), right = new Date(b)
+  return left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth() && left.getDate() === right.getDate()
+}
+
+function chatDateLabel(iso: string) {
+  const date = new Date(iso)
+  const today = new Date()
+  const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const startDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const days = Math.round((startToday.getTime() - startDate.getTime()) / 86400000)
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  if (days < 7) return date.toLocaleDateString([], { weekday: 'long' })
+  return date.toLocaleDateString([], { day: 'numeric', month: 'long', ...(date.getFullYear() !== today.getFullYear() ? { year: 'numeric' as const } : {}) })
 }
 
 function timeAgo(iso: string) {

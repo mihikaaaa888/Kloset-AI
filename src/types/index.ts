@@ -120,6 +120,8 @@ export interface CatalogItem {
   formality?: string
   /** Reference photo — for browsing/inspiration, not the user's own item photo. */
   imageUrl: string
+  /** Colour-matched catalogue photo used if the retailer image is unavailable. */
+  imageFallbackUrl?: string
   /** Approximate buy price in INR (rupees), derived from priceRange. */
   estimatedPrice: number
   /** Approximate weekly rental price in INR (rupees). */

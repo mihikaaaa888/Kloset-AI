@@ -12,6 +12,7 @@ import { generateOutfit } from '@/lib/stylist'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useUserStore } from '@/store/userStore'
 import { useOutfitStore } from '@/store/outfitStore'
+import { useRecommendationStore } from '@/store/recommendationStore'
 import { useItemImage } from '@/hooks/useItemImage'
 import { colourNameToHex, isLightColour } from '@/lib/colourUtils'
 import type { StyleRequest, OutfitSuggestion } from '@/lib/stylist'
@@ -27,6 +28,7 @@ export function StylistPage() {
 
   const items = useWardrobeStore((s) => s.items)
   const profile = useUserStore((s) => s.profile)
+  const feedback = useRecommendationStore((state) => profile?.id ? state.feedbackByUser[profile.id] ?? [] : [])
   const { saveOutfit, isOutfitSaved } = useOutfitStore()
 
   const [mode, setMode] = useState<StylistMode>(navState.mode ?? 'chat')
@@ -74,7 +76,7 @@ export function StylistPage() {
     setError(null)
     setIsSaved(false)
     try {
-      const result = await generateOutfit(request, items, profile, currentAttempt, pinnedItem ?? undefined)
+      const result = await generateOutfit(request, items, profile, currentAttempt, pinnedItem ?? undefined, feedback)
       if (result.suggestion) {
         setSuggestion(result.suggestion)
         setPageState('result')

@@ -183,7 +183,8 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
       favouriteColours: draft.favouriteColours,
       avoidColours: draft.avoidColours,
       genderStylePreference: (draft.genderStylePreference as UserProfile['genderStylePreference']) || undefined,
-      recommendationFrequency: draft.recommendationFrequency as RecommendationFrequency,
+      // Skipping the survey before this question leaves it empty; default to daily suggestions.
+      recommendationFrequency: (draft.recommendationFrequency || 'daily') as RecommendationFrequency,
       onboardingComplete: true,
       createdAt: now,
       updatedAt: now,
@@ -211,6 +212,8 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
       step={step}
       totalSteps={TOTAL_STEPS}
       onBack={step > 1 ? goBack : undefined}
+      // Name and age are required; everything after them can be skipped.
+      onSkip={step >= 3 && !isEditMode && !animating ? handleComplete : undefined}
     >
       <div className={stepClass}>
         {step === 1 && (

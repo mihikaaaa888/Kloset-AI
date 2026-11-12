@@ -11,6 +11,12 @@
 import type { ClothingItem, Occasion, StylePreference, Season, UserProfile } from '@/types'
 import { affinityForLearnedTraits } from '@/lib/styleLearning'
 import { learnStyleFromWardrobe } from '@/lib/styleLearning'
+import { scoreColourSets } from '@/lib/colourHarmony'
+import type { ColourHarmonyConfig } from '@/lib/colourHarmony'
+import { getColourHarmonyConfig } from '@/lib/colourHarmonyService'
+import indianWearGuide from '../../indian-wear-guide.json'
+import { scoreRecommendationFeedback, traitsFromWardrobe, feedbackFromFavourites } from '@/lib/recommendationFeedback'
+import type { RecommendationFeedback } from '@/lib/recommendationFeedback'
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -71,7 +77,8 @@ export async function generateOutfit(
   wardrobe: ClothingItem[],
   profile: UserProfile | null,
   attempt = 0,
-  pinnedItem?: ClothingItem
+  pinnedItem?: ClothingItem,
+  feedback: RecommendationFeedback[] = [],
 ): Promise<StylistEngineResult> {
   // Simulate network latency for a realistic feel
   await new Promise((r) => setTimeout(r, 900 + Math.random() * 500))
@@ -83,7 +90,8 @@ export async function generateOutfit(
   // }
   // ──────────────────────────────────────────────────────────────────────────
 
-  return mockEngine(request, wardrobe, profile, attempt, pinnedItem)
+  const colourConfig = await getColourHarmonyConfig()
+  return mockEngine(request, wardrobe, profile, attempt, pinnedItem, colourConfig, [...feedback, ...feedbackFromFavourites(wardrobe)])
 }
 
 // ─── Colour data ──────────────────────────────────────────────────────────────
@@ -91,48 +99,6 @@ export async function generateOutfit(
 const NEUTRALS = new Set([
   'Black', 'White', 'Cream', 'Beige', 'Charcoal', 'Grey', 'Camel', 'Tan', 'Silver',
 ])
-
-// Pairs (a, b) that look good together — stored as sorted key for lookup
-const HARMONY_BONUS: Record<string, number> = buildHarmonyMap([
-  ['Black', 'White', 5], ['Black', 'Cream', 4], ['Black', 'Camel', 4],
-  ['Black', 'Burgundy', 4], ['Black', 'Gold', 3], ['Black', 'Blush', 3],
-  ['Black', 'Dusty Rose', 3], ['Black', 'Sage', 3],
-  ['Navy', 'White', 5], ['Navy', 'Cream', 5], ['Navy', 'Camel', 4],
-  ['Navy', 'Gold', 3], ['Navy', 'Burgundy', 3], ['Navy', 'Grey', 3],
-  ['Grey', 'Burgundy', 4], ['Grey', 'Blush', 4], ['Grey', 'Navy', 3],
-  ['Grey', 'Camel', 3], ['Grey', 'Lavender', 3],
-  ['Camel', 'White', 4], ['Camel', 'Cream', 3], ['Camel', 'Burgundy', 4],
-  ['Camel', 'Forest Green', 3], ['Camel', 'Brown', 3], ['Camel', 'Black', 4],
-  ['Rust', 'Cream', 4], ['Rust', 'Camel', 3], ['Rust', 'Navy', 3],
-  ['Rust', 'Olive', 3], ['Rust', 'Brown', 3],
-  ['Olive', 'Cream', 3], ['Olive', 'Camel', 3], ['Olive', 'Brown', 3],
-  ['Burgundy', 'Cream', 4], ['Burgundy', 'Gold', 3], ['Burgundy', 'Grey', 4],
-  ['Blush', 'Cream', 4], ['Blush', 'Grey', 4], ['Blush', 'Navy', 3],
-  ['Dusty Rose', 'Cream', 4], ['Dusty Rose', 'Grey', 3],
-  ['Forest Green', 'Cream', 4], ['Forest Green', 'Camel', 3],
-  ['Terracotta', 'Cream', 4], ['Terracotta', 'Olive', 3],
-  ['Cobalt', 'White', 4], ['Cobalt', 'Cream', 3], ['Cobalt', 'Camel', 3],
-  ['Sky Blue', 'White', 4], ['Sky Blue', 'Cream', 3], ['Sky Blue', 'Navy', 3],
-])
-
-function buildHarmonyMap(triples: [string, string, number][]): Record<string, number> {
-  const map: Record<string, number> = {}
-  for (const [a, b, score] of triples) {
-    const key1 = [a, b].sort().join('|')
-    const key2 = [b, a].sort().join('|')
-    map[key1] = score
-    map[key2] = score
-  }
-  return map
-}
-
-function harmonyScore(c1: string, c2: string): number {
-  if (c1 === c2) return -1 // avoid same colour in both pieces
-  const key = [c1, c2].sort().join('|')
-  if (HARMONY_BONUS[key]) return HARMONY_BONUS[key]
-  if (NEUTRALS.has(c1) || NEUTRALS.has(c2)) return 2 // neutral + anything = fine
-  return 0
-}
 
 // ─── Weather → Season mapping ─────────────────────────────────────────────────
 
@@ -153,7 +119,9 @@ function scoreItem(
   request: StyleRequest,
   profile: UserProfile | null,
   learnedStyle: ReturnType<typeof learnStyleFromWardrobe>,
-  alreadySelected: ClothingItem[]
+  alreadySelected: ClothingItem[],
+  colourConfig: ColourHarmonyConfig,
+  feedback: RecommendationFeedback[],
 ): number {
   let score = 0
 
@@ -206,12 +174,28 @@ function scoreItem(
     score += 4
   }
 
+  score += scoreIndianWearFit(item, request)
+
   // Colour harmony with already selected items
   for (const selected of alreadySelected) {
-    for (const c1 of item.colour) {
-      for (const c2 of selected.colour) {
-        score += harmonyScore(c1, c2)
+    const pair = scoreColourSets(item.colour, selected.colour, colourConfig)
+    if (pair?.score != null) {
+      const roles = [item.category, selected.category].sort().join('|')
+      const roleImportance: Record<string, number> = {
+        'bottoms|tops': 1,
+        'outerwear|tops': 0.7,
+        'bottoms|shoes': 0.6,
+        'shoes|tops': 0.5,
+        'accessories|bottoms': 0.3,
+        'accessories|outerwear': 0.3,
+        'accessories|shoes': 0.25,
+        'accessories|tops': 0.35,
       }
+      const colourWeight = Math.max(0, Math.min(1, colourConfig.outfitWeights?.pairwiseColour ?? 0.55))
+      // Keep colour as a ranking signal beside occasion and personal fit, while
+      // giving the workbook's 55% pairwise-colour weight enough influence to
+      // change daily outfit picks instead of acting as a barely visible tie-break.
+      score += (pair.score - 70) * 0.18 * (colourWeight / 0.55) * (roleImportance[roles] ?? 0.35)
     }
   }
 
@@ -222,15 +206,16 @@ function scoreItem(
     // Simply having many items with a trait doesn't prove that trait is a
     // preference. Keep closet-wide frequency as a weak tie-breaker; explicit
     // favourites and colour preferences carry the stronger signal.
-    score += Math.min(2, affinityForLearnedTraits(learnedStyle, {
+    score += Math.min(4, affinityForLearnedTraits(learnedStyle, {
       colours: item.colour,
       subcategory: item.subcategory,
       material: item.material,
       pattern: item.pattern,
       formality: item.formality,
-    }) * 0.2)
+    }) * 0.4)
   }
   if (item.isFavourite) score += 2
+  score += scoreRecommendationFeedback(traitsFromWardrobe(item), feedback)
 
   // Gently rotate away from pieces worn very recently or very often, so
   // favourites don't crowd out the rest of the closet.
@@ -271,6 +256,53 @@ function scoreItem(
   return score
 }
 
+/**
+ * Apply the workbook's context-sensitive Indian-wear guidance as a small
+ * ranking signal. This does not replace user tags, occasion compatibility,
+ * or personal preferences, and wedding colours are only tempered for a
+ * specifically identified ceremony.
+ */
+function scoreIndianWearFit(item: ClothingItem, request: StyleRequest): number {
+  const details = [item.name, item.subcategory, item.material, item.formality].filter(Boolean).join(' ').toLowerCase()
+  const isIndianWear = indianWearGuide.garments.some((garment) => garment.terms.some((term) => details.includes(term)))
+  if (!isIndianWear) return 0
+
+  const occasionText = `${request.customOccasion ?? ''} ${request.occasion}`.toLowerCase()
+  const officeContext = /office|work|meeting|corporate|traditional workplace|startup|mnc/.test(occasionText)
+  const functionKey = ['haldi', 'mehendi', 'sangeet', 'wedding ceremony', 'ceremony', 'reception']
+    .find((key) => occasionText.includes(key))
+  const profileEntry = functionKey
+    ? indianWearGuide.occasionGuidance.find((entry) => entry.occasion === (functionKey === 'ceremony' ? 'wedding ceremony' : functionKey))
+    : officeContext
+      ? indianWearGuide.occasionGuidance.find((entry) => entry.occasion === 'regular office')
+      : request.occasion === 'work'
+        ? indianWearGuide.occasionGuidance.find((entry) => entry.occasion === 'regular office')
+        : ['college', 'casual'].some((key) => occasionText.includes(key))
+          ? indianWearGuide.occasionGuidance.find((entry) => entry.occasion === 'college')
+          : undefined
+
+  let score = 0
+  if (profileEntry) {
+    const bestText = profileEntry.best.toLowerCase()
+    const garment = indianWearGuide.garments.find((entry) => entry.terms.some((term) => details.includes(term)))
+    const typeTokens = garment?.terms.filter((term) => details.includes(term)) ?? []
+    if (typeTokens.some((term) => bestText.includes(term))) score += 5
+    if (/traditional/.test(occasionText) && /saree|salwar suit|kurta|anarkali/.test(details)) score += 2
+    if (/corporate|mnc|startup/.test(occasionText) && /heavy|embroidered|party/.test(details)) score -= 3
+    if (functionKey === 'wedding ceremony') {
+      const colours = item.colour.map((colour) => colour.toLowerCase())
+      if (colours.some((colour) => /^(white|ivory)$/.test(colour))) score -= 8
+      if (colours.includes('black')) score -= 5
+      if (colours.includes('red') && /lehenga|saree|anarkali|salwar suit/.test(details)) score -= 4
+    }
+    if (functionKey === 'haldi' && item.colour.some((colour) => /yellow|mustard|orange|green/i.test(colour))) score += 2
+    if (functionKey === 'mehendi' && item.colour.some((colour) => /green/i.test(colour))) score += 2
+    if (functionKey === 'sangeet' && /lehenga|sharara|saree|anarkali/.test(details)) score += 2
+    if (functionKey === 'reception' && /indo-western|gown|saree|lehenga/.test(details)) score += 2
+  }
+  return score
+}
+
 // ─── Outfit assembly ──────────────────────────────────────────────────────────
 
 function pickBest(
@@ -279,7 +311,9 @@ function pickBest(
   request: StyleRequest,
   profile: UserProfile | null,
   selected: ClothingItem[],
-  attempt: number
+  attempt: number,
+  colourConfig: ColourHarmonyConfig,
+  feedback: RecommendationFeedback[],
 ): ClothingItem | null {
   const candidates = items.filter((i) => i.category === category)
   if (candidates.length === 0) return null
@@ -287,7 +321,7 @@ function pickBest(
 
   const scored = candidates.map((item) => ({
     item,
-    score: scoreItem(item, request, profile, learnedStyle, selected),
+    score: scoreItem(item, request, profile, learnedStyle, selected, colourConfig, feedback),
   }))
   scored.sort((a, b) => b.score - a.score || a.item.timesWorn - b.item.timesWorn || (a.item.lastWorn ?? '').localeCompare(b.item.lastWorn ?? '') || a.item.id.localeCompare(b.item.id))
   if (scored[0].score <= -100) return null
@@ -298,6 +332,9 @@ function pickBest(
   const bestScore = scored[0].score
   const contenders = scored
     .filter((candidate) => bestScore - candidate.score <= 8)
+  if (category === 'accessories' && contenders.length > 1) {
+    return contenders[Math.floor(Math.random() * contenders.length)].item
+  }
   const variationKey = `${attempt}|${request.occasion}|${category}`
   const variationOffset = [...variationKey].reduce((total, character) => (total * 31 + character.charCodeAt(0)) >>> 0, 7)
   return contenders[variationOffset % contenders.length].item
@@ -496,7 +533,9 @@ function mockEngine(
   wardrobe: ClothingItem[],
   profile: UserProfile | null,
   attempt: number,
-  pinnedItem?: ClothingItem
+  pinnedItem: ClothingItem | undefined,
+  colourConfig: ColourHarmonyConfig,
+  feedback: RecommendationFeedback[],
 ): StylistEngineResult {
   if (wardrobe.length === 0) {
     return { suggestion: null, error: 'Your Kloset is empty. Add some items first.' }
@@ -529,18 +568,18 @@ function mockEngine(
   const hasPinnedBase = pinnedItem && ['tops', 'bottoms', 'dresses'].includes(pinnedItem.category)
   const preferDress = ['date-night', 'formal', 'special-event'].includes(request.occasion)
   if (!hasPinnedBase && preferDress && Math.random() + attempt * 0.2 < 0.6) {
-    const dress = pickBest(wardrobe, 'dresses', request, profile, selected, attempt)
+    const dress = pickBest(wardrobe, 'dresses', request, profile, selected, attempt, colourConfig, feedback)
     if (dress) addItem(dress, 'dress')
   }
 
   // 2. If no dress, pick top + bottom (skip categories covered by pinned item)
   if (!resultItems.some((r) => r.role === 'dress')) {
     if (!pinnedItem || pinnedItem.category !== 'tops') {
-      const top = pickBest(wardrobe, 'tops', request, profile, selected, attempt)
+      const top = pickBest(wardrobe, 'tops', request, profile, selected, attempt, colourConfig, feedback)
       if (top) addItem(top, 'top')
     }
     if (!pinnedItem || pinnedItem.category !== 'bottoms') {
-      const bottom = pickBest(wardrobe, 'bottoms', request, profile, selected, attempt)
+      const bottom = pickBest(wardrobe, 'bottoms', request, profile, selected, attempt, colourConfig, feedback)
       if (bottom) addItem(bottom, 'bottom')
     }
   }
@@ -548,19 +587,19 @@ function mockEngine(
   // 3. Outerwear if weather warrants
   const needsOuterwear = ['cold', 'cool', 'rainy'].includes(request.weather)
   if (needsOuterwear && pinnedItem?.category !== 'outerwear') {
-    const outer = pickBest(wardrobe, 'outerwear', request, profile, selected, attempt)
+    const outer = pickBest(wardrobe, 'outerwear', request, profile, selected, attempt, colourConfig, feedback)
     if (outer) addItem(outer, 'outerwear')
   }
 
   // 4. Shoes
   if (pinnedItem?.category !== 'shoes') {
-    const shoes = pickBest(wardrobe, 'shoes', request, profile, selected, attempt)
+    const shoes = pickBest(wardrobe, 'shoes', request, profile, selected, attempt, colourConfig, feedback)
     if (shoes) addItem(shoes, 'shoes')
   }
 
   // 5. Accessories (max 1)
   if (pinnedItem?.category !== 'accessories') {
-    const accessory = pickBest(wardrobe, 'accessories', request, profile, selected, attempt)
+    const accessory = pickBest(wardrobe, 'accessories', request, profile, selected, attempt, colourConfig, feedback)
     if (accessory) addItem(accessory, 'accessory')
   }
 

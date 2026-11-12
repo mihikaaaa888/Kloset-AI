@@ -1,7 +1,9 @@
 import { apiFetch, apiUrl } from '@/lib/apiUrl'
 import type { CatalogItem, ClothingCategory, ClothingItem, UserProfile } from '@/types'
 import { CATALOGUE_ITEMS } from '@/pages/onboarding/catalogueData'
-import { CATALOG_ITEMS } from '@/lib/catalogData'
+import { ALL_CATALOG_ITEMS } from '@/lib/catalogData'
+import { rankWardrobeColourPairings } from '@/lib/colourHarmony'
+import { getColourHarmonyConfig } from '@/lib/colourHarmonyService'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -15,18 +17,30 @@ export interface ChatMessage {
 // A compact, representative slice of the shoppable catalog (not all 39+
 // items — keeps the prompt small) so Kaia can name real pieces with real
 // prices instead of vaguely gesturing at "you could buy something".
-function buildShopSummary(): string {
+function buildShopSummary(profile: UserProfile | null): string {
+  const preference = String(profile?.genderStylePreference ?? '').toLowerCase()
+  const genders = ['feminine', 'female', 'women'].includes(preference)
+    ? ['women']
+    : ['masculine', 'male', 'men'].includes(preference)
+      ? ['men']
+      : ['women', 'men']
   const perCategory = new Map<string, CatalogItem[]>()
-  for (const item of CATALOG_ITEMS) {
+  for (const item of ALL_CATALOG_ITEMS.filter((candidate) => genders.includes(candidate.gender ?? 'women'))) {
     const list = perCategory.get(item.category) ?? []
-    if (list.length < 3) list.push(item)
+    list.push(item)
     perCategory.set(item.category, list)
   }
-  return [...perCategory.values()]
-    .flat()
-    .map((i) => `- ${i.name} (${i.category}) — buy ~₹${i.estimatedPrice}, rent ~₹${i.rentPricePerWeek}/wk`)
+  return [...perCategory.entries()]
+    .flatMap(([category, items]) => {
+      // Accessories were repeatedly dominated by the first few catalog rows.
+      // Rotate the small prompt sample so Kaia has a wider set to choose from.
+      const start = category === 'accessories' ? Math.floor(Math.random() * items.length) : 0
+      return Array.from({ length: Math.min(3, items.length) }, (_, index) => items[(start + index) % items.length])
+    })
+    .map((i) => `- ${i.name} (${i.category}) — buy ~₹${i.estimatedPrice}`)
     .join('\n')
 }
+
 
 // Grouped under the outfit slot each piece fills, so Kaia can see at a
 // glance that jeans and trousers are both a Bottom and never pair them.
@@ -139,6 +153,7 @@ function buildProfileSummary(profile: UserProfile | null): string {
   if (!profile) return ''
   const parts: string[] = []
   if (profile.name) parts.push(`Name: ${profile.name}`)
+  if (profile.genderStylePreference) parts.push(`Clothing style preference: ${profile.genderStylePreference}`)
   if (profile.occupation) parts.push(`Occupation: ${profile.occupation}`)
   if (profile.lifestyle) parts.push(`Lifestyle: ${profile.lifestyle}`)
   if (profile.stylePreferences.length) parts.push(`Style aesthetic: ${profile.stylePreferences.join(', ')}`)
@@ -152,7 +167,8 @@ export async function sendChatMessage(
   messages: ChatMessage[],
   wardrobe: ClothingItem[],
   profile: UserProfile | null,
-  imageDataUrls?: string[]
+  imageDataUrls?: string[],
+  recommendationPreferencesSummary?: string,
 ): Promise<string> {
   const wardrobeSummary = buildWardrobeSummary(wardrobe)
   const wardrobeGapsSummary = buildWardrobeGapsSummary(wardrobe)
@@ -160,7 +176,9 @@ export async function sendChatMessage(
   const stylePreferencesSummary = profile?.styleItemSelections
     ? buildStylePreferencesSummary(profile.styleItemSelections)
     : ''
-  const shopSummary = buildShopSummary()
+  const shopSummary = buildShopSummary(profile)
+  const colourHarmonyConfig = await getColourHarmonyConfig()
+  const colourHarmonySummary = rankWardrobeColourPairings(wardrobe, colourHarmonyConfig).join('\n')
 
   const body = JSON.stringify({
     messages: messages.map((m, index) => ({
@@ -175,6 +193,8 @@ export async function sendChatMessage(
     profileSummary,
     stylePreferencesSummary,
     shopSummary,
+    colourHarmonySummary,
+    ...(recommendationPreferencesSummary ? { recommendationPreferencesSummary } : {}),
     // Lets the server check each outfit line against the real category.
     wardrobeItems: wardrobe.map((i) => ({ name: i.name, category: i.category })),
   })

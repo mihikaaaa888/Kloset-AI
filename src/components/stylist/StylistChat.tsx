@@ -7,6 +7,8 @@ import { clsx } from 'clsx'
 import { sendChatMessage, type ChatMessage } from '@/lib/chatService'
 import { searchWebShopCached, cleanProductTitle, type Retailer } from '@/lib/webShopService'
 import { useWardrobeStore } from '@/store/wardrobeStore'
+import { useRecommendationStore } from '@/store/recommendationStore'
+import { summarizeRecommendationFeedback } from '@/lib/recommendationFeedback'
 import { useUserStore } from '@/store/userStore'
 import { useChatStore } from '@/store/chatStore'
 import { getImage } from '@/lib/imageStorage'
@@ -25,6 +27,16 @@ const SUGGESTED_PROMPTS = [
 
 const DAILY_OCCASIONS = ['Work', 'Casual', 'Date night', 'Formal', 'Weekend', 'Travel', 'Gym', 'Special event']
 
+type FollowUp = { question: string; options: string[] }
+function followUpForRequest(text: string): FollowUp | null {
+  const value = text.toLowerCase()
+  if (/wedding|wedding guest|marriage/.test(value)) return { question: 'Is there a dress code or theme?', options: ['Traditional', 'Formal', 'Festive'] }
+  if (/meeting|boardroom|office|work event|presentation/.test(value)) return { question: 'What kind of setting is it?', options: ['Casual', 'Smart casual', 'Boardroom formal'] }
+  if (/picnic|park|outdoor lunch/.test(value)) return { question: 'What kind of look are you after?', options: ['Relaxed and comfy', 'A little polished'] }
+  if (/date night|first date|dinner date/.test(value)) return { question: 'What’s the plan for the evening?', options: ['Casual dinner', 'Dressy dinner', 'Something outdoors'] }
+  return null
+}
+
 // Kaia is grounded on a sample of the catalog (see chatService's shopSummary)
 // and will name real pieces by their exact catalog name — matching on that
 // name lets the chat surface an "Add to Kloset" action for anything she
@@ -32,6 +44,17 @@ const DAILY_OCCASIONS = ['Work', 'Casual', 'Date night', 'Formal', 'Weekend', 'T
 function findMentionedCatalogItems(content: string): CatalogItem[] {
   const lower = content.toLowerCase()
   return CATALOG_ITEMS.filter((item) => lower.includes(item.name.toLowerCase()))
+}
+
+function removeDuplicateCatalogCopy(content: string, items: CatalogItem[]): string {
+  if (!items.length) return content
+  let cleaned = content
+  for (const item of items) {
+    const escapedName = item.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    cleaned = cleaned.replace(new RegExp(`[^.!?\\n]*\\b${escapedName}\\b[^.!?\\n]*[.!?]?`, 'gi'), '')
+  }
+  cleaned = cleaned.replace(/^\s*(?:#{1,4}\s*)?(?:\*\*)?(?:recommended addition|recommended accessories|you could add)(?:\*\*)?\s*:?.*$/gim, '')
+  return cleaned.replace(/\n{3,}/g, '\n\n').trim()
 }
 
 // Kaia is instructed (see server's system prompt) to end a genuine external
@@ -59,6 +82,7 @@ const SLOT_ALIASES: Record<string, string> = {
   bottoms: 'bottom',
   dress: 'dress',
   outerwear: 'outerwear',
+  woolens: 'outerwear',
   layer: 'outerwear',
   jacket: 'outerwear',
   shoes: 'shoes',
@@ -82,7 +106,9 @@ const SLOT_LABEL: Record<string, string> = {
   shoes: 'Shoes',
   accessory: 'Accessory',
 }
-const SLOT_ITEM_RE = /^\**\s*([a-z]+)\s*\**\s*[:–—-]\s*\**\s*(.+)$/i
+// Accept the markdown variants Kaia may return (e.g. `**Top:** ...`),
+// optional notes in a slot label (`Outerwear (optional): ...`), and plain text.
+const SLOT_ITEM_RE = /^\s*\**\s*([a-z]+)(?:\s*\(([^)]*)\))?\s*\**\s*[:–—-]\s*\**\s*(.+?)\s*\**\s*$/i
 const TO_BUY_RE = /\(\s*to buy\s*\)/i
 
 interface OutfitPiece {
@@ -97,8 +123,10 @@ function parseOutfitPieces(items: string[]): OutfitPiece[] | null {
     const m = item.match(SLOT_ITEM_RE)
     const slot = m && SLOT_ALIASES[m[1].toLowerCase()]
     if (!m || !slot) return null
-    const raw = m[2].replace(/\*+/g, '').trim()
-    pieces.push({ slot, name: raw.replace(TO_BUY_RE, '').trim(), toBuy: TO_BUY_RE.test(raw) })
+    const note = m[2] ?? ''
+    const raw = m[3].replace(/\*+/g, '').trim()
+    const name = raw.replace(TO_BUY_RE, '').split(/\s+[–—]\s+/)[0].trim()
+    pieces.push({ slot, name, toBuy: /to\s+buy/i.test(note) || TO_BUY_RE.test(raw) })
   }
   return pieces.length >= 2 ? pieces : null
 }
@@ -123,16 +151,29 @@ function extractShopQueries(content: string): { text: string; queries: ShopQuery
     const [query, store] = match[2].split('|').map((part) => part.trim())
     if (!query || queries.some((q) => q.query === query)) continue
     const slot = match[1] ? SLOT_ALIASES[match[1].toLowerCase()] ?? null : null
+    const key = shoppingItemKey(query, slot)
+    if (queries.some((q) => shoppingItemKey(q.query, q.slot) === key)) continue
     queries.push({ query, retailer: RETAILERS.find((r) => r === store?.toLowerCase()) ?? null, slot })
   }
   const text = content.replace(SHOP_TAG_RE, '').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim()
   return { text, queries: queries.slice(0, 4) }
 }
 
+function shoppingItemKey(query: string, slot: string | null): string {
+  const words = query.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean)
+  const colours = ['black', 'white', 'ivory', 'cream', 'beige', 'tan', 'brown', 'navy', 'blue', 'red', 'pink', 'green', 'grey', 'gray', 'gold', 'silver']
+  const types = ['loafer', 'loafers', 'pump', 'pumps', 'heel', 'heels', 'sneaker', 'sneakers', 'boot', 'boots', 'flat', 'flats', 'sandal', 'sandals', 'trouser', 'trousers', 'jeans', 'skirt', 'dress', 'blazer', 'jacket', 'cardigan', 'sweater', 'shirt', 'blouse', 'bag', 'tote', 'earring', 'earrings']
+  const colour = words.find((word) => colours.includes(word)) ?? ''
+  const type = words.find((word) => types.includes(word)) ?? words.filter((word) => !['leather', 'suede', 'for', 'women', 'woman', 'men', 'mens', 'womens'].includes(word)).slice(-1)[0] ?? ''
+  const singular = type.endsWith('s') ? type.slice(0, -1) : type
+  return `${slot ?? ''}|${colour}|${singular}`
+}
+
 export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initialPrompt?: string; initialImageItemIds?: string[] }) {
   const items = useWardrobeStore((s) => s.items)
   const addItem = useWardrobeStore((s) => s.addItem)
   const profile = useUserStore((s) => s.profile)
+  const recommendationFeedback = useRecommendationStore((s) => profile?.id ? s.feedbackByUser[profile.id] ?? [] : [])
   const { user } = useAuth()
   const navigate = useNavigate()
 
@@ -151,9 +192,13 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
   const [attachedPreviews, setAttachedPreviews] = useState<string[]>([])
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null)
   const [awaitingDailyOccasion, setAwaitingDailyOccasion] = useState(false)
+  const [pendingFollowUp, setPendingFollowUp] = useState<FollowUp | null>(null)
+  const [otherFollowUp, setOtherFollowUp] = useState(false)
+  const [otherFollowUpText, setOtherFollowUpText] = useState('')
   const [addedCatalogIds, setAddedCatalogIds] = useState<Set<string>>(
     () => new Set(items.map((i) => i.catalogId).filter(Boolean) as string[])
   )
+  const [addedShopIds, setAddedShopIds] = useState<Set<string>>(() => new Set())
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -249,6 +294,16 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
     setAttachedImages([])
     setAttachedPreviews([])
     setAttachmentNotice(null)
+    const followUp = !imageFiles.length ? followUpForRequest(typedContent) : null
+    if (followUp) {
+      setPendingFollowUp(followUp)
+      setOtherFollowUp(false)
+      setOtherFollowUpText('')
+      setMessages([...next, { role: 'assistant', content: followUp.question }])
+      return
+    }
+    setPendingFollowUp(null)
+    setOtherFollowUp(false)
     setLoading(true)
 
     try {
@@ -257,7 +312,7 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
       const outgoing = prepared?.note
         ? next.map((m, i) => i === next.length - 1 ? { ...m, content: [m.content.trim(), prepared.note].filter(Boolean).join('\n\n') } : m)
         : next
-      const reply = await sendChatMessage(outgoing, items, profile, prepared?.dataUrls)
+      const reply = await sendChatMessage(outgoing, items, profile, prepared?.dataUrls, summarizeRecommendationFeedback(recommendationFeedback))
       setMessages((prev) => [...prev, { role: 'assistant', content: reply }])
     } catch (e) {
       console.error('[chat] send failed', e)
@@ -344,6 +399,30 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
     if (user) insertItem(user.id, newItem).catch(() => {})
   }
 
+  const handleAddShopItem = (result: WebShopResult, slot: string | null) => {
+    const category = slot ? SLOT_CATEGORY[slot] : undefined
+    if (!category) return
+    const now = new Date().toISOString()
+    const newItem: ClothingItem = {
+      id: crypto.randomUUID(),
+      name: cleanProductTitle(result.title),
+      category,
+      imageUrl: result.imageUrl,
+      imageSource: result.imageUrl ? 'remote' : 'none',
+      colour: [],
+      pattern: 'solid',
+      seasons: [],
+      occasions: [],
+      isFavourite: false,
+      timesWorn: 0,
+      createdAt: now,
+      updatedAt: now,
+    }
+    addItem(newItem)
+    setAddedShopIds((previous) => new Set(previous).add(result.id))
+    if (user) insertItem(user.id, newItem).catch(() => {})
+  }
+
   const isEmpty = messages.length === 0
   const hasAddedFromChat = addedCatalogIds.size > 0
 
@@ -379,16 +458,19 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
                 message={msg}
                 addedCatalogIds={addedCatalogIds}
                 onAddCatalogItem={handleAddCatalogItem}
+                addedShopIds={addedShopIds}
+                onAddShopItem={handleAddShopItem}
               />
             ))}
             {awaitingDailyOccasion && !loading && (
               <div className="ml-9 flex flex-wrap gap-2">
-                {DAILY_OCCASIONS.map((occasion) => (
+                {[...DAILY_OCCASIONS, 'Other'].map((occasion) => (
                   <button
                     key={occasion}
                     type="button"
                     onClick={() => {
                       setAwaitingDailyOccasion(false)
+                      if (occasion === 'Other') { setOtherFollowUpText(''); setOtherFollowUp(true); setPendingFollowUp({ question: 'What are you dressing for?', options: [] }); return }
                       void send(occasion)
                     }}
                     className="rounded-full border border-text-primary/15 bg-surface px-4 py-2 text-sm text-text-primary transition-colors hover:border-text-primary/40"
@@ -396,6 +478,13 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
                     {occasion}
                   </button>
                 ))}
+              </div>
+            )}
+            {pendingFollowUp && !loading && (
+              <div className="ml-9 flex flex-wrap gap-2" aria-label="Choose a follow-up answer">
+                {pendingFollowUp.options.map((option) => <button key={option} type="button" onClick={() => { setPendingFollowUp(null); void send(option) }} className="rounded-full border border-text-primary/15 bg-surface px-4 py-2 text-sm text-text-primary hover:border-text-primary/40">{option}</button>)}
+                {!otherFollowUp && <button type="button" onClick={() => setOtherFollowUp(true)} className="rounded-full border border-text-primary/15 bg-surface px-4 py-2 text-sm text-text-muted hover:border-text-primary/40">Other</button>}
+                {otherFollowUp && <form className="flex w-full gap-2" onSubmit={(event) => { event.preventDefault(); const answer = otherFollowUpText.trim(); if (!answer) return; setPendingFollowUp(null); setOtherFollowUp(false); void send(`Other: ${answer}`) }}><input autoFocus value={otherFollowUpText} onChange={(event) => setOtherFollowUpText(event.target.value)} placeholder="Add your answer" className="min-w-0 flex-1 rounded-full border border-text-primary/15 bg-surface px-4 py-2 text-sm outline-none"/><button className="rounded-full bg-dark-purple px-4 py-2 text-sm text-white">Send</button></form>}
               </div>
             )}
             {loading && <TypingIndicator />}
@@ -513,7 +602,7 @@ const TABLE_ROW_RE = /^\s*\|.*\|\s*$/
 const TABLE_SEPARATOR_RE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/
 const HEADING_RE = /^(#{1,6})\s+(.+)$/
 const HR_RE = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/
-const UL_ITEM_RE = /^\s*[-*+]\s+(.+)$/
+const UL_ITEM_RE = /^\s*[-*+•●▪]\s+(.+)$/
 const OL_ITEM_RE = /^\s*\d+[.)]\s+(.+)$/
 
 function splitTableRow(line: string): string[] {
@@ -667,16 +756,24 @@ function MessageBubble({
   message,
   addedCatalogIds,
   onAddCatalogItem,
+  addedShopIds,
+  onAddShopItem,
 }: {
   message: ChatMessage
   addedCatalogIds: Set<string>
   onAddCatalogItem: (item: CatalogItem) => void
+  addedShopIds: Set<string>
+  onAddShopItem: (result: WebShopResult, slot: string | null) => void
 }) {
   const isUser = message.role === 'user'
-  const { text, queries: shopQueries } = isUser
+  const { text: extractedText, queries: extractedQueries } = isUser
     ? { text: message.content, queries: [] as ShopQuery[] }
     : extractShopQueries(message.content)
-  const mentioned = isUser ? [] : findMentionedCatalogItems(text)
+  const mentioned = isUser ? [] : findMentionedCatalogItems(extractedText)
+  const text = removeDuplicateCatalogCopy(extractedText, mentioned)
+  const shopQueries = extractedQueries.filter((query) => !mentioned.some((item) =>
+    shoppingItemKey(item.name, query.slot) === shoppingItemKey(query.query, query.slot)
+  ))
 
   return (
     <div className={clsx('flex flex-col', isUser ? 'items-end' : 'items-start')}>
@@ -707,35 +804,38 @@ function MessageBubble({
           key={q.query}
           query={q.query}
           retailer={q.retailer}
+          slot={q.slot}
+          addedShopIds={addedShopIds}
+          onAddShopItem={onAddShopItem}
           // One store, one piece → show more of that store's options.
           limit={shopQueries.length === 1 && q.retailer ? 6 : 3}
         />
       ))}
 
-      {/* Real catalog pieces Kaia named — add them to the Kloset directly, or shop/rent, without leaving the chat. */}
+      {/* Show one visual card per named catalog recommendation with a quick-add control. */}
       {mentioned.length > 0 && (
         <div className="flex gap-2.5 mt-2 ml-9 max-w-[calc(100%-2.25rem)] md:max-w-[80%] overflow-x-auto scrollbar-hide pb-1">
           {mentioned.map((item) => {
             const added = addedCatalogIds.has(item.id)
             return (
-              <div key={item.id} className="w-32 flex-shrink-0 rounded-2xl bg-surface shadow-card overflow-hidden">
+              <div key={item.id} className="group relative w-32 flex-shrink-0 rounded-2xl bg-surface shadow-card overflow-hidden">
                 <img src={item.imageUrl} alt={item.name} loading="lazy" className="w-full aspect-[3/4] object-cover bg-text-primary/5" />
-                <div className="p-2 space-y-1.5">
-                  <p className="text-xs font-medium text-text-primary leading-snug line-clamp-2">{item.name}</p>
-                  <button
-                    onClick={() => !added && onAddCatalogItem(item)}
-                    disabled={added}
-                    className={clsx(
-                      'w-full flex items-center justify-center gap-1 py-1.5 rounded-full text-2xs font-medium transition-colors',
-                      added
-                        ? 'bg-text-primary/5 text-text-primary/40 cursor-default'
-                        : 'bg-dark-purple text-butter-yellow hover:bg-deep-purple'
-                    )}
-                  >
-                    {added ? <Check size={11} /> : <Plus size={11} />}
-                    {added ? 'In your Kloset' : 'Add to Kloset'}
-                  </button>
-                </div>
+                <p className="p-2 text-xs font-medium text-text-primary leading-snug line-clamp-2">{item.name}</p>
+                <button
+                  type="button"
+                  onClick={() => !added && onAddCatalogItem(item)}
+                  disabled={added}
+                  aria-label={added ? `${item.name} is in your Kloset` : `Add ${item.name} to Kloset`}
+                  title={added ? 'In your Kloset' : 'Add to Kloset'}
+                  className={clsx(
+                    'absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full shadow-soft transition-opacity',
+                    '[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100',
+                    '[@media(hover:none)]:opacity-100',
+                    added ? 'bg-surface/95 text-text-muted' : 'bg-dark-purple text-butter-yellow hover:bg-deep-purple'
+                  )}
+                >
+                  {added ? <Check size={15} /> : <Plus size={16} />}
+                </button>
               </div>
             )
           })}
@@ -871,7 +971,21 @@ function useShopResults(query: string | null, retailer: Retailer | null) {
 // Fails silently — no key, no results, or an upstream error all just mean no
 // cards render, rather than cluttering the chat with an error state for
 // what's a bonus, not the reply. Brand names are never shown.
-function ExternalShopSuggestion({ query, retailer, limit }: { query: string; retailer: Retailer | null; limit: number }) {
+function ExternalShopSuggestion({
+  query,
+  retailer,
+  limit,
+  slot,
+  addedShopIds,
+  onAddShopItem,
+}: {
+  query: string
+  retailer: Retailer | null
+  limit: number
+  slot: string | null
+  addedShopIds: Set<string>
+  onAddShopItem: (result: WebShopResult, slot: string | null) => void
+}) {
   const { status, results } = useShopResults(query, retailer)
 
   if (status === 'none') return null
@@ -896,23 +1010,39 @@ function ExternalShopSuggestion({ query, retailer, limit }: { query: string; ret
     <div className="mt-2 ml-9 max-w-[calc(100%-2.25rem)] md:max-w-[80%]">
       <p className="text-2xs uppercase tracking-wide text-text-muted mb-1.5">Shop &ldquo;{query}&rdquo;</p>
       <div className="flex gap-2.5 overflow-x-auto scrollbar-hide pb-1">
-        {results.slice(0, limit).map((r) => (
-          <a
-            key={r.id}
-            href={r.url}
-            target="_blank"
-            rel="noreferrer"
-            className="group w-32 flex-shrink-0 rounded-2xl bg-surface shadow-card overflow-hidden hover:ring-2 hover:ring-butter-yellow transition-shadow"
-          >
-            <ShopImage src={r.imageUrl} alt={cleanProductTitle(r.title)} />
-            <div className="p-2">
-              <p className="text-xs font-medium text-text-primary leading-snug line-clamp-2">{cleanProductTitle(r.title)}</p>
-              <p className="flex items-center gap-1 mt-1 text-2xs text-text-muted group-hover:text-text-primary">
-                View piece <ExternalLink size={10} />
-              </p>
+        {results.slice(0, limit).map((r) => {
+          const added = addedShopIds.has(r.id)
+          return (
+            <div key={r.id} className="group relative w-32 flex-shrink-0 rounded-2xl bg-surface shadow-card overflow-hidden hover:ring-2 hover:ring-butter-yellow transition-shadow">
+              <a href={r.url} target="_blank" rel="noreferrer" className="block">
+                <ShopImage src={r.imageUrl} alt={cleanProductTitle(r.title)} />
+                <div className="p-2">
+                  <p className="text-xs font-medium text-text-primary leading-snug line-clamp-2">{cleanProductTitle(r.title)}</p>
+                  <p className="flex items-center gap-1 mt-1 text-2xs text-text-muted group-hover:text-text-primary">
+                    View piece <ExternalLink size={10} />
+                  </p>
+                </div>
+              </a>
+              {slot && (
+                <button
+                  type="button"
+                  onClick={() => !added && onAddShopItem(r, slot)}
+                  disabled={added}
+                  aria-label={added ? 'Added to your Kloset' : `Add ${cleanProductTitle(r.title)} to Kloset`}
+                  title={added ? 'In your Kloset' : 'Add to Kloset'}
+                  className={clsx(
+                    'absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full shadow-soft transition-opacity',
+                    '[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100',
+                    '[@media(hover:none)]:opacity-100',
+                    added ? 'bg-surface/95 text-text-muted' : 'bg-dark-purple text-butter-yellow hover:bg-deep-purple'
+                  )}
+                >
+                  {added ? <Check size={15} /> : <Plus size={16} />}
+                </button>
+              )}
             </div>
-          </a>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

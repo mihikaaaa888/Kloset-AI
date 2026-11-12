@@ -9,6 +9,7 @@ import { CATALOG_ITEMS } from '@/lib/catalogData'
 import { formatINR, rankForUser } from '@/lib/shopping'
 import { ROLE_FOR_CATEGORY, catalogSnapshot, catalogToItem } from '@/lib/outfitPieces'
 import { useUserStore } from '@/store/userStore'
+import { useRecommendationStore } from '@/store/recommendationStore'
 import type { CatalogItem, ClothingItem, Occasion, Outfit, OutfitItem } from '@/types'
 
 const OCCASIONS: { value: Occasion; label: string }[] = [
@@ -38,6 +39,7 @@ interface CreateOutfitModalProps {
  */
 export function CreateOutfitModal({ open, items, onClose, onSave }: CreateOutfitModalProps) {
   const profile = useUserStore((s) => s.profile)
+  const recommendationFeedback = useRecommendationStore((s) => profile?.id ? s.feedbackByUser[profile.id] ?? [] : [])
   const [name, setName] = useState('')
   const [occasion, setOccasion] = useState<Occasion>('casual')
   const [selected, setSelected] = useState<string[]>([])
@@ -63,7 +65,7 @@ export function CreateOutfitModal({ open, items, onClose, onSave }: CreateOutfit
   }, [open, onClose])
 
   // Shop pieces, most on-style first. Keyed by catalog id, which never collides with wardrobe UUIDs.
-  const shopPieces = useMemo(() => rankForUser(CATALOG_ITEMS, profile, items), [profile, items])
+  const shopPieces = useMemo(() => rankForUser(CATALOG_ITEMS, profile, items, recommendationFeedback), [profile, items, recommendationFeedback])
   const catalogById = useMemo(() => new Map(CATALOG_ITEMS.map((c) => [c.id, c])), [])
   const shopItems = useMemo(() => shopPieces.map((c) => catalogToItem(c)), [shopPieces])
   const byId = useMemo(() => new Map([...items, ...shopItems].map((i) => [i.id, i])), [items, shopItems])

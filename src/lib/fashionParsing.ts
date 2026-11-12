@@ -3,17 +3,18 @@ import type { ClothingCategory } from '@/types'
 const CLOTHING: Record<string, { category: ClothingCategory; name: string }> = {
   'upper-clothes': { category: 'tops', name: 'Top' },
   'upper clothes': { category: 'tops', name: 'Top' },
-  'skirt': { category: 'bottoms', name: 'Skirt' },
-  'pants': { category: 'bottoms', name: 'Pants' },
-  'dress': { category: 'dresses', name: 'Dress' },
-  'belt': { category: 'accessories', name: 'Belt' },
+  skirt: { category: 'bottoms', name: 'Skirt' },
+  pants: { category: 'bottoms', name: 'Pants' },
+  dress: { category: 'dresses', name: 'Dress' },
+  belt: { category: 'accessories', name: 'Belt' },
   'left-shoe': { category: 'shoes', name: 'Shoes' },
   'right-shoe': { category: 'shoes', name: 'Shoes' },
-  'bag': { category: 'accessories', name: 'Bag' },
-  'scarf': { category: 'accessories', name: 'Scarf' },
-  'hat': { category: 'accessories', name: 'Hat' },
-  'sunglasses': { category: 'accessories', name: 'Sunglasses' },
+  bag: { category: 'accessories', name: 'Bag' },
+  scarf: { category: 'accessories', name: 'Scarf' },
+  hat: { category: 'accessories', name: 'Hat' },
+  sunglasses: { category: 'accessories', name: 'Sunglasses' },
 }
+const FACE_LABELS = new Set(['face', 'hair', 'sunglasses'])
 const HUMAN_LABELS = new Set(['face', 'hair', 'sunglasses', 'left-arm', 'right-arm', 'arms', 'left-leg', 'right-leg', 'legs', 'torso', 'hands', 'feet'])
 
 interface SegmentationMask {
@@ -30,6 +31,8 @@ interface ParsedGarment {
 export interface ParsedPhoto {
   garments: ParsedGarment[]
   containsPerson: boolean
+  /** Safe local fallback for standalone product photos; face pixels are transparent. */
+  safeFallback: Blob
 }
 
 type Segmenter = (image: string) => Promise<SegmentationMask[]>
@@ -37,11 +40,14 @@ let segmenterPromise: Promise<Segmenter> | null = null
 
 function getSegmenter(): Promise<Segmenter> {
   if (!segmenterPromise) {
-    segmenterPromise = import('@huggingface/transformers').then(async ({ pipeline }) => {
-      const segmenter = await pipeline('image-segmentation', 'Xenova/segformer_b2_clothes', { dtype: 'q8' })
-      // Let Transformers.js select and bind the semantic post-processor from
-      // the model's image processor. Passing `subtask: 'semantic'` explicitly
-      // leaves a method name string unbound in the current library version.
+    segmenterPromise = import('@huggingface/transformers').then(async ({ env, pipeline }) => {
+      // Serve ONNX Runtime's module and binary from this app. Remote module
+      // imports are blocked by some mobile browsers and deployment headers.
+      env.backends.onnx.wasm!.wasmPaths = {
+        mjs: '/onnx-runtime/ort-wasm-simd-threaded.asyncify.mjs',
+        wasm: '/onnx-runtime/ort-wasm-simd-threaded.asyncify.wasm',
+      }
+      const segmenter = await pipeline('image-segmentation', 'Xenova/segformer_b2_clothes', { dtype: 'q8', device: 'wasm' })
       return (image: string) => segmenter(image) as Promise<SegmentationMask[]>
     }).catch((error) => {
       segmenterPromise = null
@@ -61,102 +67,35 @@ function decodeImage(blob: Blob): Promise<HTMLImageElement> {
   })
 }
 
+function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Could not create garment image.')), 'image/png'))
+}
+
 function maskAt(mask: SegmentationMask['mask'], x: number, y: number, width: number, height: number): boolean {
   const mx = Math.min(mask.width - 1, Math.floor(x / width * mask.width))
   const my = Math.min(mask.height - 1, Math.floor(y / height * mask.height))
   return mask.data[(my * mask.width + mx) * mask.channels] > 127
 }
 
-/**
- * Clothing segmentation is semantic, so a mask can contain multiple garments
- * of the same type (for example worn trousers plus trousers on a hanger).
- * For photos containing a person, keep only mask components that meet the
- * person's segmented silhouette. This avoids saving nearby background clothes
- * as part of the outfit while still retaining disconnected product-photo items.
- */
-function keepPersonAttachedComponents(
-  garment: SegmentationMask,
-  bodyMasks: SegmentationMask[],
-): SegmentationMask {
-  const { width, height, channels } = garment.mask
-  const source = garment.mask.data
-  const body = new Uint8Array(width * height)
-  let hasBodyPixels = false
-  for (const bodyMask of bodyMasks) {
-    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-      if (maskAt(bodyMask.mask, x, y, width, height)) {
-        body[y * width + x] = 1
-        hasBodyPixels = true
-      }
-    }
-  }
-  // If the model failed to produce a usable silhouette, don't erase the item.
-  if (!hasBodyPixels) return garment
-
-  // A tiny dilation handles the narrow semantic seams between a garment and
-  // the adjacent arm, leg, or torso label without reaching nearby objects.
-  const nearBody = new Uint8Array(body.length)
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    if (!body[y * width + x]) continue
-    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
-      const nx = x + dx, ny = y + dy
-      if (nx >= 0 && nx < width && ny >= 0 && ny < height) nearBody[ny * width + nx] = 1
-    }
-  }
-
-  const visited = new Uint8Array(width * height)
-  const keep = new Uint8Array(width * height)
-  for (let start = 0; start < width * height; start++) {
-    if (visited[start] || source[start * channels] <= 127) continue
-    const component: number[] = [start]
-    visited[start] = 1
-    let touchesPerson = false
-    for (let i = 0; i < component.length; i++) {
-      const index = component[i]
-      if (nearBody[index]) touchesPerson = true
-      const x = index % width, y = Math.floor(index / width)
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        if (dx === 0 && dy === 0) continue
-        const nx = x + dx, ny = y + dy
-        if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue
-        const neighbor = ny * width + nx
-        if (!visited[neighbor] && source[neighbor * channels] > 127) {
-          visited[neighbor] = 1
-          component.push(neighbor)
-        }
-      }
-    }
-    if (touchesPerson) for (const index of component) keep[index] = 1
-  }
-
-  const filtered = new Uint8Array(source.length)
-  for (let i = 0; i < keep.length; i++) {
-    if (!keep[i]) continue
-    const offset = i * channels
-    for (let channel = 0; channel < channels; channel++) filtered[offset + channel] = source[offset + channel]
-  }
-  return { ...garment, mask: { ...garment.mask, data: filtered } }
-}
-
-/** Segment locally and save rectangular crops from the untouched source photo. */
+/** Segment locally and produce transparent, full-resolution garment cutouts. */
 export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
   const image = await decodeImage(source)
   const sourceUrl = URL.createObjectURL(source)
-  let masks: SegmentationMask[]
+  let masks: SegmentationMask[] = []
+  let segmentationAvailable = true
   try {
     masks = await (await getSegmenter())(sourceUrl)
+  } catch (error) {
+    // Don't discard a user's upload if the model fails to load. The original
+    // photo remains available for manual tagging and can be retried later.
+    segmentationAvailable = false
+    console.warn('[wardrobe] garment segmentation unavailable; keeping source photo', error)
   } finally {
     URL.revokeObjectURL(sourceUrl)
   }
 
   const byLabel = new Map(masks.map((mask) => [mask.label.toLowerCase(), mask]))
   const containsPerson = masks.some(({ label }) => HUMAN_LABELS.has(label.toLowerCase()))
-  const bodyMasks = [...HUMAN_LABELS]
-    .filter((label) => !['face', 'hair', 'sunglasses'].includes(label))
-    .map((label) => byLabel.get(label))
-    .filter((mask): mask is SegmentationMask => !!mask)
-  // Keep crop geometry at the uploaded image's resolution. The old fixed
-  // 512x512 canvas made every saved garment look blurry on phone screens.
   const inputWidth = image.naturalWidth
   const inputHeight = image.naturalHeight
   const garmentGroups = new Map<string, { masks: SegmentationMask[]; category: ClothingCategory; name: string }>()
@@ -165,11 +104,8 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
     if (!mask) continue
     const key = info.category === 'shoes' ? 'shoes' : label
     const existing = garmentGroups.get(key)
-    const relevantMask = containsPerson && bodyMasks.length > 0
-      ? keepPersonAttachedComponents(mask, bodyMasks)
-      : mask
-    if (existing) existing.masks.push(relevantMask)
-    else garmentGroups.set(key, { masks: [relevantMask], category: info.category, name: info.name })
+    if (existing) existing.masks.push(mask)
+    else garmentGroups.set(key, { masks: [mask], category: info.category, name: info.name })
   }
 
   const garments: ParsedGarment[] = []
@@ -188,15 +124,36 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
     const left = Math.max(0, minX - padX), top = Math.max(0, minY - padY)
     const right = Math.min(inputWidth, maxX + padX + 1), bottom = Math.min(inputHeight, maxY + padY + 1)
     const crop = document.createElement('canvas')
-    crop.width = right - left; crop.height = bottom - top
-    const context = crop.getContext('2d')!
-    // Keep every original pixel in the crop, including the background. The
-    // segmentation mask is used only to locate and label each piece.
+    crop.width = right - left
+    crop.height = bottom - top
+    const context = crop.getContext('2d', { willReadFrequently: true })!
     context.drawImage(image, left, top, crop.width, crop.height, 0, 0, crop.width, crop.height)
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      crop.toBlob((result) => result ? resolve(result) : reject(new Error('Could not create item crop.')), 'image/png')
-    })
-    garments.push({ blob, category: group.category, name: group.name })
+    const pixels = context.getImageData(0, 0, crop.width, crop.height)
+    for (let y = 0; y < crop.height; y++) for (let x = 0; x < crop.width; x++) {
+      const sourceX = left + x
+      const sourceY = top + y
+      if (!group.masks.some(({ mask }) => maskAt(mask, sourceX, sourceY, inputWidth, inputHeight))) {
+        pixels.data[(y * crop.width + x) * 4 + 3] = 0
+      }
+    }
+    context.putImageData(pixels, 0, 0)
+    garments.push({ blob: await canvasBlob(crop), category: group.category, name: group.name })
   }
-  return { garments, containsPerson }
+
+  // Keep a face-cleared local fallback for isolated product photos the labeler
+  // cannot classify. Person photos with no garment masks are rejected upstream.
+  const faceMasks = [...FACE_LABELS].map((label) => byLabel.get(label)).filter((mask): mask is SegmentationMask => !!mask)
+  const safe = document.createElement('canvas')
+  safe.width = inputWidth
+  safe.height = inputHeight
+  const safeContext = safe.getContext('2d', { willReadFrequently: true })!
+  safeContext.drawImage(image, 0, 0)
+  const pixels = safeContext.getImageData(0, 0, safe.width, safe.height)
+  for (let y = 0; y < safe.height; y++) for (let x = 0; x < safe.width; x++) {
+    if (faceMasks.some(({ mask }) => maskAt(mask, x, y, safe.width, safe.height))) {
+      pixels.data[(y * safe.width + x) * 4 + 3] = 0
+    }
+  }
+  safeContext.putImageData(pixels, 0, 0)
+  return { garments, containsPerson: segmentationAvailable && containsPerson, safeFallback: await canvasBlob(safe) }
 }

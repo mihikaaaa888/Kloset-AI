@@ -2,6 +2,8 @@ import { ALL_CATALOG_ITEMS } from '@/lib/catalogData'
 import type { CatalogItem, ClothingCategory, ClothingItem, StylePreference, UserProfile } from '@/types'
 import { affinityForLearnedTraits } from '@/lib/styleLearning'
 import { learnStyleFromWardrobe } from '@/lib/styleLearning'
+import { scoreRecommendationFeedback, traitsFromCatalog, feedbackFromFavourites } from '@/lib/recommendationFeedback'
+import type { RecommendationFeedback } from '@/lib/recommendationFeedback'
 
 // ─── Budget ───────────────────────────────────────────────────────────────────
 // One dropdown drives every shopping mode. Buying filters on the per-piece
@@ -60,7 +62,7 @@ function gapCategories(wardrobe: ClothingItem[]): Set<ClothingCategory> {
   return new Set(all.filter((c) => (counts.get(c) ?? 0) <= 1))
 }
 
-function personalScore(item: CatalogItem, profile: UserProfile | null, gaps: Set<ClothingCategory>, learnedStyle: ReturnType<typeof learnStyleFromWardrobe>): number {
+function personalScore(item: CatalogItem, profile: UserProfile | null, gaps: Set<ClothingCategory>, learnedStyle: ReturnType<typeof learnStyleFromWardrobe>, feedback: RecommendationFeedback[]): number {
   const styles = profile?.stylePreferences ?? []
   const lower = (list: string[] | undefined) => (list ?? []).map((c) => c.toLowerCase())
   const favourite = lower(profile?.favouriteColours)
@@ -79,14 +81,16 @@ function personalScore(item: CatalogItem, profile: UserProfile | null, gaps: Set
     pattern: item.pattern,
     formality: item.formality,
   })
+  score += scoreRecommendationFeedback(traitsFromCatalog(item), feedback)
   if (gaps.has(item.category)) score += 1
   return score
 }
 
-export function rankForUser(items: CatalogItem[], profile: UserProfile | null, wardrobe: ClothingItem[]): CatalogItem[] {
+export function rankForUser(items: CatalogItem[], profile: UserProfile | null, wardrobe: ClothingItem[], feedback: RecommendationFeedback[] = []): CatalogItem[] {
   const gaps = gapCategories(wardrobe)
   const learnedStyle = learnStyleFromWardrobe(wardrobe)
-  return [...items].sort((a, b) => personalScore(b, profile, gaps, learnedStyle) - personalScore(a, profile, gaps, learnedStyle))
+  const signals = [...feedback, ...feedbackFromFavourites(wardrobe)]
+  return [...items].sort((a, b) => personalScore(b, profile, gaps, learnedStyle, signals) - personalScore(a, profile, gaps, learnedStyle, signals))
 }
 
 // ─── Rent ─────────────────────────────────────────────────────────────────────

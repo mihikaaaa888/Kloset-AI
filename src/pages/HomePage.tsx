@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Shirt, Heart, Plus, ArrowRight, Cloud, CloudDrizzle, CloudLightning, CloudOff, CloudRain, CloudSnow, CloudSun, Sun, type LucideIcon } from 'lucide-react'
 import { useUserStore } from '@/store/userStore'
@@ -7,6 +7,8 @@ import { useItemImage } from '@/hooks/useItemImage'
 import type { ClothingItem } from '@/types'
 import { generateOutfit, type WeatherCondition } from '@/lib/stylist'
 import { getLocalWeather } from '@/lib/weather'
+import { useRecommendationStore } from '@/store/recommendationStore'
+import { traitsFromWardrobe } from '@/lib/recommendationFeedback'
 
 export function HomePage() {
   const navigate = useNavigate()
@@ -169,6 +171,8 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
   profile: Parameters<typeof generateOutfit>[2]
   onAskStylist: (itemIds: string[]) => void
 }) {
+  const feedback = useRecommendationStore((state) => profile?.id ? state.feedbackByUser[profile.id] ?? [] : [])
+  const sectionRef = useRef<HTMLElement>(null)
   const [weather, setWeather] = useState<CurrentWeather | null>(null)
   const [weatherError, setWeatherError] = useState(false)
   const [recommendation, setRecommendation] = useState<string[] | null>(null)
@@ -178,6 +182,11 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
   const recommendedItems = recommendation?.length
     ? items.filter((item) => recommendation.includes(item.id))
     : []
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  // A dwell event should shape the next recommendation, not reshuffle the
+  // outfit while the user is looking at today's one.
+  const rankingFeedback = feedback.filter((event) => event.action !== 'dwell' || event.createdAt.slice(0, 10) !== todayKey)
+  const rankingFeedbackKey = stableHash(rankingFeedback.map((event) => `${event.id}:${event.action}`).join('|')).toString(36)
   const useRecommendationGrid = recommendedItems.length > 3
   const stylingTips = buildStylingTips(recommendedItems, weather)
 
@@ -217,7 +226,7 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
     const wardrobeKey = stableHash(wardrobeSignature).toString(36)
     // Bump the cache version when recommendation rules change so today's rack
     // is recalculated instead of preserving the older repetitive selection.
-    const cacheKey = `kloset:daily-outfit:v4:${profile?.id ?? profile?.name ?? 'guest'}:${dayKey}:${wardrobeKey}`
+    const cacheKey = `kloset:daily-outfit:v6:${profile?.id ?? profile?.name ?? 'guest'}:${dayKey}:${wardrobeKey}:${rankingFeedbackKey}`
     try {
       const cached = localStorage.getItem(cacheKey)
       if (cached) {
@@ -234,7 +243,7 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
 
     setRecommendationLoading(true)
     const dailyAttempt = stableHash(`${profile?.id ?? profile?.name ?? 'guest'}|${dayKey}|${wardrobeKey}`)
-    void generateOutfit({ occasion: 'casual', weather: weather?.condition ?? 'warm', mood: 'relaxed' }, items, profile, dailyAttempt)
+    void generateOutfit({ occasion: 'casual', weather: weather?.condition ?? 'warm', mood: 'relaxed' }, items, profile, dailyAttempt, undefined, rankingFeedback)
       .then(({ suggestion }) => {
         if (cancelled) return
         const itemIds = suggestion?.items.map(({ item }) => item.id) ?? []
@@ -252,10 +261,45 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
         if (!cancelled) setRecommendationLoading(false)
       })
     return () => { cancelled = true }
-  }, [weather, weatherError, items, profile, today.getDate(), today.getMonth(), today.getFullYear()])
+  }, [weather, weatherError, items, profile, rankingFeedbackKey, today.getDate(), today.getMonth(), today.getFullYear()])
+
+  useEffect(() => {
+    const node = sectionRef.current
+    if (!node || !profile?.id || recommendedItems.length === 0) return
+    let timer: number | undefined
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting && entry.intersectionRatio >= 0.55 && timer === undefined) {
+        timer = window.setTimeout(() => {
+          const state = useRecommendationStore.getState()
+          const todayKey = new Date().toISOString().slice(0, 10)
+          const alreadyViewed = new Set((state.feedbackByUser[profile.id] ?? [])
+            .filter((event) => event.action === 'dwell' && event.createdAt.slice(0, 10) === todayKey)
+            .map((event) => event.itemId))
+          const now = new Date().toISOString()
+          const newViews = recommendedItems.filter((item) => !alreadyViewed.has(item.id)).map((item) => ({
+            id: `dwell:${item.id}:${now.slice(0, 10)}`,
+            itemId: item.id,
+            action: 'dwell' as const,
+            traits: traitsFromWardrobe(item),
+            dwellSeconds: 5,
+            createdAt: now,
+          }))
+          if (newViews.length) state.recordFeedbackBatch(profile.id, newViews)
+        }, 5000)
+      } else if (timer !== undefined) {
+        window.clearTimeout(timer)
+        timer = undefined
+      }
+    }, { threshold: [0, 0.55] })
+    observer.observe(node)
+    return () => {
+      observer.disconnect()
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [recommendedItems, profile?.id])
 
   return (
-    <section className="mb-16 lg:mb-20" aria-labelledby="daily-outfit-title">
+    <section ref={sectionRef} className="mb-16 lg:mb-20" aria-labelledby="daily-outfit-title">
       <h2 id="daily-outfit-title" className="m-0 text-left font-display text-3xl sm:text-4xl lg:text-5xl font-medium leading-tight text-text-primary">
         Today’s outfit <em className="italic text-butter-yellow">recommendation</em>
       </h2>

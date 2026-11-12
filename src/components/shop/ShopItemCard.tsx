@@ -16,7 +16,7 @@ interface ShopItemCardProps {
 
 /** Product tile with its closet and styling actions grouped in one menu. */
 export function ShopItemCard({ item, mode, inWardrobe, onAdd, onRemove, onCompletePiece }: ShopItemCardProps) {
-  const [imageFailed, setImageFailed] = useState(false)
+  const [imageStage, setImageStage] = useState<0 | 1 | 2>(0)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const fallbackHex = item.colours[0] ? colourNameToHex(item.colours[0]) : '#EDE9E2'
@@ -47,17 +47,17 @@ export function ShopItemCard({ item, mode, inWardrobe, onAdd, onRemove, onComple
           onClick={() => { console.log('[shop] open item', { id: item.id, mode }) }}
           className="absolute inset-0 block"
         >
-          {item.imageUrl && !imageFailed ? (
+          {imageStage < 2 && (imageStage === 1 ? item.imageFallbackUrl : item.imageUrl) ? (
             <img
-              src={item.imageUrl}
+              src={imageStage === 1 ? item.imageFallbackUrl : item.imageUrl}
               alt={item.name}
               loading="lazy"
               referrerPolicy="no-referrer"
-              onError={() => setImageFailed(true)}
+              onError={() => setImageStage((stage) => stage === 0 && item.imageFallbackUrl ? 1 : 2)}
               onLoad={(e) => {
                 const { naturalWidth: w, naturalHeight: h } = e.currentTarget
                 // Retailer logos / 1px placeholders load fine but aren't product photos.
-                if (w < 200 || h < 200 || w / h > 1.6) setImageFailed(true)
+                if (w < 200 || h < 200 || w / h > 1.6) setImageStage((stage) => stage === 0 && item.imageFallbackUrl ? 1 : 2)
               }}
               className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
             />

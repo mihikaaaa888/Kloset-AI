@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { clsx } from 'clsx'
-import { X } from 'lucide-react'
+import { Heart, X } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { LandingNav, LANDING_SECTIONS } from '@/components/landing/LandingNav'
 import { LandingHero } from '@/components/landing/LandingHero'
@@ -157,6 +157,11 @@ export function LandingPage() {
                 {item.label}
               </NavLink>
             ))}
+            {user && profile?.onboardingComplete && (
+              <NavLink to="/for-you" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 py-3 text-base uppercase tracking-wider text-butter-yellow/70 transition-colors hover:text-butter-yellow">
+                <Heart size={16} /> For you
+              </NavLink>
+            )}
           </nav>
           <div className="px-6 py-6 border-t border-butter-yellow/15">
             <NavLink to="/privacy" onClick={() => setMenuOpen(false)} className="mb-3 block py-2 text-sm text-butter-yellow/70 transition-colors hover:text-butter-yellow">Privacy Policy</NavLink>

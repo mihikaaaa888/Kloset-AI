@@ -8,6 +8,7 @@ import { CompleteAPiece } from '@/components/shop/CompleteAPiece'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useUserStore } from '@/store/userStore'
 import { useAuth } from '@/contexts/AuthContext'
+import { useRecommendationStore } from '@/store/recommendationStore'
 import { deleteItem as dbDeleteItem, insertItem } from '@/lib/wardrobeService'
 import { deleteWithUndo, notify, offerUndo } from '@/store/undoStore'
 import { ALL_CATALOG_ITEMS } from '@/lib/catalogData'
@@ -55,6 +56,7 @@ export function DiscoverPage() {
   const { user } = useAuth()
   const { items: wardrobeItems, addItem, removeItem } = useWardrobeStore()
   const profile = useUserStore((s) => s.profile)
+  const feedback = useRecommendationStore((state) => profile?.id ? state.feedbackByUser[profile.id] ?? [] : [])
   const location = useLocation()
   const navigate = useNavigate()
   const filterRef = useRef<HTMLDivElement>(null)
@@ -101,11 +103,19 @@ export function DiscoverPage() {
   const isInWardrobe = (id: string) => addedCatalogIds.has(id) || addedThisSession.has(id)
 
   const retailersAvailable = useMemo(() => [...new Set(ALL_CATALOG_ITEMS.map((item) => item.brand).filter(Boolean) as string[])].sort(), [])
+  const brandSuggestions = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    return query ? retailersAvailable.filter((brand) => brand.toLowerCase().includes(query)).slice(0, 5) : []
+  }, [retailersAvailable, searchQuery])
   const coloursAvailable = useMemo(() => [...new Set(ALL_CATALOG_ITEMS.flatMap((item) => item.colours))].sort(), [])
 
   const pieces = useMemo(() => {
-    const preference = profile?.genderStylePreference
-    const genders = preference === 'feminine' ? ['women'] : preference === 'masculine' ? ['men'] : ['women', 'men']
+    const preference = String(profile?.genderStylePreference ?? '').toLowerCase()
+    const genders = ['feminine', 'female', 'women'].includes(preference)
+      ? ['women']
+      : ['masculine', 'male', 'men'].includes(preference)
+        ? ['men']
+        : ['women', 'men']
     const pool = ALL_CATALOG_ITEMS
       .filter((item) => genders.includes(item.gender ?? 'women'))
       .filter((item) => mode === 'rent' ? isRentable(item) && fitsRentBudget(item, budget, customBudgetAmount) : fitsBuyBudget(item, budget, customBudgetAmount))
@@ -117,12 +127,12 @@ export function DiscoverPage() {
       })
       .filter((item) => retailers.length === 0 || retailers.includes(item.brand ?? ''))
       .filter((item) => colours.length === 0 || item.colours.some((colour) => colours.includes(colour)))
-    const ranked = rankForUser(pool, profile, wardrobeItems)
+    const ranked = rankForUser(pool, profile, wardrobeItems, feedback)
     if (sort === 'price-low') return [...ranked].sort((a, b) => (mode === 'rent' ? a.rentPricePerWeek - b.rentPricePerWeek : a.estimatedPrice - b.estimatedPrice))
     if (sort === 'price-high') return [...ranked].sort((a, b) => (mode === 'rent' ? b.rentPricePerWeek - a.rentPricePerWeek : b.estimatedPrice - a.estimatedPrice))
     if (sort === 'name') return [...ranked].sort((a, b) => a.name.localeCompare(b.name))
     return ranked
-  }, [mode, budget, customBudgetAmount, category, profile, wardrobeItems, retailers, colours, sort, searchQuery])
+  }, [mode, budget, customBudgetAmount, category, profile, wardrobeItems, feedback, retailers, colours, sort, searchQuery])
 
   const handleAdd = useCallback((catalogItem: CatalogItem) => {
     if (isInWardrobe(catalogItem.id)) return
@@ -240,11 +250,14 @@ export function DiscoverPage() {
           </div>
         </div>
 
-        {mode === 'buy' && !completeOpen && <label className="mt-4 flex items-center gap-2 border-b border-text-primary/15 px-1 py-2 text-text-muted focus-within:border-text-primary/50">
-          <Search size={16} strokeWidth={1.5} />
-          <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} type="search" placeholder="Search Shop" aria-label="Search Shop" className="min-w-0 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none" />
-          {searchQuery && <button type="button" onClick={() => setSearchQuery('')} aria-label="Clear shop search" className="p-1 hover:text-text-primary"><X size={14} /></button>}
-        </label>}
+        {mode === 'buy' && !completeOpen && <>
+          <label className="mt-4 flex items-center gap-2 border-b border-text-primary/15 px-1 py-2 text-text-muted focus-within:border-text-primary/50">
+            <Search size={16} strokeWidth={1.5} />
+            <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} type="search" placeholder="Search items or brands" aria-label="Search Shop by item or brand" className="min-w-0 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none" />
+            {searchQuery && <button type="button" onClick={() => setSearchQuery('')} aria-label="Clear shop search" className="p-1 hover:text-text-primary"><X size={14} /></button>}
+          </label>
+          {brandSuggestions.length > 0 && <div className="flex flex-wrap gap-2 pt-2" aria-label="Matching brands">{brandSuggestions.map((brand) => <button key={brand} type="button" onClick={() => { setRetailers((selected) => selected.includes(brand) ? selected : [...selected, brand]); setSearchQuery('') }} className="rounded-full border border-text-primary/15 bg-surface px-3 py-1.5 text-xs text-text-primary hover:border-text-primary/40">Shop {brand}</button>)}</div>}
+        </>}
 
         {mode === 'rent' && !completeOpen ? (
           <div className="py-20 text-center"><p className="mb-5 font-display text-2xl text-text-primary">Coming soon</p><button onClick={() => openComplete()} className="border border-text-primary/25 px-4 py-2 text-sm text-text-primary hover:border-text-primary/50">Complete a piece</button></div>
