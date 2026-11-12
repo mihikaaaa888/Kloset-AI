@@ -17,6 +17,7 @@ const StylistPage = lazy(() => import('@/pages/StylistPage').then((m) => ({ defa
 const FriendsPage = lazy(() => import('@/pages/FriendsPage').then((m) => ({ default: m.FriendsPage })))
 const ProfilePage = lazy(() => import('@/pages/ProfilePage').then((m) => ({ default: m.ProfilePage })))
 const DiscoverPage = lazy(() => import('@/pages/DiscoverPage').then((m) => ({ default: m.DiscoverPage })))
+const ForYouPage = lazy(() => import('@/pages/ForYouPage').then((m) => ({ default: m.ForYouPage })))
 const HomePage = lazy(() => import('@/pages/HomePage').then((m) => ({ default: m.HomePage })))
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then((m) => ({ default: m.LoginPage })))
 const SignupPage = lazy(() => import('@/pages/auth/SignupPage').then((m) => ({ default: m.SignupPage })))
@@ -100,6 +101,7 @@ function AppRoutes() {
         <Route path="/wardrobe" element={<RequireAuth><WardrobePage /></RequireAuth>} />
         <Route path="/stylist" element={<RequireAuth><StylistPage /></RequireAuth>} />
         <Route path="/discover" element={<RequireAuth><DiscoverPage /></RequireAuth>} />
+        <Route path="/for-you" element={<RequireAuth><ForYouPage /></RequireAuth>} />
         <Route path="/saved" element={<Navigate to="/wardrobe?view=outfits" replace />} />
         <Route path="/friends" element={<RequireAuth><FriendsPage /></RequireAuth>} />
         <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />

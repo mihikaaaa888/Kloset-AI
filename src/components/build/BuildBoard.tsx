@@ -6,6 +6,7 @@ import { clsx } from 'clsx'
 import { useItemImage } from '@/hooks/useItemImage'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useUserStore } from '@/store/userStore'
+import { useRecommendationStore } from '@/store/recommendationStore'
 import { useOutfitStore } from '@/store/outfitStore'
 import { useBoardStore, type BoardPiece } from '@/store/boardStore'
 import { deleteWithUndo } from '@/store/undoStore'
@@ -486,6 +487,7 @@ function PinnedPiece({
 
 function PieceDrawer({ wardrobe, onPick, onAddPiece }: { wardrobe: ClothingItem[]; onPick: (c: Candidate) => void; onAddPiece: () => void }) {
   const profile = useUserStore((s) => s.profile)
+  const recommendationFeedback = useRecommendationStore((s) => profile?.id ? s.feedbackByUser[profile.id] ?? [] : [])
   const [source, setSource] = useState<Source>(wardrobe.length > 0 ? 'kloset' : 'shop')
   const [filter, setFilter] = useState<Filter>('all')
   const [search, setSearch] = useState('')
@@ -505,7 +507,7 @@ function PieceDrawer({ wardrobe, onPick, onAddPiece }: { wardrobe: ClothingItem[
         }))
     }
     if (source === 'shop') {
-      return rankForUser(CATALOG_ITEMS, profile, wardrobe)
+      return rankForUser(CATALOG_ITEMS, profile, wardrobe, recommendationFeedback)
         .map((c) => ({
           key: c.id,
           itemId: c.id,

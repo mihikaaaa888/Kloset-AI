@@ -15,6 +15,8 @@ import { scoreColourSets } from '@/lib/colourHarmony'
 import type { ColourHarmonyConfig } from '@/lib/colourHarmony'
 import { getColourHarmonyConfig } from '@/lib/colourHarmonyService'
 import indianWearGuide from '../../indian-wear-guide.json'
+import { scoreRecommendationFeedback, traitsFromWardrobe, feedbackFromFavourites } from '@/lib/recommendationFeedback'
+import type { RecommendationFeedback } from '@/lib/recommendationFeedback'
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -75,7 +77,8 @@ export async function generateOutfit(
   wardrobe: ClothingItem[],
   profile: UserProfile | null,
   attempt = 0,
-  pinnedItem?: ClothingItem
+  pinnedItem?: ClothingItem,
+  feedback: RecommendationFeedback[] = [],
 ): Promise<StylistEngineResult> {
   // Simulate network latency for a realistic feel
   await new Promise((r) => setTimeout(r, 900 + Math.random() * 500))
@@ -88,7 +91,7 @@ export async function generateOutfit(
   // ──────────────────────────────────────────────────────────────────────────
 
   const colourConfig = await getColourHarmonyConfig()
-  return mockEngine(request, wardrobe, profile, attempt, pinnedItem, colourConfig)
+  return mockEngine(request, wardrobe, profile, attempt, pinnedItem, colourConfig, [...feedback, ...feedbackFromFavourites(wardrobe)])
 }
 
 // ─── Colour data ──────────────────────────────────────────────────────────────
@@ -118,6 +121,7 @@ function scoreItem(
   learnedStyle: ReturnType<typeof learnStyleFromWardrobe>,
   alreadySelected: ClothingItem[],
   colourConfig: ColourHarmonyConfig,
+  feedback: RecommendationFeedback[],
 ): number {
   let score = 0
 
@@ -202,15 +206,16 @@ function scoreItem(
     // Simply having many items with a trait doesn't prove that trait is a
     // preference. Keep closet-wide frequency as a weak tie-breaker; explicit
     // favourites and colour preferences carry the stronger signal.
-    score += Math.min(2, affinityForLearnedTraits(learnedStyle, {
+    score += Math.min(4, affinityForLearnedTraits(learnedStyle, {
       colours: item.colour,
       subcategory: item.subcategory,
       material: item.material,
       pattern: item.pattern,
       formality: item.formality,
-    }) * 0.2)
+    }) * 0.4)
   }
   if (item.isFavourite) score += 2
+  score += scoreRecommendationFeedback(traitsFromWardrobe(item), feedback)
 
   // Gently rotate away from pieces worn very recently or very often, so
   // favourites don't crowd out the rest of the closet.
@@ -308,6 +313,7 @@ function pickBest(
   selected: ClothingItem[],
   attempt: number,
   colourConfig: ColourHarmonyConfig,
+  feedback: RecommendationFeedback[],
 ): ClothingItem | null {
   const candidates = items.filter((i) => i.category === category)
   if (candidates.length === 0) return null
@@ -315,7 +321,7 @@ function pickBest(
 
   const scored = candidates.map((item) => ({
     item,
-    score: scoreItem(item, request, profile, learnedStyle, selected, colourConfig),
+    score: scoreItem(item, request, profile, learnedStyle, selected, colourConfig, feedback),
   }))
   scored.sort((a, b) => b.score - a.score || a.item.timesWorn - b.item.timesWorn || (a.item.lastWorn ?? '').localeCompare(b.item.lastWorn ?? '') || a.item.id.localeCompare(b.item.id))
   if (scored[0].score <= -100) return null
@@ -529,6 +535,7 @@ function mockEngine(
   attempt: number,
   pinnedItem: ClothingItem | undefined,
   colourConfig: ColourHarmonyConfig,
+  feedback: RecommendationFeedback[],
 ): StylistEngineResult {
   if (wardrobe.length === 0) {
     return { suggestion: null, error: 'Your Kloset is empty. Add some items first.' }
@@ -561,18 +568,18 @@ function mockEngine(
   const hasPinnedBase = pinnedItem && ['tops', 'bottoms', 'dresses'].includes(pinnedItem.category)
   const preferDress = ['date-night', 'formal', 'special-event'].includes(request.occasion)
   if (!hasPinnedBase && preferDress && Math.random() + attempt * 0.2 < 0.6) {
-    const dress = pickBest(wardrobe, 'dresses', request, profile, selected, attempt, colourConfig)
+    const dress = pickBest(wardrobe, 'dresses', request, profile, selected, attempt, colourConfig, feedback)
     if (dress) addItem(dress, 'dress')
   }
 
   // 2. If no dress, pick top + bottom (skip categories covered by pinned item)
   if (!resultItems.some((r) => r.role === 'dress')) {
     if (!pinnedItem || pinnedItem.category !== 'tops') {
-      const top = pickBest(wardrobe, 'tops', request, profile, selected, attempt, colourConfig)
+      const top = pickBest(wardrobe, 'tops', request, profile, selected, attempt, colourConfig, feedback)
       if (top) addItem(top, 'top')
     }
     if (!pinnedItem || pinnedItem.category !== 'bottoms') {
-      const bottom = pickBest(wardrobe, 'bottoms', request, profile, selected, attempt, colourConfig)
+      const bottom = pickBest(wardrobe, 'bottoms', request, profile, selected, attempt, colourConfig, feedback)
       if (bottom) addItem(bottom, 'bottom')
     }
   }
@@ -580,19 +587,19 @@ function mockEngine(
   // 3. Outerwear if weather warrants
   const needsOuterwear = ['cold', 'cool', 'rainy'].includes(request.weather)
   if (needsOuterwear && pinnedItem?.category !== 'outerwear') {
-    const outer = pickBest(wardrobe, 'outerwear', request, profile, selected, attempt, colourConfig)
+    const outer = pickBest(wardrobe, 'outerwear', request, profile, selected, attempt, colourConfig, feedback)
     if (outer) addItem(outer, 'outerwear')
   }
 
   // 4. Shoes
   if (pinnedItem?.category !== 'shoes') {
-    const shoes = pickBest(wardrobe, 'shoes', request, profile, selected, attempt, colourConfig)
+    const shoes = pickBest(wardrobe, 'shoes', request, profile, selected, attempt, colourConfig, feedback)
     if (shoes) addItem(shoes, 'shoes')
   }
 
   // 5. Accessories (max 1)
   if (pinnedItem?.category !== 'accessories') {
-    const accessory = pickBest(wardrobe, 'accessories', request, profile, selected, attempt, colourConfig)
+    const accessory = pickBest(wardrobe, 'accessories', request, profile, selected, attempt, colourConfig, feedback)
     if (accessory) addItem(accessory, 'accessory')
   }
 

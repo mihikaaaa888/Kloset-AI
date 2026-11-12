@@ -40,8 +40,14 @@ let segmenterPromise: Promise<Segmenter> | null = null
 
 function getSegmenter(): Promise<Segmenter> {
   if (!segmenterPromise) {
-    segmenterPromise = import('@huggingface/transformers').then(async ({ pipeline }) => {
-      const segmenter = await pipeline('image-segmentation', 'Xenova/segformer_b2_clothes', { dtype: 'q8' })
+    segmenterPromise = import('@huggingface/transformers').then(async ({ env, pipeline }) => {
+      // Serve ONNX Runtime's module and binary from this app. Remote module
+      // imports are blocked by some mobile browsers and deployment headers.
+      env.backends.onnx.wasm!.wasmPaths = {
+        mjs: '/onnx-runtime/ort-wasm-simd-threaded.asyncify.mjs',
+        wasm: '/onnx-runtime/ort-wasm-simd-threaded.asyncify.wasm',
+      }
+      const segmenter = await pipeline('image-segmentation', 'Xenova/segformer_b2_clothes', { dtype: 'q8', device: 'wasm' })
       return (image: string) => segmenter(image) as Promise<SegmentationMask[]>
     }).catch((error) => {
       segmenterPromise = null
@@ -75,9 +81,15 @@ function maskAt(mask: SegmentationMask['mask'], x: number, y: number, width: num
 export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
   const image = await decodeImage(source)
   const sourceUrl = URL.createObjectURL(source)
-  let masks: SegmentationMask[]
+  let masks: SegmentationMask[] = []
+  let segmentationAvailable = true
   try {
     masks = await (await getSegmenter())(sourceUrl)
+  } catch (error) {
+    // Don't discard a user's upload if the model fails to load. The original
+    // photo remains available for manual tagging and can be retried later.
+    segmentationAvailable = false
+    console.warn('[wardrobe] garment segmentation unavailable; keeping source photo', error)
   } finally {
     URL.revokeObjectURL(sourceUrl)
   }
@@ -143,5 +155,5 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
     }
   }
   safeContext.putImageData(pixels, 0, 0)
-  return { garments, containsPerson, safeFallback: await canvasBlob(safe) }
+  return { garments, containsPerson: segmentationAvailable && containsPerson, safeFallback: await canvasBlob(safe) }
 }

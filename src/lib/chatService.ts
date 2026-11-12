@@ -167,7 +167,8 @@ export async function sendChatMessage(
   messages: ChatMessage[],
   wardrobe: ClothingItem[],
   profile: UserProfile | null,
-  imageDataUrls?: string[]
+  imageDataUrls?: string[],
+  recommendationPreferencesSummary?: string,
 ): Promise<string> {
   const wardrobeSummary = buildWardrobeSummary(wardrobe)
   const wardrobeGapsSummary = buildWardrobeGapsSummary(wardrobe)
@@ -193,6 +194,7 @@ export async function sendChatMessage(
     stylePreferencesSummary,
     shopSummary,
     colourHarmonySummary,
+    ...(recommendationPreferencesSummary ? { recommendationPreferencesSummary } : {}),
     // Lets the server check each outfit line against the real category.
     wardrobeItems: wardrobe.map((i) => ({ name: i.name, category: i.category })),
   })

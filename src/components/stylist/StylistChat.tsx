@@ -7,6 +7,8 @@ import { clsx } from 'clsx'
 import { sendChatMessage, type ChatMessage } from '@/lib/chatService'
 import { searchWebShopCached, cleanProductTitle, type Retailer } from '@/lib/webShopService'
 import { useWardrobeStore } from '@/store/wardrobeStore'
+import { useRecommendationStore } from '@/store/recommendationStore'
+import { summarizeRecommendationFeedback } from '@/lib/recommendationFeedback'
 import { useUserStore } from '@/store/userStore'
 import { useChatStore } from '@/store/chatStore'
 import { getImage } from '@/lib/imageStorage'
@@ -24,6 +26,16 @@ const SUGGESTED_PROMPTS = [
 ]
 
 const DAILY_OCCASIONS = ['Work', 'Casual', 'Date night', 'Formal', 'Weekend', 'Travel', 'Gym', 'Special event']
+
+type FollowUp = { question: string; options: string[] }
+function followUpForRequest(text: string): FollowUp | null {
+  const value = text.toLowerCase()
+  if (/wedding|wedding guest|marriage/.test(value)) return { question: 'Is there a dress code or theme?', options: ['Traditional', 'Formal', 'Festive'] }
+  if (/meeting|boardroom|office|work event|presentation/.test(value)) return { question: 'What kind of setting is it?', options: ['Casual', 'Smart casual', 'Boardroom formal'] }
+  if (/picnic|park|outdoor lunch/.test(value)) return { question: 'What kind of look are you after?', options: ['Relaxed and comfy', 'A little polished'] }
+  if (/date night|first date|dinner date/.test(value)) return { question: 'What’s the plan for the evening?', options: ['Casual dinner', 'Dressy dinner', 'Something outdoors'] }
+  return null
+}
 
 // Kaia is grounded on a sample of the catalog (see chatService's shopSummary)
 // and will name real pieces by their exact catalog name — matching on that
@@ -161,6 +173,7 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
   const items = useWardrobeStore((s) => s.items)
   const addItem = useWardrobeStore((s) => s.addItem)
   const profile = useUserStore((s) => s.profile)
+  const recommendationFeedback = useRecommendationStore((s) => profile?.id ? s.feedbackByUser[profile.id] ?? [] : [])
   const { user } = useAuth()
   const navigate = useNavigate()
 
@@ -179,6 +192,9 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
   const [attachedPreviews, setAttachedPreviews] = useState<string[]>([])
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null)
   const [awaitingDailyOccasion, setAwaitingDailyOccasion] = useState(false)
+  const [pendingFollowUp, setPendingFollowUp] = useState<FollowUp | null>(null)
+  const [otherFollowUp, setOtherFollowUp] = useState(false)
+  const [otherFollowUpText, setOtherFollowUpText] = useState('')
   const [addedCatalogIds, setAddedCatalogIds] = useState<Set<string>>(
     () => new Set(items.map((i) => i.catalogId).filter(Boolean) as string[])
   )
@@ -278,6 +294,16 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
     setAttachedImages([])
     setAttachedPreviews([])
     setAttachmentNotice(null)
+    const followUp = !imageFiles.length ? followUpForRequest(typedContent) : null
+    if (followUp) {
+      setPendingFollowUp(followUp)
+      setOtherFollowUp(false)
+      setOtherFollowUpText('')
+      setMessages([...next, { role: 'assistant', content: followUp.question }])
+      return
+    }
+    setPendingFollowUp(null)
+    setOtherFollowUp(false)
     setLoading(true)
 
     try {
@@ -286,7 +312,7 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
       const outgoing = prepared?.note
         ? next.map((m, i) => i === next.length - 1 ? { ...m, content: [m.content.trim(), prepared.note].filter(Boolean).join('\n\n') } : m)
         : next
-      const reply = await sendChatMessage(outgoing, items, profile, prepared?.dataUrls)
+      const reply = await sendChatMessage(outgoing, items, profile, prepared?.dataUrls, summarizeRecommendationFeedback(recommendationFeedback))
       setMessages((prev) => [...prev, { role: 'assistant', content: reply }])
     } catch (e) {
       console.error('[chat] send failed', e)
@@ -438,12 +464,13 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
             ))}
             {awaitingDailyOccasion && !loading && (
               <div className="ml-9 flex flex-wrap gap-2">
-                {DAILY_OCCASIONS.map((occasion) => (
+                {[...DAILY_OCCASIONS, 'Other'].map((occasion) => (
                   <button
                     key={occasion}
                     type="button"
                     onClick={() => {
                       setAwaitingDailyOccasion(false)
+                      if (occasion === 'Other') { setOtherFollowUpText(''); setOtherFollowUp(true); setPendingFollowUp({ question: 'What are you dressing for?', options: [] }); return }
                       void send(occasion)
                     }}
                     className="rounded-full border border-text-primary/15 bg-surface px-4 py-2 text-sm text-text-primary transition-colors hover:border-text-primary/40"
@@ -451,6 +478,13 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
                     {occasion}
                   </button>
                 ))}
+              </div>
+            )}
+            {pendingFollowUp && !loading && (
+              <div className="ml-9 flex flex-wrap gap-2" aria-label="Choose a follow-up answer">
+                {pendingFollowUp.options.map((option) => <button key={option} type="button" onClick={() => { setPendingFollowUp(null); void send(option) }} className="rounded-full border border-text-primary/15 bg-surface px-4 py-2 text-sm text-text-primary hover:border-text-primary/40">{option}</button>)}
+                {!otherFollowUp && <button type="button" onClick={() => setOtherFollowUp(true)} className="rounded-full border border-text-primary/15 bg-surface px-4 py-2 text-sm text-text-muted hover:border-text-primary/40">Other</button>}
+                {otherFollowUp && <form className="flex w-full gap-2" onSubmit={(event) => { event.preventDefault(); const answer = otherFollowUpText.trim(); if (!answer) return; setPendingFollowUp(null); setOtherFollowUp(false); void send(`Other: ${answer}`) }}><input autoFocus value={otherFollowUpText} onChange={(event) => setOtherFollowUpText(event.target.value)} placeholder="Add your answer" className="min-w-0 flex-1 rounded-full border border-text-primary/15 bg-surface px-4 py-2 text-sm outline-none"/><button className="rounded-full bg-dark-purple px-4 py-2 text-sm text-white">Send</button></form>}
               </div>
             )}
             {loading && <TypingIndicator />}

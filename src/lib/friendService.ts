@@ -110,6 +110,22 @@ export async function listFriendMessages(friendId: string, myId: string): Promis
   return ((data ?? []) as { id: string; sender_id: string; recipient_id: string; body: string; created_at: string }[]).map((row) => ({ id: row.id, senderId: row.sender_id, recipientId: row.recipient_id, body: row.body, createdAt: row.created_at }))
 }
 
+/** Latest activity per conversation, used to keep the most recently active friend at the top. */
+export async function listLatestFriendActivity(myId: string): Promise<Record<string, string>> {
+  if (!/^[0-9a-f-]{36}$/i.test(myId)) throw new Error('Invalid user id')
+  const { data, error } = await supabase.from('friend_messages')
+    .select('sender_id,recipient_id,created_at')
+    .or(`sender_id.eq.${myId},recipient_id.eq.${myId}`)
+    .order('created_at', { ascending: false })
+  if (error) fail('load conversation activity', error)
+  const latest: Record<string, string> = {}
+  for (const row of (data ?? []) as { sender_id: string; recipient_id: string; created_at: string }[]) {
+    const friendId = row.sender_id === myId ? row.recipient_id : row.sender_id
+    if (!latest[friendId]) latest[friendId] = row.created_at
+  }
+  return latest
+}
+
 export async function sendFriendMessage(friendId: string, myId: string, body: string): Promise<void> {
   const { error } = await supabase.from('friend_messages').insert({ sender_id: myId, recipient_id: friendId, body: body.trim() })
   if (error) fail('send message', error)

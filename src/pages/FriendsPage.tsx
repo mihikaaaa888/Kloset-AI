@@ -19,6 +19,7 @@ import {
   respondToRequest,
   sendFriendRequest,
   listFriendMessages,
+  listLatestFriendActivity,
   sendFriendMessage,
   sendShare,
   type FriendMessage,
@@ -45,13 +46,15 @@ export function FriendsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [openShare, setOpenShare] = useState<Share | null>(null)
+  const [friendActivity, setFriendActivity] = useState<Record<string, string>>({})
 
   const load = useCallback(async () => {
     try {
-      const [conns, sh] = await Promise.all([listConnections(), listShares()])
+      const [conns, sh, activity] = await Promise.all([listConnections(), listShares(), user?.id ? listLatestFriendActivity(user.id) : Promise.resolve({})])
       // Anything waiting on an Undo toast is still in the database; keep it hidden.
       setConnections(conns.filter((c) => !isPendingDelete(`friends:conn:${c.id}`)))
       setShares(sh.filter((s) => !isPendingDelete(`friends:share:${s.id}`)))
+      setFriendActivity(activity)
       setError(null)
       const paths = sh.flatMap((s) => s.payload.pieces.map((p) => p.imagePath).filter((p): p is string => !!p))
       setImages(await resolveSharedImages(paths))
@@ -61,7 +64,7 @@ export function FriendsPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [user?.id])
 
   useEffect(() => { load() }, [load])
 
@@ -69,7 +72,10 @@ export function FriendsPage() {
   const sent = useMemo(() => shares.filter((s) => s.direction === 'sent'), [shares])
   const incoming = connections.filter((c) => c.status === 'pending' && c.direction === 'incoming')
   const outgoing = connections.filter((c) => c.status === 'pending' && c.direction === 'outgoing')
-  const friends = connections.filter((c) => c.status === 'accepted')
+  const friends = useMemo(() => connections.filter((c) => c.status === 'accepted').sort((a, b) => {
+    const activityDifference = Date.parse(friendActivity[b.otherId] ?? b.createdAt) - Date.parse(friendActivity[a.otherId] ?? a.createdAt)
+    return Number.isNaN(activityDifference) ? 0 : activityDifference
+  }), [connections, friendActivity])
   const unseen = received.filter((s) => !s.seenAt)
   const chatWith = (location.state as { chatWith?: string } | null)?.chatWith
 
@@ -260,6 +266,7 @@ function FriendsChat({ friends, myId, initialFriendId, shares, images, onOpenSha
       setDraft('')
       setEmojiOpen(false)
       await loadMessages()
+      await onRefresh()
     } catch (err) { setError((err as Error).message) }
     finally { setSending(false) }
   }
