@@ -184,7 +184,11 @@ function scoreItem(
         'accessories|shoes': 0.25,
         'accessories|tops': 0.35,
       }
-      score += (pair.score - 70) * 0.08 * (roleImportance[roles] ?? 0.35)
+      const colourWeight = Math.max(0, Math.min(1, colourConfig.outfitWeights?.pairwiseColour ?? 0.55))
+      // Keep colour as a ranking signal beside occasion and personal fit, while
+      // giving the workbook's 55% pairwise-colour weight enough influence to
+      // change daily outfit picks instead of acting as a barely visible tie-break.
+      score += (pair.score - 70) * 0.18 * (colourWeight / 0.55) * (roleImportance[roles] ?? 0.35)
     }
   }
 

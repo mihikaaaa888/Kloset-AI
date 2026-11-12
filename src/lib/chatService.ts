@@ -2,6 +2,8 @@ import { apiFetch, apiUrl } from '@/lib/apiUrl'
 import type { CatalogItem, ClothingCategory, ClothingItem, UserProfile } from '@/types'
 import { CATALOGUE_ITEMS } from '@/pages/onboarding/catalogueData'
 import { CATALOG_ITEMS } from '@/lib/catalogData'
+import { rankWardrobeColourPairings } from '@/lib/colourHarmony'
+import { getColourHarmonyConfig } from '@/lib/colourHarmonyService'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -161,6 +163,8 @@ export async function sendChatMessage(
     ? buildStylePreferencesSummary(profile.styleItemSelections)
     : ''
   const shopSummary = buildShopSummary()
+  const colourHarmonyConfig = await getColourHarmonyConfig()
+  const colourHarmonySummary = rankWardrobeColourPairings(wardrobe, colourHarmonyConfig).join('\n')
 
   const body = JSON.stringify({
     messages: messages.map((m, index) => ({
@@ -175,6 +179,7 @@ export async function sendChatMessage(
     profileSummary,
     stylePreferencesSummary,
     shopSummary,
+    colourHarmonySummary,
     // Lets the server check each outfit line against the real category.
     wardrobeItems: wardrobe.map((i) => ({ name: i.name, category: i.category })),
   })

@@ -51,7 +51,7 @@ const SUBCATEGORIES: Partial<Record<ClothingCategory, string[]>> = {
   tops: ['T-shirt', 'Shirt', 'Blouse', 'Tank Top', 'Polo', 'Crop Top'],
   bottoms: ['Jeans', 'Trousers', 'Shorts', 'Skirt', 'Leggings', 'Joggers'],
   dresses: ['Casual Dress', 'Midi Dress', 'Maxi Dress', 'Mini Dress', 'Wrap Dress', 'Sundress'],
-  outerwear: ['Sweater', 'Sweatshirt', 'Hoodie', 'Cardigan', 'Blazer', 'Jacket', 'Coat', 'Puffer', 'Raincoat', 'Leather Jacket'],
+  outerwear: ['Sweater', 'Knit Top', 'Turtleneck', 'Sweatshirt', 'Hoodie', 'Cardigan', 'Blazer', 'Jacket', 'Coat', 'Puffer', 'Raincoat', 'Leather Jacket'],
   shoes: ['Sneakers', 'Boots', 'Heels', 'Loafers', 'Sandals', 'Flats', 'Mules'],
   accessories: ['Bag', 'Jewellery', 'Belt', 'Hat', 'Scarf', 'Watch', 'Sunglasses'],
 }
@@ -376,7 +376,7 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
       if (analysis.name && (!prev.name.trim() || (detectedName && prev.name === detectedName))) next.name = analysis.name
       else if (detectedName && !prev.name.trim()) next.name = detectedName
 
-      const woolenSubcategories = new Set(['sweater', 'sweatshirt', 'hoodie', 'cardigan', 'coat', 'jacket', 'blazer', 'raincoat', 'puffer', 'parka', 'trench coat'])
+      const woolenSubcategories = new Set(['sweater', 'knit top', 'knitted top', 'turtleneck', 'pullover', 'sweatshirt', 'hoodie', 'cardigan', 'coat', 'jacket', 'blazer', 'raincoat', 'puffer', 'parka', 'trench coat'])
       const analysisSubcategory = analysis.subcategory?.toLowerCase()
       const resolvedCategory = analysisSubcategory && woolenSubcategories.has(analysisSubcategory) ? 'outerwear' : finalCategory
       if (resolvedCategory) next.category = resolvedCategory

@@ -217,7 +217,7 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
     const wardrobeKey = stableHash(wardrobeSignature).toString(36)
     // Bump the cache version when recommendation rules change so today's rack
     // is recalculated instead of preserving the older repetitive selection.
-    const cacheKey = `kloset:daily-outfit:v4:${profile?.id ?? profile?.name ?? 'guest'}:${dayKey}:${wardrobeKey}`
+    const cacheKey = `kloset:daily-outfit:v5:${profile?.id ?? profile?.name ?? 'guest'}:${dayKey}:${wardrobeKey}`
     try {
       const cached = localStorage.getItem(cacheKey)
       if (cached) {

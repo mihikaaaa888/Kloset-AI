@@ -1,9 +1,11 @@
 import { COLOUR_MAP } from '@/lib/colourUtils'
+import type { ClothingItem } from '@/types'
 
 export interface ColourHarmonyConfig {
   algorithmVersion: string
   scoringConfigVersion: string
   pairwiseWeights: { hue: number; contrast: number; chroma: number; temperature: number; neutralAnchor: number }
+  outfitWeights?: { pairwiseColour?: number; balance?: number; pattern?: number; occasion?: number; preference?: number }
   huePriors: { angle: number; score: number; width: number }[]
   fallbackProfileConfidence: number
   neutralChromaThreshold: number
@@ -150,4 +152,34 @@ export function scoreColourSets(firstColours: string[], secondColours: string[],
   const confidence = pairScores.reduce((sum, pair) => sum + pair.result.confidence * pair.importance, 0) / total
   const main = pairScores[0].result
   return { ...main, score, confidence }
+}
+
+/** Rank wardrobe pairings for Kaia so chat recommendations can use the same
+ * deterministic colour formula as the visual Stylist generator. */
+export function rankWardrobeColourPairings(items: ClothingItem[], config: ColourHarmonyConfig): string[] {
+  const tops = items.filter((item) => item.category === 'tops')
+  const bottoms = items.filter((item) => item.category === 'bottoms')
+  const dresses = items.filter((item) => item.category === 'dresses')
+  const shoes = items.filter((item) => item.category === 'shoes')
+  const pairs: { score: number; text: string }[] = []
+
+  const addPairs = (firstItems: ClothingItem[], secondItems: ClothingItem[], firstLabel: string, secondLabel: string) => {
+    for (const first of firstItems) {
+      for (const second of secondItems) {
+        const result = scoreColourSets(first.colour, second.colour, config)
+        if (result?.score == null) continue
+        pairs.push({
+          score: result.score,
+          text: `${firstLabel}: ${first.name} + ${secondLabel}: ${second.name} (colour harmony ${Math.round(result.score)}/100)`,
+        })
+      }
+    }
+  }
+
+  addPairs(tops, bottoms, 'Top', 'Bottom')
+  addPairs(dresses, shoes, 'Dress', 'Shoes')
+  return pairs
+    .sort((a, b) => b.score - a.score || a.text.localeCompare(b.text))
+    .slice(0, 6)
+    .map((pair) => pair.text)
 }
