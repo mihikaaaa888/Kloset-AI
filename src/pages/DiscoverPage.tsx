@@ -104,8 +104,12 @@ export function DiscoverPage() {
   const coloursAvailable = useMemo(() => [...new Set(ALL_CATALOG_ITEMS.flatMap((item) => item.colours))].sort(), [])
 
   const pieces = useMemo(() => {
-    const preference = profile?.genderStylePreference
-    const genders = preference === 'feminine' ? ['women'] : preference === 'masculine' ? ['men'] : ['women', 'men']
+    const preference = String(profile?.genderStylePreference ?? '').toLowerCase()
+    const genders = ['feminine', 'female', 'women'].includes(preference)
+      ? ['women']
+      : ['masculine', 'male', 'men'].includes(preference)
+        ? ['men']
+        : ['women', 'men']
     const pool = ALL_CATALOG_ITEMS
       .filter((item) => genders.includes(item.gender ?? 'women'))
       .filter((item) => mode === 'rent' ? isRentable(item) && fitsRentBudget(item, budget, customBudgetAmount) : fitsBuyBudget(item, budget, customBudgetAmount))

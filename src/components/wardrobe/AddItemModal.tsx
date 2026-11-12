@@ -19,6 +19,7 @@ import {
 import { getPhotoUrl } from '@/lib/wardrobeService'
 import { analyzeImage, analyzeImageFromUrl } from '@/lib/analyzeImage'
 import { parseOutfitPhoto } from '@/lib/fashionParsing'
+import { removeImageBackground } from '@/lib/backgroundRemoval'
 import { deleteWithUndo, finalizeScope } from '@/store/undoStore'
 import type { ClothingAnalysis } from '@/lib/analyzeImage'
 import type { ClothingItem, ClothingCategory, Pattern, Season, Occasion } from '@/types'
@@ -273,19 +274,20 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
     try {
       const processed: QueuedImage[] = []
       for (const file of valid) {
-        setImageProcessingStep('Finding and labeling pieces…')
+        setImageProcessingStep('Loading the on-device clothing scanner…')
         const compressed = await compressImage(file)
-        // Segmentation is best-effort: even if the local model is unavailable,
-        // preserve the uploaded image so the user can still add it manually.
-        const parsed = await parseOutfitPhoto(compressed).catch(() => ({ garments: [], containsPerson: false }))
+        const parsed = await parseOutfitPhoto(compressed)
+        if (parsed.containsPerson && parsed.garments.length === 0) {
+          throw new Error('We couldn’t safely isolate clothing from this photo. Try a clearer, full-body image; the original photo was not saved or analyzed.')
+        }
         let pieces: Array<{ blob: Blob; category?: ClothingCategory; name?: string }> = parsed.garments.length > 0
           ? parsed.garments
-          : [{ blob: compressed, category: undefined, name: undefined }]
+          : [{ blob: await removeImageBackground(parsed.safeFallback).catch(() => parsed.safeFallback), category: undefined, name: undefined }]
         if (editItem && pieces.length > 1) {
           pieces = [pieces.find((piece) => piece.category === editItem.category) ?? pieces[0]]
         }
         for (const piece of pieces) {
-          setImageProcessingStep('Saving labeled piece…')
+          setImageProcessingStep('Saving garment…')
           const imageId = await saveImage(piece.blob)
           const url = URL.createObjectURL(piece.blob)
           processed.push({ imageId, previewUrl: url, blob: piece.blob, detectedCategory: piece.category, detectedName: piece.name })
@@ -828,6 +830,8 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
           ) : photoTab === 'browse' ? (
             <ImageSearchBrowser
               defaultQuery={buildSingleItemQuery(draft.category, draft.subcategory)}
+              category={draft.category}
+              subcategory={draft.subcategory}
               onSelect={(url) => {
                 setPreviewUrl(url)
                 setLegacyImageUrl(url)
@@ -1191,19 +1195,29 @@ function buildSingleItemQuery(category?: string, subcategory?: string) {
   return `single ${item} isolated product photo`
 }
 
-function isolatedPhotoQuery(input: string) {
+function isolatedPhotoQuery(input: string, category?: ClothingCategory | '', subcategory?: string) {
   const trimmed = input.trim()
   if (!trimmed) return ''
-  return /^single\b/i.test(trimmed) && /isolated product photo/i.test(trimmed)
-    ? trimmed
-    : `single ${trimmed} isolated product photo`
+  const categoryHint = subcategory || (category === 'tops' ? 'top shirt blouse or sweater'
+    : category === 'bottoms' ? 'trousers jeans or skirt'
+      : category === 'dresses' ? 'dress'
+        : category === 'outerwear' ? 'jacket coat cardigan or sweater'
+          : category === 'shoes' ? 'shoes'
+            : category === 'accessories' ? 'bag jewellery or accessory'
+              : 'clothing apparel shoes bags or jewellery')
+  const base = /^single\b/i.test(trimmed) ? trimmed : `single ${trimmed}`
+  return `${base} ${categoryHint} isolated fashion product photo, clothing and accessories only, no perfume, cosmetics, furniture, or home decor, no person, no outfit`
 }
 
 function ImageSearchBrowser({
   defaultQuery,
+  category,
+  subcategory,
   onSelect,
 }: {
   defaultQuery: string
+  category?: ClothingCategory | ''
+  subcategory?: string
   onSelect: (url: string) => void
 }) {
   const [query, setQuery] = useState(defaultQuery)
@@ -1269,14 +1283,14 @@ function ImageSearchBrowser({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') search(isolatedPhotoQuery(query), 1) }}
+            onKeyDown={(e) => { if (e.key === 'Enter') search(isolatedPhotoQuery(query, category, subcategory), 1) }}
             placeholder="Search one item, e.g. pink cardigan…"
             className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-text-primary/20 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-primary/50 bg-surface"
           />
         </div>
         <button
           type="button"
-          onClick={() => search(isolatedPhotoQuery(query), 1)}
+          onClick={() => search(isolatedPhotoQuery(query, category, subcategory), 1)}
           disabled={loading}
           className="px-4 py-2.5 rounded-xl bg-dark-purple text-butter-yellow text-sm font-medium hover:bg-deep-purple transition-colors disabled:opacity-40"
         >

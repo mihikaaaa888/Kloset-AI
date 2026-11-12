@@ -29,10 +29,37 @@ interface ChatStore {
 const MAX_CONVERSATIONS = 50
 
 function titleFor(messages: ChatMessage[]): string {
-  const first = messages.find((m) => m.role === 'user')
-  const text = first?.content.replace(/\s+/g, ' ').trim()
-  if (text) return text.length > 48 ? `${text.slice(0, 48)}…` : text
-  return first ? 'Outfit photo' : 'New chat'
+  const userMessages = messages.filter((message) => message.role === 'user')
+  const allText = userMessages.map((message) => message.content).join(' ').replace(/\s+/g, ' ').trim()
+  if (!allText) return userMessages.length ? 'Outfit check' : 'New chat'
+
+  const topics: Array<[RegExp, string]> = [
+    [/\bsmart[ -]casual\b/i, 'Smart casual outfit'],
+    [/\bboard ?room\b/i, 'Boardroom outfit'],
+    [/\bmeeting|client meeting|interview\b/i, 'Meeting outfit'],
+    [/\bwedding|haldi|mehendi|sangeet|reception\b/i, 'Wedding outfit'],
+    [/\bdate[ -]?night\b/i, 'Date night outfit'],
+    [/\bdinner\b/i, 'Dinner outfit'],
+    [/\bwork|office|corporate\b/i, 'Work outfit'],
+    [/\bformal|black tie\b/i, 'Formal outfit'],
+    [/\bweekend|cosy|cozy\b/i, 'Weekend outfit'],
+    [/\btravel|trip|vacation\b/i, 'Travel outfit'],
+    [/\bcollege|campus\b/i, 'Campus outfit'],
+    [/\bcasual\b/i, 'Casual outfit'],
+    [/\bwhat should i wear today|outfit for today|today's outfit\b/i, "Today's outfit"],
+  ]
+  const match = topics.find(([pattern]) => pattern.test(allText))
+  if (match) return match[1]
+
+  const firstPrompt = userMessages[0]?.content.replace(/\s+/g, ' ').trim()
+  if (!firstPrompt) return 'Outfit check'
+  const cleaned = firstPrompt
+    .replace(/^(please\s+)?(help me|can you|could you|i need|i want to|style me|what should i wear)\s*/i, '')
+    .replace(/[?.!,]+$/g, '')
+    .trim()
+  if (!cleaned) return 'Style advice'
+  const title = cleaned.length > 36 ? `${cleaned.slice(0, 36).trimEnd()}…` : cleaned
+  return title.charAt(0).toUpperCase() + title.slice(1)
 }
 
 export const useChatStore = create<ChatStore>()(

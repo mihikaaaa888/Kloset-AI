@@ -357,6 +357,7 @@ export function BuildBoard({ onSaved, onBack, onAddPiece, availableItems }: { on
                 piece={piece}
                 item={piece.source === 'kloset' ? wardrobeById.get(piece.itemId) : undefined}
                 selected={piece.id === selectedId}
+                onRemove={() => removePiece(piece.id)}
                 onPointerDown={(e) => startGesture(e, piece, 'move')}
                 onResizeStart={(e) => startGesture(e, piece, 'resize')}
                 onKeyDown={(e) => onPieceKey(e, piece)}
@@ -413,6 +414,7 @@ function PinnedPiece({
   piece,
   item,
   selected,
+  onRemove,
   onPointerDown,
   onResizeStart,
   onKeyDown,
@@ -421,6 +423,7 @@ function PinnedPiece({
   piece: BoardPiece
   item?: ClothingItem
   selected: boolean
+  onRemove: () => void
   onPointerDown: (e: PointerEvent) => void
   onResizeStart: (e: PointerEvent) => void
   onKeyDown: (e: KeyboardEvent) => void
@@ -454,6 +457,7 @@ function PinnedPiece({
           selected && 'shadow-[0_14px_30px_rgba(0,0,0,0.35)] ring-2 ring-butter-yellow'
         )}
       >
+        {selected && <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onRemove() }} aria-label={`Remove ${piece.name} from board`} title="Remove piece" className="absolute -right-2 -top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-surface text-text-primary shadow-md ring-1 ring-text-primary/15 hover:text-red-700"><Trash2 size={14} strokeWidth={1.6} /></button>}
         {/* Pin */}
         <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-[radial-gradient(circle_at_35%_35%,#E8D5B0,#9C2F2F_55%,#5E1A1A)] shadow-[0_2px_3px_rgba(0,0,0,0.4)]" />
         {src ? (

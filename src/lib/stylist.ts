@@ -14,6 +14,7 @@ import { learnStyleFromWardrobe } from '@/lib/styleLearning'
 import { scoreColourSets } from '@/lib/colourHarmony'
 import type { ColourHarmonyConfig } from '@/lib/colourHarmony'
 import { getColourHarmonyConfig } from '@/lib/colourHarmonyService'
+import indianWearGuide from '../../indian-wear-guide.json'
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -169,6 +170,8 @@ function scoreItem(
     score += 4
   }
 
+  score += scoreIndianWearFit(item, request)
+
   // Colour harmony with already selected items
   for (const selected of alreadySelected) {
     const pair = scoreColourSets(item.colour, selected.colour, colourConfig)
@@ -248,6 +251,53 @@ function scoreItem(
   return score
 }
 
+/**
+ * Apply the workbook's context-sensitive Indian-wear guidance as a small
+ * ranking signal. This does not replace user tags, occasion compatibility,
+ * or personal preferences, and wedding colours are only tempered for a
+ * specifically identified ceremony.
+ */
+function scoreIndianWearFit(item: ClothingItem, request: StyleRequest): number {
+  const details = [item.name, item.subcategory, item.material, item.formality].filter(Boolean).join(' ').toLowerCase()
+  const isIndianWear = indianWearGuide.garments.some((garment) => garment.terms.some((term) => details.includes(term)))
+  if (!isIndianWear) return 0
+
+  const occasionText = `${request.customOccasion ?? ''} ${request.occasion}`.toLowerCase()
+  const officeContext = /office|work|meeting|corporate|traditional workplace|startup|mnc/.test(occasionText)
+  const functionKey = ['haldi', 'mehendi', 'sangeet', 'wedding ceremony', 'ceremony', 'reception']
+    .find((key) => occasionText.includes(key))
+  const profileEntry = functionKey
+    ? indianWearGuide.occasionGuidance.find((entry) => entry.occasion === (functionKey === 'ceremony' ? 'wedding ceremony' : functionKey))
+    : officeContext
+      ? indianWearGuide.occasionGuidance.find((entry) => entry.occasion === 'regular office')
+      : request.occasion === 'work'
+        ? indianWearGuide.occasionGuidance.find((entry) => entry.occasion === 'regular office')
+        : ['college', 'casual'].some((key) => occasionText.includes(key))
+          ? indianWearGuide.occasionGuidance.find((entry) => entry.occasion === 'college')
+          : undefined
+
+  let score = 0
+  if (profileEntry) {
+    const bestText = profileEntry.best.toLowerCase()
+    const garment = indianWearGuide.garments.find((entry) => entry.terms.some((term) => details.includes(term)))
+    const typeTokens = garment?.terms.filter((term) => details.includes(term)) ?? []
+    if (typeTokens.some((term) => bestText.includes(term))) score += 5
+    if (/traditional/.test(occasionText) && /saree|salwar suit|kurta|anarkali/.test(details)) score += 2
+    if (/corporate|mnc|startup/.test(occasionText) && /heavy|embroidered|party/.test(details)) score -= 3
+    if (functionKey === 'wedding ceremony') {
+      const colours = item.colour.map((colour) => colour.toLowerCase())
+      if (colours.some((colour) => /^(white|ivory)$/.test(colour))) score -= 8
+      if (colours.includes('black')) score -= 5
+      if (colours.includes('red') && /lehenga|saree|anarkali|salwar suit/.test(details)) score -= 4
+    }
+    if (functionKey === 'haldi' && item.colour.some((colour) => /yellow|mustard|orange|green/i.test(colour))) score += 2
+    if (functionKey === 'mehendi' && item.colour.some((colour) => /green/i.test(colour))) score += 2
+    if (functionKey === 'sangeet' && /lehenga|sharara|saree|anarkali/.test(details)) score += 2
+    if (functionKey === 'reception' && /indo-western|gown|saree|lehenga/.test(details)) score += 2
+  }
+  return score
+}
+
 // ─── Outfit assembly ──────────────────────────────────────────────────────────
 
 function pickBest(
@@ -276,6 +326,9 @@ function pickBest(
   const bestScore = scored[0].score
   const contenders = scored
     .filter((candidate) => bestScore - candidate.score <= 8)
+  if (category === 'accessories' && contenders.length > 1) {
+    return contenders[Math.floor(Math.random() * contenders.length)].item
+  }
   const variationKey = `${attempt}|${request.occasion}|${category}`
   const variationOffset = [...variationKey].reduce((total, character) => (total * 31 + character.charCodeAt(0)) >>> 0, 7)
   return contenders[variationOffset % contenders.length].item
