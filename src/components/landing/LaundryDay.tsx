@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Play, RotateCw } from 'lucide-react'
 import { clsx } from 'clsx'
-import { Eyes, usePointerVars } from './cursor'
+import { usePointerVars } from './cursor'
 import { Hint, Stamp, INKS } from './ornaments'
 
 interface Look {
@@ -185,13 +185,8 @@ export function LaundryDay() {
                 </button>
               </div>
 
-              {/* Eyes: the machine is watching you */}
-              <div className="mt-4 flex justify-center">
-                <Eyes size={28} lid="#f6f3ea" />
-              </div>
-
               {/* Porthole */}
-              <div className="relative mx-auto mt-3 aspect-square w-[84%] rounded-full bg-[#d8d3c4] p-[7%] shadow-[inset_0_4px_10px_rgba(0,0,0,0.15)]">
+              <div className="relative mx-auto mt-6 aspect-square w-[84%] rounded-full bg-[#d8d3c4] p-[7%] shadow-[inset_0_4px_10px_rgba(0,0,0,0.15)]">
                 <div className="relative h-full w-full overflow-hidden rounded-full bg-[#2c2431] shadow-[inset_0_0_30px_rgba(0,0,0,0.6)]">
                   <div className={clsx('absolute inset-0', phase === 'spinning' && 'drum-spin')}>
                     {/* drum holes */}

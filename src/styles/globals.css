@@ -435,14 +435,8 @@
   to { transform: scaleX(1); }
 }
 
-/* ── Landing: eyes, bubbles, pinned rail ──────────────────────────────────── */
+/* ── Landing: bubbles, pinned rail ──────────────────────────────────── */
 @layer components {
-  .eye-lid {
-    transform: scaleY(0);
-    animation: blink 5.2s infinite;
-    animation-delay: var(--d, 0ms);
-  }
-
   /* Layers that drift against the cursor, deeper ones further. */
   .parallax {
     transform: translate3d(calc(var(--px, 0) * var(--depth, 20) * -1px), calc(var(--py, 0) * var(--depth, 20) * -1px), 0);
@@ -514,15 +508,11 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .eye-lid, .bubble { animation: none; }
+    .bubble { animation: none; }
     .parallax { transform: none; }
   }
 }
 
-@keyframes blink {
-  0%, 93%, 100% { transform: scaleY(0); }
-  95.5% { transform: scaleY(1); }
-}
 @keyframes bubble-rise {
   0% { transform: translateY(0) translateX(0); opacity: 0; }
   10% { opacity: 1; }
@@ -703,22 +693,6 @@
   50% { translate: 0 -4px; }
 }
 
-/* Paper blobs in the hero: a slow turn with a gentle breath (transform only). */
-@layer components {
-  .blob-spin {
-    transform-origin: 50% 50%;
-    animation: blob-spin 80s linear infinite;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .blob-spin { animation: none; }
-  }
-}
-@keyframes blob-spin {
-  0% { transform: rotate(0deg) scale(1); }
-  50% { transform: rotate(180deg) scale(1.06); }
-  100% { transform: rotate(360deg) scale(1); }
-}
-
 /* Cursor blob orbs: each swirls through three waypoints and breathes. */
 @layer components {
   .blob-orbit { animation: blob-orbit 10s ease-in-out infinite; }
@@ -731,4 +705,23 @@
   25% { transform: translate(var(--o1)) scale(1.14); }
   50% { transform: translate(var(--o2)) scale(0.9); }
   75% { transform: translate(var(--o3)) scale(1.08); }
+}
+
+/* Hero headline: a gradient that drifts through the letters (plus a cursor highlight layer). */
+@layer components {
+  .ink-fill {
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    background-size: 100% 100%, 220% 100%;
+    background-repeat: no-repeat;
+    animation: ink-drift 9s ease-in-out infinite alternate;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ink-fill { animation: none; }
+  }
+}
+@keyframes ink-drift {
+  from { background-position: 0 0, 0% 0; }
+  to { background-position: 0 0, 100% 0; }
 }
