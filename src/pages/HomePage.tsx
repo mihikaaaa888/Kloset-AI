@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Shirt, Heart, Plus, ArrowRight, Cloud, CloudDrizzle, CloudLightning, CloudOff, CloudRain, CloudSnow, CloudSun, Sun, type LucideIcon } from 'lucide-react'
+import { Shirt, Heart, Plus, ArrowRight, Cloud, CloudDrizzle, CloudLightning, CloudOff, CloudRain, CloudSnow, CloudSun, Sun, ThumbsUp, ThumbsDown, type LucideIcon } from 'lucide-react'
 import { useUserStore } from '@/store/userStore'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useItemImage } from '@/hooks/useItemImage'
@@ -9,6 +9,7 @@ import { generateOutfit, type WeatherCondition } from '@/lib/stylist'
 import { getLocalWeather } from '@/lib/weather'
 import { useRecommendationStore } from '@/store/recommendationStore'
 import { traitsFromWardrobe } from '@/lib/recommendationFeedback'
+import { getDailyStylingTip, rateStylingTip, type StylingTip } from '@/lib/stylingTipEngine'
 
 export function HomePage() {
   const navigate = useNavigate()
@@ -96,76 +97,6 @@ function weatherIcon(code: number): LucideIcon {
   return CloudSun
 }
 
-/** Practical, outfit-specific finishing ideas based on the pieces on today's rack. */
-function buildStylingTips(outfit: ClothingItem[], weather: CurrentWeather | null): string[] {
-  if (outfit.length === 0) return []
-
-  const tops = outfit.filter((item) => item.category === 'tops')
-  const bottoms = outfit.filter((item) => item.category === 'bottoms')
-  const dresses = outfit.filter((item) => item.category === 'dresses')
-  const outerwear = outfit.filter((item) => item.category === 'outerwear')
-  const shoes = outfit.filter((item) => item.category === 'shoes')
-  const accessories = outfit.filter((item) => item.category === 'accessories')
-  const printed = outfit.filter((item) => item.pattern !== 'solid')
-  const solid = outfit.filter((item) => item.pattern === 'solid')
-  const sharedColour = outfit
-    .flatMap((item) => item.colour.map((colour) => ({ itemId: item.id, colour: colour.trim(), key: colour.trim().toLowerCase() })))
-    .find(({ itemId, key }) => key && outfit.some((item) => item.id !== itemId && item.colour.some((colour) => colour.trim().toLowerCase() === key)))
-  const tips: string[] = []
-
-  if (tops.length && bottoms.length) {
-    const top = tops[0]
-    const bottom = bottoms[0]
-    const relaxedTop = /relaxed|oversized|loose/i.test(top.fit ?? top.name)
-    const relaxedBottom = /relaxed|oversized|wide|loose/i.test(bottom.fit ?? bottom.name)
-    if (relaxedTop && relaxedBottom) {
-      tips.push('Add shape with a half-tuck or rolled sleeves.')
-    } else if (relaxedTop) {
-      tips.push('Balance the relaxed top with a half-tuck or slim belt.')
-    } else if (relaxedBottom) {
-      tips.push('Define the waist to balance the relaxed silhouette.')
-    } else {
-      tips.push('Try a small front tuck to define the waist.')
-    }
-  } else if (dresses.length) {
-    tips.push('Let the dress lead; add one simple finishing detail.')
-  } else if (tops.length) {
-    tips.push('Try a cuff or relaxed half-tuck to add shape.')
-  } else if (bottoms.length) {
-    tips.push('Keep the top simple and define the waist.')
-  }
-
-  if (printed.length && solid.length) {
-    tips.push('Let the print lead; keep accessories simple.')
-  } else if (sharedColour) {
-    tips.push(`Repeat ${sharedColour.colour} in one small accessory.`)
-  } else if (printed.length) {
-    tips.push('Keep accessories pared back around the print.')
-  } else if (accessories.length) {
-    tips.push('Let one accessory be the finishing touch.')
-  } else if (shoes.length) {
-    tips.push('Echo a shoe colour in one small detail.')
-  } else {
-    tips.push('Add a belt, scarf, or light layer to finish the look.')
-  }
-
-  if (outerwear.length) {
-    tips.push('Wear the outer layer open; push the sleeves back.')
-  } else if (weather?.condition === 'rainy') {
-    tips.push('Choose a light rain layer and shoes with grip.')
-  } else if (weather?.condition === 'cold' || weather?.condition === 'cool') {
-    tips.push('Add a warm layer; wear it open indoors.')
-  } else if (weather?.condition === 'hot') {
-    tips.push('Keep layers light and choose breathable accessories.')
-  } else if (accessories.length) {
-    tips.push('Roll a cuff for an easy, considered finish.')
-  } else {
-    tips.push('Finish with a rolled cuff or slim belt.')
-  }
-
-  return tips.slice(0, 3)
-}
-
 function DailyOutfitCard({ items, profile, onAskStylist }: {
   items: ClothingItem[]
   profile: Parameters<typeof generateOutfit>[2]
@@ -177,6 +108,8 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
   const [weatherError, setWeatherError] = useState(false)
   const [recommendation, setRecommendation] = useState<string[] | null>(null)
   const [recommendationLoading, setRecommendationLoading] = useState(false)
+  const [stylingTip, setStylingTip] = useState<StylingTip | null>(null)
+  const [tipRating, setTipRating] = useState<'helpful' | 'not-helpful' | 'applied' | null>(null)
   const [today, setToday] = useState(() => new Date())
   const dateLabel = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(today)
   const recommendedItems = recommendation?.length
@@ -188,7 +121,7 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
   const rankingFeedback = feedback.filter((event) => event.action !== 'dwell' || event.createdAt.slice(0, 10) !== todayKey)
   const rankingFeedbackKey = stableHash(rankingFeedback.map((event) => `${event.id}:${event.action}`).join('|')).toString(36)
   const useRecommendationGrid = recommendedItems.length > 3
-  const stylingTips = buildStylingTips(recommendedItems, weather)
+  const userId = profile?.id ?? 'guest'
 
   useEffect(() => {
     const now = new Date()
@@ -264,6 +197,12 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
   }, [weather, weatherError, items, profile, rankingFeedbackKey, today.getDate(), today.getMonth(), today.getFullYear()])
 
   useEffect(() => {
+    if (!recommendedItems.length) { setStylingTip(null); return }
+    setTipRating(null)
+    setStylingTip(getDailyStylingTip(userId, recommendedItems, items, weather?.condition ?? null, profile, today))
+  }, [userId, recommendedItems.map((item) => item.id).join('|'), items, weather?.condition, profile, todayKey])
+
+  useEffect(() => {
     const node = sectionRef.current
     if (!node || !profile?.id || recommendedItems.length === 0) return
     let timer: number | undefined
@@ -327,14 +266,16 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
           <div className="mb-4 text-[#355E3B] dark:text-[#9BC89D]">
             <h3 id="styling-tips-title" className="text-2xs font-semibold uppercase tracking-ultra-wide">Styling tips</h3>
           </div>
-          {stylingTips.length ? <ul className="space-y-4">
-            {stylingTips.map((tip) => (
-              <li key={tip} className="flex gap-3 text-sm leading-relaxed text-text-muted">
-                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-butter-yellow" aria-hidden="true" />
-                <span>{tip}</span>
-              </li>
-            ))}
-          </ul> : <p className="text-sm leading-relaxed text-text-muted">Outfit-specific tips will appear here with today’s look.</p>}
+          {stylingTip ? <>
+            <p className="text-sm leading-relaxed text-text-muted">{stylingTip.text}</p>
+            <div className="mt-5 flex items-center justify-between gap-3 border-t border-text-primary/10 pt-3">
+              <span className="text-[11px] text-text-muted">Helpful?</span>
+              <div className="flex gap-2">
+                <button type="button" aria-label="This styling tip is helpful" aria-pressed={tipRating === 'helpful'} onClick={() => { rateStylingTip(userId, stylingTip, 'helpful'); setTipRating('helpful') }} className={`rounded-full p-2 transition ${tipRating === 'helpful' ? 'bg-[#355E3B]/10 text-[#355E3B]' : 'text-text-muted hover:bg-text-primary/5'}`}><ThumbsUp size={15} /></button>
+                <button type="button" aria-label="This styling tip is not helpful" aria-pressed={tipRating === 'not-helpful'} onClick={() => { rateStylingTip(userId, stylingTip, 'not-helpful'); setTipRating('not-helpful') }} className={`rounded-full p-2 transition ${tipRating === 'not-helpful' ? 'bg-text-primary/10 text-text-primary' : 'text-text-muted hover:bg-text-primary/5'}`}><ThumbsDown size={15} /></button>
+              </div>
+            </div>
+          </> : <p className="text-sm leading-relaxed text-text-muted">Add a few pieces to your Kloset to get a styling tip.</p>}
           </aside>
           <button
           onClick={() => onAskStylist(recommendedItems.map((item) => item.id))}

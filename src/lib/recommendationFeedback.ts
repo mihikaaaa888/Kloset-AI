@@ -4,6 +4,7 @@ export type FeedbackAction = 'like' | 'dislike' | 'dwell'
 
 export interface RecommendationTraits {
   category: ClothingCategory
+  pairingCategories?: ClothingCategory[]
   subcategory?: string
   colours: string[]
   material?: string
@@ -75,6 +76,7 @@ export function scoreRecommendationFeedback(
     const other = event.traits
     let similarity = 0
     if (traits.category === other.category) similarity += 0.5
+    if (other.pairingCategories?.includes(traits.category) || traits.pairingCategories?.includes(other.category)) similarity += 0.35
     if (normalize(traits.subcategory) && normalize(traits.subcategory) === normalize(other.subcategory)) similarity += 1.5
     if (overlap(traits.colours, other.colours)) similarity += 0.8
     if (normalize(traits.material) && normalize(traits.material) === normalize(other.material)) similarity += 0.65
