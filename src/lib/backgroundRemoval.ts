@@ -39,11 +39,7 @@ export async function refineGarmentImage(image: Blob): Promise<Blob | null> {
 export async function removeImageBackground(image: Blob): Promise<Blob> {
   if (!removerPromise) {
     removerPromise = (async () => {
-      const { env, pipeline } = await import('@huggingface/transformers')
-      env.backends.onnx.wasm!.wasmPaths = {
-        mjs: '/onnx-runtime/ort-wasm-simd-threaded.asyncify.mjs',
-        wasm: '/onnx-runtime/ort-wasm-simd-threaded.asyncify.wasm',
-      }
+      const { pipeline } = await import('@huggingface/transformers')
       const removeBackground = await pipeline(
         'background-removal',
         'onnx-community/ormbg-ONNX',

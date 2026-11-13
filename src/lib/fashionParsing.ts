@@ -40,13 +40,9 @@ let segmenterPromise: Promise<Segmenter> | null = null
 
 function getSegmenter(): Promise<Segmenter> {
   if (!segmenterPromise) {
-    segmenterPromise = import('@huggingface/transformers').then(async ({ env, pipeline }) => {
-      // Serve ONNX Runtime's module and binary from this app. Remote module
-      // imports are blocked by some mobile browsers and deployment headers.
-      env.backends.onnx.wasm!.wasmPaths = {
-        mjs: '/onnx-runtime/ort-wasm-simd-threaded.asyncify.mjs',
-        wasm: '/onnx-runtime/ort-wasm-simd-threaded.asyncify.wasm',
-      }
+    segmenterPromise = import('@huggingface/transformers').then(async ({ pipeline }) => {
+      // Let Transformers.js select its runtime assets. This avoids forcing a
+      // threaded WASM module on mobile browsers that cannot import it.
       const segmenter = await pipeline('image-segmentation', 'Xenova/segformer_b2_clothes', { dtype: 'q8', device: 'wasm' })
       return (image: string) => segmenter(image) as Promise<SegmentationMask[]>
     }).catch((error) => {
@@ -75,6 +71,53 @@ function maskAt(mask: SegmentationMask['mask'], x: number, y: number, width: num
   const mx = Math.min(mask.width - 1, Math.floor(x / width * mask.width))
   const my = Math.min(mask.height - 1, Math.floor(y / height * mask.height))
   return mask.data[(my * mask.width + mx) * mask.channels] > 127
+}
+
+/** Split disconnected pieces of the same semantic class into separate items. */
+function connectedGarments(masks: SegmentationMask[]): SegmentationMask['mask'][] {
+  if (!masks.length) return []
+  const { width, height } = masks[0].mask
+  const total = width * height
+  const foreground = new Uint8Array(total)
+  for (const { mask } of masks) {
+    for (let i = 0; i < total; i++) {
+      if (mask.data[i * mask.channels] > 127) foreground[i] = 1
+    }
+  }
+
+  const seen = new Uint8Array(total)
+  const components: SegmentationMask['mask'][] = []
+  const queue = new Int32Array(total)
+  const minimumArea = Math.max(180, Math.round(total * 0.0007))
+  for (let seed = 0; seed < total; seed++) {
+    if (!foreground[seed] || seen[seed]) continue
+    let head = 0, tail = 0
+    let minX = width, minY = height, maxX = 0, maxY = 0
+    const indices: number[] = []
+    queue[tail++] = seed
+    seen[seed] = 1
+    while (head < tail) {
+      const index = queue[head++]
+      const x = index % width
+      const y = Math.floor(index / width)
+      indices.push(index)
+      minX = Math.min(minX, x); minY = Math.min(minY, y)
+      maxX = Math.max(maxX, x); maxY = Math.max(maxY, y)
+      const neighbors = [x > 0 ? index - 1 : -1, x + 1 < width ? index + 1 : -1,
+        y > 0 ? index - width : -1, y + 1 < height ? index + width : -1]
+      for (const next of neighbors) {
+        if (next >= 0 && foreground[next] && !seen[next]) {
+          seen[next] = 1
+          queue[tail++] = next
+        }
+      }
+    }
+    if (indices.length < minimumArea || maxX - minX < 12 || maxY - minY < 12) continue
+    const data = new Uint8Array(total)
+    for (const index of indices) data[index] = 255
+    components.push({ data, width, height, channels: 1 })
+  }
+  return components
 }
 
 /** Segment locally and produce transparent, full-resolution garment cutouts. */
@@ -110,34 +153,43 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
 
   const garments: ParsedGarment[] = []
   for (const group of garmentGroups.values()) {
-    let minX = inputWidth, minY = inputHeight, maxX = -1, maxY = -1, pixelCount = 0
-    for (let y = 0; y < inputHeight; y++) for (let x = 0; x < inputWidth; x++) {
-      if (group.masks.some(({ mask }) => maskAt(mask, x, y, inputWidth, inputHeight))) {
-        minX = Math.min(minX, x); minY = Math.min(minY, y)
-        maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); pixelCount++
+    // On a person, the model can fragment sleeves and panels into separate
+    // islands. Keep each worn garment whole; split disconnected items in
+    // closet/flat-lay photos. Shoes remain grouped as a pair.
+    const components = containsPerson || group.category === 'shoes'
+      ? [null]
+      : connectedGarments(group.masks)
+    for (const component of components) {
+      const masksForItem = component ? [{ label: group.masks[0].label, mask: component }] : group.masks
+      let minX = inputWidth, minY = inputHeight, maxX = -1, maxY = -1, pixelCount = 0
+      for (let y = 0; y < inputHeight; y++) for (let x = 0; x < inputWidth; x++) {
+        if (masksForItem.some(({ mask }) => maskAt(mask, x, y, inputWidth, inputHeight))) {
+          minX = Math.min(minX, x); minY = Math.min(minY, y)
+          maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); pixelCount++
+        }
       }
-    }
-    const minGarmentPixels = Math.max(64, Math.round(inputWidth * inputHeight * 0.0003))
-    if (maxX < minX || maxY < minY || pixelCount < minGarmentPixels) continue
-    const padX = Math.round((maxX - minX + 1) * 0.04)
-    const padY = Math.round((maxY - minY + 1) * 0.04)
-    const left = Math.max(0, minX - padX), top = Math.max(0, minY - padY)
-    const right = Math.min(inputWidth, maxX + padX + 1), bottom = Math.min(inputHeight, maxY + padY + 1)
-    const crop = document.createElement('canvas')
-    crop.width = right - left
-    crop.height = bottom - top
-    const context = crop.getContext('2d', { willReadFrequently: true })!
-    context.drawImage(image, left, top, crop.width, crop.height, 0, 0, crop.width, crop.height)
-    const pixels = context.getImageData(0, 0, crop.width, crop.height)
-    for (let y = 0; y < crop.height; y++) for (let x = 0; x < crop.width; x++) {
-      const sourceX = left + x
-      const sourceY = top + y
-      if (!group.masks.some(({ mask }) => maskAt(mask, sourceX, sourceY, inputWidth, inputHeight))) {
-        pixels.data[(y * crop.width + x) * 4 + 3] = 0
+      const minGarmentPixels = Math.max(64, Math.round(inputWidth * inputHeight * 0.0003))
+      if (maxX < minX || maxY < minY || pixelCount < minGarmentPixels) continue
+      const padX = Math.round((maxX - minX + 1) * 0.04)
+      const padY = Math.round((maxY - minY + 1) * 0.04)
+      const left = Math.max(0, minX - padX), top = Math.max(0, minY - padY)
+      const right = Math.min(inputWidth, maxX + padX + 1), bottom = Math.min(inputHeight, maxY + padY + 1)
+      const crop = document.createElement('canvas')
+      crop.width = right - left
+      crop.height = bottom - top
+      const context = crop.getContext('2d', { willReadFrequently: true })!
+      context.drawImage(image, left, top, crop.width, crop.height, 0, 0, crop.width, crop.height)
+      const pixels = context.getImageData(0, 0, crop.width, crop.height)
+      for (let y = 0; y < crop.height; y++) for (let x = 0; x < crop.width; x++) {
+        const sourceX = left + x
+        const sourceY = top + y
+        if (!masksForItem.some(({ mask }) => maskAt(mask, sourceX, sourceY, inputWidth, inputHeight))) {
+          pixels.data[(y * crop.width + x) * 4 + 3] = 0
+        }
       }
+      context.putImageData(pixels, 0, 0)
+      garments.push({ blob: await canvasBlob(crop), category: group.category, name: group.name })
     }
-    context.putImageData(pixels, 0, 0)
-    garments.push({ blob: await canvasBlob(crop), category: group.category, name: group.name })
   }
 
   // Keep a face-cleared local fallback for isolated product photos the labeler
