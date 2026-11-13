@@ -15,6 +15,7 @@ import { scoreColourSets } from '@/lib/colourHarmony'
 import type { ColourHarmonyConfig } from '@/lib/colourHarmony'
 import { getColourHarmonyConfig } from '@/lib/colourHarmonyService'
 import indianWearGuide from '../../indian-wear-guide.json'
+import recommendationWorkbookGuide from '../../recommendation-workbook-guidance.json'
 import { scoreRecommendationFeedback, traitsFromWardrobe, feedbackFromFavourites } from '@/lib/recommendationFeedback'
 import type { RecommendationFeedback } from '@/lib/recommendationFeedback'
 
@@ -127,6 +128,26 @@ function scoreItem(
 
   // Duplicate guard
   if (alreadySelected.some((s) => s.id === item.id)) return -9999
+
+  // Apply the workbook's outfit-balance starter rules while ranking daily
+  // recommendations. They remain soft signals because the workbook marks
+  // these thresholds as assumptions to validate, not universal dress rules.
+  const { maxPatternedItems, patternedTypes, boldColourHints } = recommendationWorkbookGuide.outfitRules
+  const isPatterned = patternedTypes.includes(item.pattern)
+  const existingPatterns = alreadySelected.filter((selected) => patternedTypes.includes(selected.pattern)).length
+  if (isPatterned && existingPatterns >= maxPatternedItems) score -= 7
+  const itemIsBold = item.colour.some((colour) => boldColourHints.some((hint) => colour.toLowerCase().includes(hint)))
+  const existingBoldItems = alreadySelected.filter((selected) => selected.colour.some((colour) => boldColourHints.some((hint) => colour.toLowerCase().includes(hint)))).length
+  if (itemIsBold && existingBoldItems >= recommendationWorkbookGuide.outfitRules.maxBoldColourItems) score -= 5
+  const itemFit = `${item.fit ?? ''} ${item.name}`.toLowerCase()
+  if (item.category === 'bottoms' && /loose|oversized|wide-leg/.test(itemFit)) {
+    const selectedTop = alreadySelected.find((selected) => selected.category === 'tops')
+    if (selectedTop && /loose|oversized/.test(`${selectedTop.fit ?? ''} ${selectedTop.name}`.toLowerCase())) score -= 4
+  }
+  if (item.category === 'tops' && /loose|oversized/.test(itemFit)) {
+    const selectedBottom = alreadySelected.find((selected) => selected.category === 'bottoms')
+    if (selectedBottom && /loose|oversized|wide-leg/.test(`${selectedBottom.fit ?? ''} ${selectedBottom.name}`.toLowerCase())) score -= 4
+  }
 
   // Occasion match
   if (item.occasions.includes(request.occasion)) score += 10
@@ -605,7 +626,9 @@ function mockEngine(
 
   // Must have at least one base garment
   const hasBase = resultItems.some((r) => ['top', 'bottom', 'dress'].includes(r.role))
-  if (!hasBase) {
+  const hasCompleteBase = resultItems.some((r) => r.role === 'dress')
+    || (resultItems.some((r) => r.role === 'top') && resultItems.some((r) => r.role === 'bottom'))
+  if (!hasBase || !hasCompleteBase) {
     return {
       suggestion: null,
       error: "We couldn't find enough items for this occasion. Try adding more clothes or adjusting the filters.",

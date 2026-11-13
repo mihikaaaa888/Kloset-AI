@@ -19,7 +19,6 @@ import {
 import { getPhotoUrl } from '@/lib/wardrobeService'
 import { analyzeImage, analyzeImageFromUrl } from '@/lib/analyzeImage'
 import { parseOutfitPhoto } from '@/lib/fashionParsing'
-import { removeImageBackground } from '@/lib/backgroundRemoval'
 import { deleteWithUndo, finalizeScope } from '@/store/undoStore'
 import type { ClothingAnalysis } from '@/lib/analyzeImage'
 import type { ClothingItem, ClothingCategory, Pattern, Season, Occasion } from '@/types'
@@ -49,12 +48,12 @@ const CATEGORIES: { value: ClothingCategory; label: string }[] = [
 ]
 
 const SUBCATEGORIES: Partial<Record<ClothingCategory, string[]>> = {
-  tops: ['T-shirt', 'Shirt', 'Blouse', 'Tank Top', 'Polo', 'Crop Top'],
-  bottoms: ['Jeans', 'Trousers', 'Shorts', 'Skirt', 'Leggings', 'Joggers'],
-  dresses: ['Casual Dress', 'Midi Dress', 'Maxi Dress', 'Mini Dress', 'Wrap Dress', 'Sundress'],
-  outerwear: ['Sweater', 'Knit Top', 'Turtleneck', 'Sweatshirt', 'Hoodie', 'Cardigan', 'Blazer', 'Jacket', 'Coat', 'Puffer', 'Raincoat', 'Leather Jacket'],
-  shoes: ['Sneakers', 'Boots', 'Heels', 'Loafers', 'Sandals', 'Flats', 'Mules'],
-  accessories: ['Bag', 'Jewellery', 'Belt', 'Hat', 'Scarf', 'Watch', 'Sunglasses'],
+  tops: ['t-shirt', 'shirt', 'polo', 'blouse', 'tank', 'other'],
+  bottoms: ['jeans', 'trousers', 'shorts', 'skirt', 'leggings', 'joggers', 'other'],
+  dresses: ['mini dress', 'midi dress', 'maxi dress', 'wrap dress', 'shirt dress', 'slip dress', 'other'],
+  outerwear: ['sweater', 'knit top', 'turtleneck', 'sweatshirt', 'hoodie', 'cardigan', 'coat', 'jacket', 'blazer', 'raincoat', 'puffer', 'parka', 'trench coat', 'other'],
+  shoes: ['sneakers', 'boots', 'heels', 'flats', 'sandals', 'loafers', 'other'],
+  accessories: ['bag', 'belt', 'hat', 'scarf', 'jewelry', 'sunglasses', 'watch', 'other'],
 }
 
 const FIT_OPTIONS = ['Slim', 'Regular', 'Relaxed', 'Oversized', 'Fitted']
@@ -277,12 +276,15 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
         setImageProcessingStep('Loading the on-device clothing scanner…')
         const compressed = await compressImage(file)
         const parsed = await parseOutfitPhoto(compressed)
+        if (!parsed.segmentationAvailable) {
+          throw new Error('The on-device clothing scanner could not start, so this photo was not saved. Check your connection and try again. You can still upload a single-item photo or add an item manually.')
+        }
         if (parsed.containsPerson && parsed.garments.length === 0) {
-          throw new Error('We couldn’t safely isolate clothing from this photo. Try a clearer, full-body image; the original photo was not saved or analyzed.')
+          throw new Error('We couldn’t detect a clothing item in this photo. Try a clearer photo with the garment in view; the original photo was not saved or analyzed.')
         }
         let pieces: Array<{ blob: Blob; category?: ClothingCategory; name?: string }> = parsed.garments.length > 0
           ? parsed.garments
-          : [{ blob: await removeImageBackground(parsed.safeFallback).catch(() => parsed.safeFallback), category: undefined, name: undefined }]
+          : [{ blob: parsed.sourceFallback, category: undefined, name: undefined }]
         if (editItem && pieces.length > 1) {
           pieces = [pieces.find((piece) => piece.category === editItem.category) ?? pieces[0]]
         }
@@ -422,12 +424,14 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
     setLowConfidenceFields([])
     try {
       const analysis = await analyzeImage(blob)
-      if (analysis) {
-        applyAnalysis(analysis, detectedCategory, detectedName)
-        setAiApplied(true)
+      if (!analysis) {
+        setImageError('Auto-tagging did not return item details. Check your connection, then review the name and type before saving.')
+        return
       }
+      applyAnalysis(analysis, detectedCategory, detectedName)
+      setAiApplied(true)
     } catch {
-      // silent — user fills manually
+      setImageError('Auto-tagging could not analyze this crop. Check your connection, then review the name and type before saving.')
     } finally {
       setAiAnalyzing(false)
     }
@@ -978,11 +982,6 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
           )}
         </div>
 
-        {/* New uploads show only name, category and notes. Type, colours, pattern,
-            fit, formality, material, seasons, occasions and brand are still filled
-            in from the photo analysis and saved with the piece (Kaia and the outfit
-            engine use them); they're only shown when editing an existing piece. */}
-        {!!editItem && <>
         {/* ── Subcategory ── */}
         {subcategoryOptions && subcategoryOptions.length > 0 && (
           <div className={reviewFieldClass('subcategory')}>
@@ -991,7 +990,7 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
               {subcategoryOptions.map((sub) => (
                 <SelectChip
                   key={sub}
-                  label={sub}
+                  label={sub.replace(/\b\w/g, (letter) => letter.toUpperCase())}
                   selected={draft.subcategory === sub}
                   onClick={() => update('subcategory', draft.subcategory === sub ? '' : sub)}
                 />
@@ -1000,6 +999,8 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
           </div>
         )}
 
+        {/* Detailed attributes are editable when reviewing an existing piece. */}
+        {!!editItem && <>
         {/* ── Garment construction details ── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className={reviewFieldClass('neckline_closure')}>

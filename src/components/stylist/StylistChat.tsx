@@ -19,6 +19,7 @@ import { insertItem } from '@/lib/wardrobeService'
 import { useItemImage } from '@/hooks/useItemImage'
 import { CategoryGlyph } from '@/components/wardrobe/categoryVisuals'
 import { CATALOG_ITEMS } from '@/lib/catalogData'
+import recommendationWorkbookGuide from '../../../recommendation-workbook-guidance.json'
 import type { CatalogItem, ClothingCategory, ClothingItem, WebShopResult } from '@/types'
 
 const SUGGESTED_PROMPTS = [
@@ -30,8 +31,18 @@ const DAILY_OCCASIONS = ['Work', 'Casual', 'Date night', 'Formal', 'Weekend', 'T
 type FollowUp = { question: string; options: string[] }
 function followUpForRequest(text: string): FollowUp | null {
   const value = text.toLowerCase()
-  if (/wedding|wedding guest|marriage/.test(value)) return { question: 'Is there a dress code or theme?', options: ['Traditional', 'Formal', 'Festive'] }
-  if (/meeting|boardroom|office|work event|presentation/.test(value)) return { question: 'What kind of setting is it?', options: ['Casual', 'Smart casual', 'Boardroom formal'] }
+  if (/wedding|wedding guest|marriage/.test(value)) {
+    const step = recommendationWorkbookGuide.followUps.find((entry) => entry.when === 'Wedding function is unclear')
+    return step ? { question: step.question, options: step.options } : null
+  }
+  if (/meeting|boardroom|office|work event|presentation|interview/.test(value)) {
+    const step = recommendationWorkbookGuide.followUps.find((entry) => entry.when === 'Meeting or interview dress code is unclear')
+    return step ? { question: step.question, options: step.options } : null
+  }
+  if (/formal event|black tie|cocktail/.test(value)) {
+    const step = recommendationWorkbookGuide.followUps.find((entry) => entry.when === 'Formal event dress code is unclear')
+    return step ? { question: step.question, options: step.options } : null
+  }
   if (/picnic|park|outdoor lunch/.test(value)) return { question: 'What kind of look are you after?', options: ['Relaxed and comfy', 'A little polished'] }
   if (/date night|first date|dinner date/.test(value)) return { question: 'What’s the plan for the evening?', options: ['Casual dinner', 'Dressy dinner', 'Something outdoors'] }
   return null

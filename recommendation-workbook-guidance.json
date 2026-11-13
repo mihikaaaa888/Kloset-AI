@@ -1,0 +1,54 @@
+{
+  "source": "Kloset schema workbook v1; starter guidance to validate against real outfits",
+  "outfitRules": {
+    "maxBoldColourItems": 1,
+    "boldColourHints": ["red", "fuchsia", "hot pink", "orange", "yellow", "lime", "bright green", "cobalt", "electric blue", "purple", "violet"],
+    "maxPatternedItems": 1,
+    "patternedTypes": ["striped", "checked", "floral", "graphic", "abstract", "animal-print", "geometric"],
+    "formalityCompatibility": {
+      "casual": ["casual", "smart casual"],
+      "smart casual": ["casual", "smart casual", "formal", "ethnic/festive"],
+      "formal": ["smart casual", "formal"],
+      "ethnic/festive": ["smart casual", "ethnic/festive"]
+    },
+    "proportion": "When practical, balance a loose or oversized top with a fitted bottom, or a fitted top with a loose bottom. Avoid oversized pieces in both slots."
+  },
+  "formalProfiles": {
+    "internalMeeting": "Smart or business casual; clean, pressed, non-cropped pieces; a neutral base with at most one accent; polished shoes; a fine knit or blazer for cold weather.",
+    "clientMeeting": "Business formal or sharp business casual; lean formal if the dress code is unclear; avoid graphic prints, jeans, T-shirts and cropped pieces; choose polished shoes and a structured layer.",
+    "cocktail": "Dressy separates, a knee-to-midi dress or refined Indian wear; one focal point; lighter colours by day and deeper colours by evening; polished footwear.",
+    "blackTie": "Floor-length or formal silhouettes and dressy fabrics; darker or jewel tones in the evening; one focal point; polished formal footwear. The invitation's dress code takes priority.",
+    "weddingGuest": "Ask which function and whether the invitation gives a theme. Avoid white or ivory as the main colour unless requested; respect the host's/community's customs and the user's stated constraints."
+  },
+  "indianWear": {
+    "garmentNotes": [
+      "Kurti: everyday, college or relaxed office; pair with jeans, leggings, straight trousers or palazzo. Longer plain kurtis work better for conservative/client-facing workplaces.",
+      "Kurta and kurta sets: versatile from office to festive; plain/pressed for work, embellished versions for celebrations.",
+      "Saree: cotton or linen can suit work; silk, tissue or embellished versions suit celebrations. Ask about draping comfort when it matters; pre-draped is an option.",
+      "Anarkali and salwar suit: muted/straight styles can suit traditional offices; embellished styles suit weddings and festive events.",
+      "Lehenga and sharara: festive; prioritise movement and comfort for dancing.",
+      "Juttis and kolhapuris: pair naturally with Indian wear; choose embellished juttis for dressy events and stain-safe kolhapuris for haldi/outdoors.",
+      "Dupatta: optional for everyday wear, useful with Indian sets and for ceremonies where head covering may be expected; ask or state the assumption respectfully."
+    ],
+    "weddingFunctions": {
+      "haldi": "Comfortable, washable pieces; yellow, soft colours or florals; skip precious/delicate accessories.",
+      "mehendi": "Relaxed festive colour and comfortable cuts that work while seated; keep hands and wrists clear if henna is being applied.",
+      "sangeet": "Festive colour and sparkle are welcome; prioritise movement, secure footwear and accessories that stay in place while dancing.",
+      "wedding ceremony": "Traditional/formal Indian wear is often appropriate; ask about community customs and the invite. Avoid white, ivory, black or head-to-toe red unless the host says otherwise.",
+      "reception": "Dressy evening looks, richer colours and polished footwear; choose a comfortable silhouette for a long event."
+    }
+  },
+  "followUps": [
+    { "when": "Wedding function is unclear", "question": "Which wedding function is it?", "options": ["Haldi", "Mehendi", "Sangeet", "Ceremony", "Reception", "Not sure", "Other"] },
+    { "when": "Wedding ceremony customs may change the outfit", "question": "Do you know the ceremony or dress-code customs?", "options": ["Hindu", "Sikh", "Other", "Not sure", "Other details"] },
+    { "when": "Meeting or interview dress code is unclear", "question": "What is the setting?", "options": ["Internal meeting", "Client-facing", "Interview", "Boardroom formal", "Smart casual", "Not sure", "Other"] },
+    { "when": "Formal event dress code is unclear", "question": "What does the invitation say?", "options": ["Cocktail", "Semi-formal", "Black tie", "No dress code", "Not sure", "Other"] },
+    { "when": "Comfort constraint would change the outfit", "question": "Anything you'd like me to work around?", "options": ["No heels", "Comfortable for standing", "Modest cuts", "Easy to dance in", "No preference", "Other"] }
+  ],
+  "usageNotes": [
+    "Infer from the event, wardrobe, profile and weather before asking; never ask for weather or wardrobe details already available.",
+    "Ask one concise, useful question at a time, with tappable choices and a free-text Other option; stop after at most three questions.",
+    "Treat these rules as starting points. The invitation, user preference, comfort and cultural context take priority.",
+    "For outfits, use one top plus one bottom or one one-piece garment, and complete the required footwear slot when the wardrobe allows. Do not duplicate garment slots."
+  ]
+}

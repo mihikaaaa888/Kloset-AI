@@ -14,7 +14,6 @@ const CLOTHING: Record<string, { category: ClothingCategory; name: string }> = {
   hat: { category: 'accessories', name: 'Hat' },
   sunglasses: { category: 'accessories', name: 'Sunglasses' },
 }
-const FACE_LABELS = new Set(['face', 'hair', 'sunglasses'])
 const HUMAN_LABELS = new Set(['face', 'hair', 'sunglasses', 'left-arm', 'right-arm', 'arms', 'left-leg', 'right-leg', 'legs', 'torso', 'hands', 'feet'])
 
 interface SegmentationMask {
@@ -31,8 +30,9 @@ interface ParsedGarment {
 export interface ParsedPhoto {
   garments: ParsedGarment[]
   containsPerson: boolean
-  /** Safe local fallback for standalone product photos; face pixels are transparent. */
-  safeFallback: Blob
+  segmentationAvailable: boolean
+  /** Original photo, kept intact if segmentation cannot identify a garment. */
+  sourceFallback: Blob
 }
 
 type Segmenter = (image: string) => Promise<SegmentationMask[]>
@@ -40,9 +40,13 @@ let segmenterPromise: Promise<Segmenter> | null = null
 
 function getSegmenter(): Promise<Segmenter> {
   if (!segmenterPromise) {
-    segmenterPromise = import('@huggingface/transformers').then(async ({ pipeline }) => {
-      // Let Transformers.js select its runtime assets. This avoids forcing a
-      // threaded WASM module on mobile browsers that cannot import it.
+    segmenterPromise = import('@huggingface/transformers').then(async ({ env, pipeline }) => {
+      // Serve ONNX Runtime from this origin. Mobile browsers and deployed CSPs
+      // can fail to import the runtime's remotely resolved module script.
+      env.backends.onnx.wasm!.wasmPaths = {
+        mjs: '/onnx-runtime/ort-wasm-simd-threaded.asyncify.mjs',
+        wasm: '/onnx-runtime/ort-wasm-simd-threaded.asyncify.wasm',
+      }
       const segmenter = await pipeline('image-segmentation', 'Xenova/segformer_b2_clothes', { dtype: 'q8', device: 'wasm' })
       return (image: string) => segmenter(image) as Promise<SegmentationMask[]>
     }).catch((error) => {
@@ -120,7 +124,7 @@ function connectedGarments(masks: SegmentationMask[]): SegmentationMask['mask'][
   return components
 }
 
-/** Segment locally and produce transparent, full-resolution garment cutouts. */
+/** Segment locally and crop each garment while preserving the original photo pixels. */
 export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
   const image = await decodeImage(source)
   const sourceUrl = URL.createObjectURL(source)
@@ -170,8 +174,10 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
       }
       const minGarmentPixels = Math.max(64, Math.round(inputWidth * inputHeight * 0.0003))
       if (maxX < minX || maxY < minY || pixelCount < minGarmentPixels) continue
-      const padX = Math.round((maxX - minX + 1) * 0.04)
-      const padY = Math.round((maxY - minY + 1) * 0.04)
+      // Keep enough surrounding scene to preserve the item's true appearance;
+      // this is a zoomed crop, not a background-removal cutout.
+      const padX = Math.round((maxX - minX + 1) * 0.1)
+      const padY = Math.round((maxY - minY + 1) * 0.1)
       const left = Math.max(0, minX - padX), top = Math.max(0, minY - padY)
       const right = Math.min(inputWidth, maxX + padX + 1), bottom = Math.min(inputHeight, maxY + padY + 1)
       const crop = document.createElement('canvas')
@@ -179,33 +185,9 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
       crop.height = bottom - top
       const context = crop.getContext('2d', { willReadFrequently: true })!
       context.drawImage(image, left, top, crop.width, crop.height, 0, 0, crop.width, crop.height)
-      const pixels = context.getImageData(0, 0, crop.width, crop.height)
-      for (let y = 0; y < crop.height; y++) for (let x = 0; x < crop.width; x++) {
-        const sourceX = left + x
-        const sourceY = top + y
-        if (!masksForItem.some(({ mask }) => maskAt(mask, sourceX, sourceY, inputWidth, inputHeight))) {
-          pixels.data[(y * crop.width + x) * 4 + 3] = 0
-        }
-      }
-      context.putImageData(pixels, 0, 0)
       garments.push({ blob: await canvasBlob(crop), category: group.category, name: group.name })
     }
   }
 
-  // Keep a face-cleared local fallback for isolated product photos the labeler
-  // cannot classify. Person photos with no garment masks are rejected upstream.
-  const faceMasks = [...FACE_LABELS].map((label) => byLabel.get(label)).filter((mask): mask is SegmentationMask => !!mask)
-  const safe = document.createElement('canvas')
-  safe.width = inputWidth
-  safe.height = inputHeight
-  const safeContext = safe.getContext('2d', { willReadFrequently: true })!
-  safeContext.drawImage(image, 0, 0)
-  const pixels = safeContext.getImageData(0, 0, safe.width, safe.height)
-  for (let y = 0; y < safe.height; y++) for (let x = 0; x < safe.width; x++) {
-    if (faceMasks.some(({ mask }) => maskAt(mask, x, y, safe.width, safe.height))) {
-      pixels.data[(y * safe.width + x) * 4 + 3] = 0
-    }
-  }
-  safeContext.putImageData(pixels, 0, 0)
-  return { garments, containsPerson: segmentationAvailable && containsPerson, safeFallback: await canvasBlob(safe) }
+  return { garments, containsPerson: segmentationAvailable && containsPerson, segmentationAvailable, sourceFallback: source }
 }
