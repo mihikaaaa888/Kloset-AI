@@ -4,6 +4,7 @@ import { CATALOGUE_ITEMS } from '@/pages/onboarding/catalogueData'
 import { ALL_CATALOG_ITEMS } from '@/lib/catalogData'
 import { rankWardrobeColourPairings } from '@/lib/colourHarmony'
 import { getColourHarmonyConfig } from '@/lib/colourHarmonyService'
+import type { OutfitPhotoStyleSignal } from '@/lib/recommendationFeedback'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -13,6 +14,8 @@ export interface ChatMessage {
   /** Browser-only previews for multiple attached outfit photos. */
   imagePreviewUrls?: string[]
 }
+
+export interface KaiaChatResponse { reply: string; styleSignals?: OutfitPhotoStyleSignal }
 
 // A compact, representative slice of the shoppable catalog (not all 39+
 // items — keeps the prompt small) so Kaia can name real pieces with real
@@ -169,7 +172,8 @@ export async function sendChatMessage(
   profile: UserProfile | null,
   imageDataUrls?: string[],
   recommendationPreferencesSummary?: string,
-): Promise<string> {
+  weatherSummary?: string,
+): Promise<KaiaChatResponse> {
   const wardrobeSummary = buildWardrobeSummary(wardrobe)
   const wardrobeGapsSummary = buildWardrobeGapsSummary(wardrobe)
   const profileSummary = buildProfileSummary(profile)
@@ -195,6 +199,7 @@ export async function sendChatMessage(
     shopSummary,
     colourHarmonySummary,
     ...(recommendationPreferencesSummary ? { recommendationPreferencesSummary } : {}),
+    ...(weatherSummary ? { weatherSummary } : {}),
     // Lets the server check each outfit line against the real category.
     wardrobeItems: wardrobe.map((i) => ({ name: i.name, category: i.category })),
   })
@@ -212,11 +217,14 @@ export async function sendChatMessage(
   const data = await response.json().catch(() => null)
   if (!response.ok) {
     console.error('[chat] request failed', response.status, data)
-    if (data?.reply) return data.reply
+    if (data?.reply) return { reply: data.reply }
     throw new Error(`Chat request failed (${response.status})`)
   }
   console.log('[chat] reply received', { source: data?.source })
-  return data?.reply ?? "I'm not sure what to say — try asking again."
+  return {
+    reply: data?.reply ?? "I'm not sure what to say — try asking again.",
+    ...(data?.styleSignals ? { styleSignals: data.styleSignals as OutfitPhotoStyleSignal } : {}),
+  }
 }
 
 function postChat(body: string): Promise<Response> {

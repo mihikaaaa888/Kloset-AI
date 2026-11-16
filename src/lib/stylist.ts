@@ -16,7 +16,7 @@ import type { ColourHarmonyConfig } from '@/lib/colourHarmony'
 import { getColourHarmonyConfig } from '@/lib/colourHarmonyService'
 import indianWearGuide from '../../indian-wear-guide.json'
 import recommendationWorkbookGuide from '../../recommendation-workbook-guidance.json'
-import { scoreRecommendationFeedback, traitsFromWardrobe, feedbackFromFavourites } from '@/lib/recommendationFeedback'
+import { dislikedOutfitCombinationTypes, outfitCombinationType, scoreRecommendationFeedback, traitsFromWardrobe, feedbackFromFavourites } from '@/lib/recommendationFeedback'
 import type { RecommendationFeedback } from '@/lib/recommendationFeedback'
 
 // ─── Public types ─────────────────────────────────────────────────────────────
@@ -92,7 +92,22 @@ export async function generateOutfit(
   // ──────────────────────────────────────────────────────────────────────────
 
   const colourConfig = await getColourHarmonyConfig()
-  return mockEngine(request, wardrobe, profile, attempt, pinnedItem, colourConfig, [...feedback, ...feedbackFromFavourites(wardrobe)])
+  const allFeedback = [...feedback, ...feedbackFromFavourites(wardrobe)]
+  const dislikedTypes = dislikedOutfitCombinationTypes(allFeedback)
+  let lastResult: StylistEngineResult | null = null
+  // A disliked daily outfit teaches Kloset to avoid that garment-type pairing.
+  // Try several closet rotations to find a different combination first.
+  for (let retry = 0; retry < (dislikedTypes.size ? 16 : 1); retry += 1) {
+    const result = mockEngine(request, wardrobe, profile, attempt + retry, pinnedItem, colourConfig, allFeedback)
+    lastResult = result
+    if (!result.suggestion) continue
+    const signature = outfitCombinationType(result.suggestion.items.map(({ item }) => item))
+    if (!dislikedTypes.has(signature)) return result
+  }
+  if (lastResult?.suggestion) {
+    return { suggestion: null, error: 'I could not find a different outfit pairing from your Kloset yet. Add a few more pieces or adjust your preferences.' }
+  }
+  return lastResult ?? { suggestion: null, error: 'Unable to create an outfit right now.' }
 }
 
 // ─── Colour data ──────────────────────────────────────────────────────────────
@@ -113,6 +128,23 @@ function weatherToSeasons(weather: WeatherCondition): Season[] {
   }
 }
 
+function isBusinessMeetingRequest(request: StyleRequest) {
+  return request.occasion === 'work' || /business|meeting|office|boardroom|interview|corporate/.test((request.customOccasion ?? '').toLowerCase())
+}
+
+function isUnsuitableForBusinessMeeting(item: ClothingItem) {
+  const details = `${item.name} ${item.subcategory ?? ''} ${item.fit ?? ''} ${item.neckline_closure ?? ''}`.toLowerCase()
+  if (item.category === 'tops' && /off[\s-]?shoulder|bardot/.test(details)) return true
+  if (item.category !== 'bottoms') return false
+  if (/\bshorts?\b/.test(details)) return true
+  const isSkirt = /\bskirt\b/.test(details)
+  return isSkirt && /\bmini\b|\bmicro\b|above[\s-]?knee|short skirt/.test(details)
+}
+
+function isPrint(item: ClothingItem) {
+  return item.pattern !== 'solid' && item.pattern !== 'other'
+}
+
 // ─── Item scoring ─────────────────────────────────────────────────────────────
 
 function scoreItem(
@@ -128,6 +160,10 @@ function scoreItem(
 
   // Duplicate guard
   if (alreadySelected.some((s) => s.id === item.id)) return -9999
+  if (isBusinessMeetingRequest(request) && isUnsuitableForBusinessMeeting(item)) return -9999
+  // Keep one print as the focal point; only pair it with solid pieces unless
+  // the user later supplies their print-mixing guidance.
+  if (isPrint(item) && alreadySelected.some(isPrint)) return -9999
 
   // Apply the workbook's outfit-balance starter rules while ranking daily
   // recommendations. They remain soft signals because the workbook marks
@@ -185,6 +221,11 @@ function scoreItem(
     .toLowerCase()
   const dressy = /formal|dress|evening|occasion|elegant|satin|silk|heel|blazer|tailored/.test(garmentDetails)
   const relaxed = /casual|relaxed|cozy|cosy|soft|knit|sweat|sneaker|loose|comfortable/.test(garmentDetails)
+  if (['cold', 'cool'].includes(request.weather)) {
+    if (item.category === 'outerwear') score += 10
+    if (item.category === 'tops' && /turtleneck|roll.?neck|high.?neck|sweater|knit|wool|fleece/.test(garmentDetails)) score += 4
+    if (item.category === 'bottoms' && /trouser|pants|jeans|wool|corduroy/.test(garmentDetails)) score += 4
+  }
   if (['date-night', 'formal', 'special-event'].includes(request.occasion)) {
     if (dressy) score += 5
     if (relaxed && !dressy) score -= 2
@@ -336,7 +377,25 @@ function pickBest(
   colourConfig: ColourHarmonyConfig,
   feedback: RecommendationFeedback[],
 ): ClothingItem | null {
-  const candidates = items.filter((i) => i.category === category)
+  const candidates = items.filter((i) => {
+    if (i.category !== category) return false
+    if (isBusinessMeetingRequest(request) && isUnsuitableForBusinessMeeting(i)) return false
+    if (isPrint(i) && selected.some(isPrint)) return false
+    const details = `${i.name} ${i.subcategory ?? ''} ${i.material ?? ''} ${i.construction ?? ''}`.toLowerCase()
+    // Keep linen out of cold-weather outfit recommendations.
+    if (['cold', 'cool'].includes(request.weather) && /\blinen\b/.test(details)) return false
+    if (request.weather === 'cold' && category === 'bottoms' && /\bshorts?\b/.test(details)) return false
+    if (category === 'outerwear') {
+      const hasTurtleneck = selected.some((piece) => piece.category === 'tops'
+        && /turtleneck|roll.?neck|high.?neck/.test(`${piece.name} ${piece.subcategory ?? ''} ${piece.neckline_closure ?? ''}`.toLowerCase()))
+      // A turtleneck is the base top; only a coat or substantial jacket may go over it.
+      const substantialJacket = /\bjacket\b/.test(details)
+        && (/heavy|padded|puffer|insulated|winter|oversized|thick|quilted/.test(details) || i.seasons.includes('winter'))
+      if (hasTurtleneck && !/coat|parka|puffer|overcoat|trench/.test(details) && !substantialJacket) return false
+      if (hasTurtleneck && /cardigan|sweater|sweatshirt|hoodie|vest/.test(details)) return false
+    }
+    return true
+  })
   if (candidates.length === 0) return null
   const learnedStyle = learnStyleFromWardrobe(items)
 
@@ -521,7 +580,11 @@ function generateStylingTips(
     tips.push('Add a light fragrance for a finishing touch.')
   }
   if (request.weather === 'cold') {
-    tips.push('Layer a fine knit underneath on colder days.')
+    const hasTurtleneck = items.some(({ item }) => item.category === 'tops'
+      && /turtleneck|roll.?neck|high.?neck/.test(`${item.name} ${item.subcategory ?? ''} ${item.neckline_closure ?? ''}`.toLowerCase()))
+    tips.push(hasTurtleneck
+      ? 'Wear a coat or roomy jacket over the turtleneck for warmth.'
+      : 'Add a warm outer layer on colder days.')
   }
   if (request.mood === 'confident') {
     tips.push('Stand tall; confidence completes the look.')
@@ -563,6 +626,9 @@ function mockEngine(
   }
   if (wardrobe.length < 2) {
     return { suggestion: null, error: 'Add at least 2 items to your Kloset to generate an outfit.' }
+  }
+  if (pinnedItem && isBusinessMeetingRequest(request) && isUnsuitableForBusinessMeeting(pinnedItem)) {
+    return { suggestion: null, error: 'That piece may not fit a business meeting dress code. Choose another starting piece for this look.' }
   }
 
   const selected: ClothingItem[] = []

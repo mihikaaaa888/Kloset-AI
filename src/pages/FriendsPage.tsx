@@ -464,10 +464,10 @@ function FriendsTab({
       </aside>
 
       <div className="space-y-8">
-        <section className="w-full max-w-2xl border border-text-primary/10 bg-surface p-4 sm:p-5">
-        <h2 className="font-display text-2xl text-text-primary">Add a friend</h2>
+        <section className="w-full max-w-xl border border-text-primary/10 bg-surface p-4">
+        <h2 className="font-display text-xl text-text-primary">Add a friend</h2>
         <p className="mt-1 text-sm text-text-muted">Enter the email they use for Kloset.</p>
-        <form onSubmit={handleAdd} className="mt-4 flex items-end gap-2">
+        <form onSubmit={handleAdd} className="mt-3 flex items-end gap-2">
           <label className="flex-1">
             <span className="sr-only">Friend’s email</span>
             <input
@@ -476,13 +476,13 @@ function FriendsTab({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="friend@email.com"
-              className="w-full bg-transparent border-b border-text-primary/25 focus:border-text-primary py-2.5 text-base text-text-primary placeholder:text-text-muted/60 focus:outline-none transition-colors"
+              className="w-full bg-transparent border-b border-text-primary/25 focus:border-text-primary py-2 text-sm text-text-primary placeholder:text-text-muted/60 focus:outline-none transition-colors"
             />
           </label>
           <button
             type="submit"
             disabled={sending}
-            className="h-11 px-5 flex items-center gap-2 bg-text-primary text-warm-cream text-xs font-medium uppercase tracking-widest hover:bg-text-primary/90 disabled:opacity-50 transition-colors"
+            className="h-10 px-4 flex items-center gap-2 bg-text-primary text-warm-cream text-xs font-medium uppercase tracking-widest hover:bg-text-primary/90 disabled:opacity-50 transition-colors"
           >
             <UserPlus size={14} strokeWidth={1.5} />
             {sending ? 'Sending…' : 'Add'}

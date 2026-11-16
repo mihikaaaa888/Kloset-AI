@@ -5,10 +5,11 @@ import { ChatHistory } from '@/components/stylist/ChatHistory'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { clsx } from 'clsx'
 import { sendChatMessage, type ChatMessage } from '@/lib/chatService'
+import { getLocalWeather } from '@/lib/weather'
 import { searchWebShopCached, cleanProductTitle, type Retailer } from '@/lib/webShopService'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useRecommendationStore } from '@/store/recommendationStore'
-import { summarizeRecommendationFeedback } from '@/lib/recommendationFeedback'
+import { feedbackFromOutfitPhoto, summarizeRecommendationFeedback } from '@/lib/recommendationFeedback'
 import { useUserStore } from '@/store/userStore'
 import { useChatStore } from '@/store/chatStore'
 import { getImage } from '@/lib/imageStorage'
@@ -185,6 +186,7 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
   const addItem = useWardrobeStore((s) => s.addItem)
   const profile = useUserStore((s) => s.profile)
   const recommendationFeedback = useRecommendationStore((s) => profile?.id ? s.feedbackByUser[profile.id] ?? [] : [])
+  const recordFeedbackBatch = useRecommendationStore((s) => s.recordFeedbackBatch)
   const { user } = useAuth()
   const navigate = useNavigate()
 
@@ -193,9 +195,18 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
   const clearChat = useChatStore((s) => s.clear)
   const setOwner = useChatStore((s) => s.setOwner)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [weatherSummary, setWeatherSummary] = useState<string | undefined>()
 
   // A different account (or a fresh page load) always begins on a new, empty chat.
   useEffect(() => { setOwner(user?.id ?? null) }, [user?.id, setOwner])
+
+  useEffect(() => {
+    let cancelled = false
+    void getLocalWeather().then(({ temperature, condition }) => {
+      if (!cancelled) setWeatherSummary(`${Math.round(temperature)}°C, ${condition}`)
+    }).catch(() => { if (!cancelled) setWeatherSummary(undefined) })
+    return () => { cancelled = true }
+  }, [])
 
   const [input, setInput] = useState(initialPrompt ?? '')
   const [loading, setLoading] = useState(false)
@@ -323,8 +334,19 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
       const outgoing = prepared?.note
         ? next.map((m, i) => i === next.length - 1 ? { ...m, content: [m.content.trim(), prepared.note].filter(Boolean).join('\n\n') } : m)
         : next
-      const reply = await sendChatMessage(outgoing, items, profile, prepared?.dataUrls, summarizeRecommendationFeedback(recommendationFeedback))
-      setMessages((prev) => [...prev, { role: 'assistant', content: reply }])
+      let requestWeather = weatherSummary
+      if (!requestWeather) {
+        requestWeather = await getLocalWeather()
+          .then(({ temperature, condition }) => `${Math.round(temperature)}°C, ${condition}`)
+          .catch(() => undefined)
+        if (requestWeather) setWeatherSummary(requestWeather)
+      }
+      const response = await sendChatMessage(outgoing, items, profile, prepared?.dataUrls, summarizeRecommendationFeedback(recommendationFeedback), requestWeather)
+      if (response.styleSignals && profile?.id) {
+        const signals = feedbackFromOutfitPhoto(response.styleSignals, crypto.randomUUID())
+        if (signals.length) recordFeedbackBatch(profile.id, signals)
+      }
+      setMessages((prev) => [...prev, { role: 'assistant', content: response.reply }])
     } catch (e) {
       console.error('[chat] send failed', e)
       setMessages((prev) => [...prev, {

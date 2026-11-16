@@ -5,7 +5,7 @@ import type { WeatherCondition } from '@/lib/stylist'
 
 export type StylingTipAction = 'shown' | 'helpful' | 'not-helpful' | 'applied' | 'known'
 export interface StylingTip { id: string; text: string; category: string; format: string; appliesTo: string; occasion: string; season: string; priority: number; cooldownDays: number; trigger: string; level: string; rotation: number }
-interface TipLogEntry { tipId: string; action: StylingTipAction; createdAt: string; category: string; format: string }
+interface TipLogEntry { tipId: string; action: StylingTipAction; createdAt: string; category: string; format: string; contextKey?: string }
 
 const tips = tipData.tips as StylingTip[]
 const neutralColours = new Set(['black', 'white', 'cream', 'ivory', 'grey', 'gray', 'beige', 'brown', 'camel', 'tan', 'navy', 'denim', 'silver'])
@@ -69,14 +69,14 @@ function tipLevelAllowed(tip: StylingTip, profile: UserProfile | null, log: TipL
   return tip.level === 'Basic' || tip.level === 'Intermediate'
 }
 
-export function getDailyStylingTip(userId: string, outfit: ClothingItem[], wardrobe: ClothingItem[], weather: WeatherCondition | null, profile: UserProfile | null, date = new Date()): StylingTip | null {
+export function getDailyStylingTip(userId: string, outfit: ClothingItem[], wardrobe: ClothingItem[], weather: WeatherCondition | null, profile: UserProfile | null, date = new Date(), contextKey = 'daily', contextOccasions: string[] = []): StylingTip | null {
   if (!outfit.length) return null
   const log = readLog(userId)
   const dayKey = date.toISOString().slice(0, 10)
-  const todaysShown = [...log].reverse().find((entry) => entry.action === 'shown' && entry.createdAt.slice(0, 10) === dayKey)
+  const todaysShown = [...log].reverse().find((entry) => entry.action === 'shown' && entry.contextKey === contextKey && entry.createdAt.slice(0, 10) === dayKey)
   if (todaysShown) return tips.find((tip) => tip.id === todaysShown.tipId) ?? null
 
-  const occasions = [...new Set(['casual', ...(profile?.typicalOccasions ?? []), ...outfit.flatMap((item) => item.occasions)])]
+  const occasions = [...new Set([...contextOccasions, 'casual', ...(profile?.typicalOccasions ?? []), ...outfit.flatMap((item) => item.occasions)])]
   const eligible = tips.filter((tip) => tipLevelAllowed(tip, profile, log)
     && matchingTags(tip.occasion, occasions)
     && tipItemsMatch(tip, outfit)
@@ -112,7 +112,7 @@ export function getDailyStylingTip(userId: string, outfit: ClothingItem[], wardr
     return { tip, score }
   }).sort((a, b) => b.score - a.score || a.tip.rotation - b.tip.rotation).slice(0, 3)
   const choice = scored[Number.parseInt(dayKey.replace(/-/g, ''), 10) % Math.max(1, scored.length)]?.tip ?? pool[0]
-  writeLog(userId, [...log, { tipId: choice.id, action: 'shown', createdAt: date.toISOString(), category: choice.category, format: choice.format }])
+  writeLog(userId, [...log, { tipId: choice.id, action: 'shown', createdAt: date.toISOString(), category: choice.category, format: choice.format, contextKey }])
   return choice
 }
 

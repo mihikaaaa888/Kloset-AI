@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { RefreshCw, BookMarked, Check, Shirt } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { CompleteTheLook } from '@/components/stylist/CompleteTheLook'
@@ -5,7 +6,9 @@ import { clsx } from 'clsx'
 import { Button } from '@/components/ui/Button'
 import { colourNameToHex, isLightColour } from '@/lib/colourUtils'
 import { useItemImage } from '@/hooks/useItemImage'
+import { getDailyStylingTip, type StylingTip } from '@/lib/stylingTipEngine'
 import type { OutfitSuggestion, OutfitItemResult } from '@/lib/stylist'
+import type { ClothingItem, UserProfile } from '@/types'
 
 // ─── Occasion + weather display labels ───────────────────────────────────────
 
@@ -17,6 +20,9 @@ interface OutfitResultProps {
   onSave: () => void
   isSaved: boolean
   isRegenerating: boolean
+  userId: string
+  profile: UserProfile | null
+  wardrobe: ClothingItem[]
 }
 
 export function OutfitResult({
@@ -25,8 +31,28 @@ export function OutfitResult({
   onSave,
   isSaved,
   isRegenerating,
+  userId,
+  profile,
+  wardrobe,
 }: OutfitResultProps) {
   const { name, items, stylingTips } = suggestion
+  const [workbookTip, setWorkbookTip] = useState<StylingTip | null>(null)
+  const outfitItems = items.map((result) => result.item)
+  const outfitItemKey = outfitItems.map((item) => item.id).join('|')
+
+  useEffect(() => {
+    setWorkbookTip(getDailyStylingTip(
+      userId,
+      outfitItems,
+      wardrobe,
+      suggestion.weather,
+      profile,
+      new Date(),
+      `stylist:${suggestion.occasion}`,
+      [suggestion.occasion],
+    ))
+  }, [userId, outfitItemKey, wardrobe, suggestion.id, suggestion.weather, suggestion.occasion, profile])
+  const displayedTips = workbookTip ? [workbookTip.text] : stylingTips
 
   return (
     <div className="animate-fade-up grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-start">
@@ -51,7 +77,7 @@ export function OutfitResult({
       {/* ══ Right: tips, reasoning, actions — sticks alongside on desktop ═════ */}
       <aside className="lg:col-span-5 lg:mt-[4.5rem] space-y-5">
         {/* ── Styling tips ── */}
-        {stylingTips.length > 0 && (
+        {displayedTips.length > 0 && (
           <div className="relative overflow-hidden rounded-3xl bg-butter-yellow p-7 shadow-lifted">
             {/* Oversized hanger watermark */}
             <HangerIcon
@@ -71,7 +97,7 @@ export function OutfitResult({
               </p>
 
               <ol className="divide-y divide-dark-purple/15">
-                {stylingTips.map((tip, i) => (
+                {displayedTips.map((tip, i) => (
                   <li key={i} className="flex items-start gap-5 py-4 first:pt-0 last:pb-0">
                     <span className="font-display italic text-4xl leading-none text-gold-light/90 dark:text-dark-purple/60 w-10 flex-shrink-0 tabular-nums">
                       {String(i + 1).padStart(2, '0')}

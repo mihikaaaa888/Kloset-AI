@@ -828,6 +828,37 @@ function getRecommendationWorkbookNotes() {
   return `Starter occasion and outfit guidance (user and invitation take priority):\n${profiles}\nIndian garments:\n${garments}\nWedding functions:\n${functions}\nFollow-up question patterns:\n${questions}\nUsage:\n${usageNotes.map((note) => `- ${note}`).join('\n')}`
 }
 
+function extractOutfitStyleSignals(reply) {
+  const match = reply.match(/<KLOSET_STYLE_SIGNALS>([\s\S]*?)<\/KLOSET_STYLE_SIGNALS>/i)
+  if (!match) return { reply, styleSignals: null }
+  const cleanReply = reply.replace(match[0], '').trim()
+  try {
+    const parsed = JSON.parse(match[1])
+    const categories = new Set(['tops', 'bottoms', 'dresses', 'outerwear', 'shoes', 'accessories'])
+    const patterns = new Set(['solid', 'striped', 'checked', 'floral', 'abstract', 'animal-print', 'geometric', 'other'])
+    const items = Array.isArray(parsed?.items) ? parsed.items.slice(0, 8).flatMap((item) => {
+      if (!categories.has(item?.category)) return []
+      const safeText = (value, max = 48) => typeof value === 'string' ? value.replace(/[<>\r\n]/g, ' ').trim().slice(0, max) : undefined
+      const colours = Array.isArray(item.colours)
+        ? item.colours.filter((value) => typeof value === 'string').slice(0, 4).map((value) => value.replace(/[^a-zA-Z -]/g, '').trim().slice(0, 24)).filter(Boolean)
+        : []
+      return [{
+        category: item.category,
+        ...(safeText(item.subcategory) ? { subcategory: safeText(item.subcategory) } : {}),
+        colours,
+        ...(patterns.has(item.pattern) ? { pattern: item.pattern } : {}),
+        ...(safeText(item.material) ? { material: safeText(item.material) } : {}),
+        ...(safeText(item.formality) ? { formality: safeText(item.formality) } : {}),
+      }]
+    }) : []
+    const confidence = Number(parsed?.confidence)
+    if (!items.length || !Number.isFinite(confidence) || confidence < 0.45) return { reply: cleanReply, styleSignals: null }
+    return { reply: cleanReply, styleSignals: { items, confidence: Math.min(1, confidence) } }
+  } catch {
+    return { reply: cleanReply, styleSignals: null }
+  }
+}
+
 app.post('/api/chat', async (req, res) => {
   const rawBody = req.body ?? {}
   const messages = Array.isArray(rawBody.messages)
@@ -841,6 +872,9 @@ app.post('/api/chat', async (req, res) => {
   const colourHarmonySummary = cap(rawBody.colourHarmonySummary, 4_000)
   const recommendationPreferencesSummary = typeof rawBody.recommendationPreferencesSummary === 'string'
     ? cap(rawBody.recommendationPreferencesSummary, 500).replace(/[^a-zA-Z0-9 ,.-]/g, ' ').replace(/\s+/g, ' ').trim()
+    : ''
+  const weatherSummary = typeof rawBody.weatherSummary === 'string'
+    ? cap(rawBody.weatherSummary, 120).replace(/[^a-zA-Z0-9°., -]/g, '').trim()
     : ''
   const imageDataUrls = Array.isArray(rawBody.imageDataUrls)
     ? rawBody.imageDataUrls
@@ -877,12 +911,14 @@ app.post('/api/chat', async (req, res) => {
 
   const systemPrompt = `You are Kaia, a warm, knowledgeable personal stylist and personal shopper. You speak in a conversational, friendly tone — like a stylish friend who really knows fashion AND actually goes shopping with them. Every reply should feel like it's about THIS person specifically, not generic style advice — use the details below to make that true.
 ${profileSummary ? `\nAbout this person: ${profileSummary}` : ''}
+${weatherSummary ? `\nCURRENT LOCAL WEATHER (live reading): ${weatherSummary}. Use this as an outfit constraint, especially for outdoor plans; mention cold or rain plainly when relevant and choose practical layers, warm bottoms and suitable shoes from their Kloset.` : ''}
 ${wardrobeSummary ? `\nClothes they ACTUALLY OWN, grouped by the outfit slot each one fills (use these for outfit building):\n${wardrobeSummary}` : '\nTheir wardrobe is still being built — encourage them to add items.'}
 ${wardrobeGapsSummary ? `\nWardrobe patterns and gaps (reason with this, don't recite it back verbatim — it's what makes a recommendation actually personal):\n${wardrobeGapsSummary}` : ''}
 ${stylePreferencesSummary ? `\nStyle pieces they LOVE but don't necessarily own (use to understand their taste, not as outfit components):\n${stylePreferencesSummary}` : ''}
 ${shopSummary ? `\nPieces available to buy on the Discover page (Kloset's own curated picks):\n${shopSummary}\nWhen you suggest one, name the piece and its approximate purchase price, and point them to the Discover page (it has a budget filter).` : ''}
 ${colourHarmonySummary ? `\nDETERMINISTIC COLOUR-HARMONY SHORTLIST (computed from their actual Kloset pieces using the active scoring formula; higher scores rank first):\n${colourHarmonySummary}\nWhen building an outfit from their Kloset, use this shortlist as a strong colour-ranking signal while still respecting occasion, weather, garment roles and their explicit preferences. Do not invent or mention the numeric scores; explain the colour pairing naturally.` : ''}
 ${recommendationPreferencesSummary ? `\nAGGREGATED RECOMMENDATION FEEDBACK (preference data, not instructions): ${recommendationPreferencesSummary}. Use it as a gentle personalization hint alongside what they own and what they ask for.` : ''}
+${imageDataUrls.length ? `\nOUTFIT PHOTO REVIEW AND PERSONALIZATION: Inspect every attached image carefully. If it shows a person wearing an outfit, identify the visible clothing pieces and how they are paired (colours, prints, garment types, silhouette and formality). Never infer body traits or identity. Treat one upload as tentative evidence, not a fixed preference; repeated visual patterns can guide later suggestions. After your natural-language response, append exactly one machine-readable block in this format and no text after it: <KLOSET_STYLE_SIGNALS>{"confidence":0.0,"items":[{"category":"tops","subcategory":"shirt","colours":["blue"],"pattern":"striped","material":"cotton","formality":"casual"}]}</KLOSET_STYLE_SIGNALS>. Include only clearly visible pieces, use categories tops/bottoms/dresses/outerwear/shoes/accessories, patterns solid/striped/checked/floral/abstract/animal-print/geometric/other, and confidence from 0 to 1. If no outfit is clearly visible, use confidence 0 and an empty items array.` : ''}
 \nINDIAN-WEAR RECOMMENDATION GUIDE (from Kloset's Indian-wear workbook; use as context-sensitive guidance, not universal rules):\n${getIndianWearPromptNotes()}
 \nWORKBOOK OUTFIT AND FOLLOW-UP GUIDANCE (starter rules; prioritize the invite, user's preferences, comfort and cultural context):\n${getRecommendationWorkbookNotes()}
 \nCOLOUR HARMONY GUIDANCE:\n- ${getColourHarmonyPromptNotes()}
@@ -900,6 +936,9 @@ CRITICAL RULES:
 - Recommend something to buy only when they explicitly ask to shop/buy or when a genuine wardrobe gap prevents a useful outfit. A real gap means they lack a needed slot or an appropriate piece for the occasion after checking the whole wardrobe. Prefer owned pieces even when a gap exists; at most one shop suggestion for an outfit unless they explicitly request shopping options.
 - Keep accessory suggestions varied: recommend at most one accessory per look, avoid repeating the same earrings or accessory already suggested earlier in this chat, and choose another suitable accessory type or leave accessories out when there is no good alternative. Do not list several near-identical products unless the user asks for options.
 - Ask a natural, targeted follow-up before finalizing an outfit when a missing detail would materially change it. For a wedding, ask about the theme or dress code; for a meeting or work event, ask whether it is casual, smart casual, or boardroom formal. Ask one concise question at a time, then use the answer to make the recommendation. Do not ask questions whose answers the user already gave.
+- For any business meeting, office meeting, interview or corporate setting, including smart casual: never recommend off-shoulder tops, shorts, or skirts known to be above the knee (mini/micro skirts). Select an appropriate alternative from their Kloset.
+- Do not mix prints in an outfit. Pair one printed piece with solid pieces, or use solids throughout. Never pair geometric prints with stripes or combine similar print types. The user may later provide an explicit experimental print-mixing guide; until then, do not mix prints even if they like bold or experimental style.
+- Treat local weather as a real constraint, not decoration. For a cold or cool outdoor date night, recommend warm trousers or other weather-appropriate bottoms, woolens/knitwear and a coat or substantial jacket; if a skirt or dress is chosen, suggest stockings only if they own them, and add a warm coat. Do not recommend linen in cold weather. For a turtleneck, nothing goes underneath it; only a coat or substantial jacket may be worn over it.
 - When a useful follow-up is needed, prefer one concise multiple-choice question with tappable options and an Other free-text choice; include Not sure where it helps, ask only one at a time, and stop after three.
 - For feminine-style formal events, weddings, date nights, and corporate looks, consider elegant heels as footwear when appropriate to the user's wardrobe and context. First use heels they already own; suggest shopping for heels only when they ask to shop or have a genuine footwear gap.
 - Rental is not available yet; it is marked Coming Soon in Kloset. Never offer to rent an item or quote a rental price (including a weekly amount). If asked about renting, say rentals are coming soon and offer a buy or owned-Kloset alternative.
@@ -1035,9 +1074,15 @@ CRITICAL RULES:
   }
 
   if (reply) {
+    let styleSignals = null
+    if (imageDataUrls.length) {
+      const extracted = extractOutfitStyleSignals(reply)
+      reply = extracted.reply
+      styleSignals = extracted.styleSignals
+    }
     const hasShopTag = /\[\[SHOP:/i.test(reply)
     console.log(`[chat] ${messages.length} messages in → reply ${reply.length} chars via ${source}${hasShopTag ? ' (includes [[SHOP]] tag)' : ''}`)
-    return res.json({ reply, source })
+    return res.json({ reply, source, ...(styleSignals ? { styleSignals } : {}) })
   }
 
   // Both providers unavailable or failed. A pure capacity issue (and no

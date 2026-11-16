@@ -8,7 +8,7 @@ import type { ClothingItem } from '@/types'
 import { generateOutfit, type WeatherCondition } from '@/lib/stylist'
 import { getLocalWeather } from '@/lib/weather'
 import { useRecommendationStore } from '@/store/recommendationStore'
-import { traitsFromWardrobe } from '@/lib/recommendationFeedback'
+import { outfitCombinationType, traitsFromWardrobe } from '@/lib/recommendationFeedback'
 import { getDailyStylingTip, rateStylingTip, type StylingTip } from '@/lib/stylingTipEngine'
 
 export function HomePage() {
@@ -122,6 +122,26 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
   const rankingFeedbackKey = stableHash(rankingFeedback.map((event) => `${event.id}:${event.action}`).join('|')).toString(36)
   const useRecommendationGrid = recommendedItems.length > 3
   const userId = profile?.id ?? 'guest'
+  const combinationId = recommendedItems.map((item) => item.id).sort().join('|')
+  const dailyRating = feedback.find((event) => event.source === 'daily-outfit' && event.combinationId === combinationId)?.action ?? null
+
+  function rateDailyOutfit(action: 'like' | 'dislike') {
+    if (!stylingTip || !recommendedItems.length) return
+    rateStylingTip(userId, stylingTip, action === 'like' ? 'helpful' : 'not-helpful')
+    setTipRating(action === 'like' ? 'helpful' : 'not-helpful')
+    const now = new Date().toISOString()
+    const combinationType = outfitCombinationType(recommendedItems)
+    useRecommendationStore.getState().recordFeedbackBatch(userId, recommendedItems.map((item) => ({
+      id: `daily-outfit:${combinationId}:${item.id}`,
+      itemId: `daily-outfit:${combinationId}:${item.id}`,
+      action,
+      traits: traitsFromWardrobe(item),
+      combinationId,
+      combinationType,
+      source: 'daily-outfit' as const,
+      createdAt: now,
+    })))
+  }
 
   useEffect(() => {
     const now = new Date()
@@ -269,10 +289,10 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
           {stylingTip ? <>
             <p className="text-sm leading-relaxed text-text-muted">{stylingTip.text}</p>
             <div className="mt-5 flex items-center justify-between gap-3 border-t border-text-primary/10 pt-3">
-              <span className="text-[11px] text-text-muted">Helpful?</span>
+              <span className="text-[11px] text-text-muted">Rate this outfit</span>
               <div className="flex gap-2">
-                <button type="button" aria-label="This styling tip is helpful" aria-pressed={tipRating === 'helpful'} onClick={() => { rateStylingTip(userId, stylingTip, 'helpful'); setTipRating('helpful') }} className={`rounded-full p-2 transition ${tipRating === 'helpful' ? 'bg-[#355E3B]/10 text-[#355E3B]' : 'text-text-muted hover:bg-text-primary/5'}`}><ThumbsUp size={15} /></button>
-                <button type="button" aria-label="This styling tip is not helpful" aria-pressed={tipRating === 'not-helpful'} onClick={() => { rateStylingTip(userId, stylingTip, 'not-helpful'); setTipRating('not-helpful') }} className={`rounded-full p-2 transition ${tipRating === 'not-helpful' ? 'bg-text-primary/10 text-text-primary' : 'text-text-muted hover:bg-text-primary/5'}`}><ThumbsDown size={15} /></button>
+                <button type="button" aria-label="This outfit and styling tip are helpful" aria-pressed={dailyRating === 'like'} onClick={() => rateDailyOutfit('like')} className={`rounded-full p-2 transition ${dailyRating === 'like' || tipRating === 'helpful' ? 'bg-[#355E3B]/10 text-[#355E3B]' : 'text-text-muted hover:bg-text-primary/5'}`}><ThumbsUp size={15} /></button>
+                <button type="button" aria-label="This outfit and styling tip are not helpful" aria-pressed={dailyRating === 'dislike'} onClick={() => rateDailyOutfit('dislike')} className={`rounded-full p-2 transition ${dailyRating === 'dislike' || tipRating === 'not-helpful' ? 'bg-text-primary/10 text-text-primary' : 'text-text-muted hover:bg-text-primary/5'}`}><ThumbsDown size={15} /></button>
               </div>
             </div>
           </> : <p className="text-sm leading-relaxed text-text-muted">Add a few pieces to your Kloset to get a styling tip.</p>}

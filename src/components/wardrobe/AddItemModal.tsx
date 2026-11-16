@@ -272,12 +272,16 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
 
     try {
       const processed: QueuedImage[] = []
+      let scannerFallback = false
       for (const file of valid) {
         setImageProcessingStep('Loading the on-device clothing scanner…')
         const compressed = await compressImage(file)
         const parsed = await parseOutfitPhoto(compressed)
         if (!parsed.segmentationAvailable) {
-          throw new Error('The on-device clothing scanner could not start, so this photo was not saved. Check your connection and try again. You can still upload a single-item photo or add an item manually.')
+          // Keep the upload usable if the browser blocks or cannot initialize
+          // the local model. The original photo still goes through server-side
+          // auto-tagging, and the user can save it as a single item.
+          scannerFallback = true
         }
         if (parsed.containsPerson && parsed.garments.length === 0) {
           throw new Error('We couldn’t detect a clothing item in this photo. Try a clearer photo with the garment in view; the original photo was not saved or analyzed.')
@@ -319,7 +323,9 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
       setUploadBatch(processed.length > 1 ? processed : [])
       setBatchIdx(0)
 
-      if (errs.length > 0) {
+      if (scannerFallback) {
+        setImageError('The on-device scanner is unavailable right now. Your photo is still loaded for auto-tagging; this upload will be saved as one item.')
+      } else if (errs.length > 0) {
         setImageError(`${errs.length} file(s) skipped — unsupported format or too large.`)
       }
 

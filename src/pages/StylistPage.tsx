@@ -244,6 +244,9 @@ export function StylistPage() {
                   onSave={handleSave}
                   isSaved={isSaved}
                   isRegenerating={false}
+                  userId={profile?.id ?? 'guest'}
+                  profile={profile}
+                  wardrobe={items}
                 />
               </>
             )}

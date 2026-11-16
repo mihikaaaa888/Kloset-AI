@@ -260,7 +260,7 @@ export function DiscoverPage() {
         </>}
 
         {mode === 'rent' && !completeOpen ? (
-          <div className="py-20 text-center"><p className="mb-5 font-display text-2xl text-text-primary">Coming soon</p><button onClick={() => openComplete()} className="border border-text-primary/25 px-4 py-2 text-sm text-text-primary hover:border-text-primary/50">Complete a piece</button></div>
+          <div className="py-20 text-center"><p className="font-display text-2xl text-text-primary">Coming soon</p></div>
         ) : completeOpen ? (
           <section className="py-5" aria-label="Complete a piece">
             <div className="mb-4 flex items-center justify-end">

@@ -20,7 +20,64 @@ export interface RecommendationFeedback {
   action: FeedbackAction
   traits: RecommendationTraits
   dwellSeconds?: number
+  /** Shared by the piece-level events created from one outfit rating. */
+  combinationId?: string
+  /** Garment-type signature used to avoid repeating a disliked pairing. */
+  combinationType?: string
+  source?: 'daily-outfit' | 'outfit-photo'
   createdAt: string
+}
+
+export interface OutfitPhotoStyleSignal {
+  items: Array<{
+    category: ClothingCategory
+    subcategory?: string
+    colours: string[]
+    pattern?: Pattern | string
+    material?: string
+    formality?: string
+  }>
+  confidence: number
+}
+
+function normalizeGarmentType(value?: string) {
+  return (value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+export function outfitCombinationType(items: ClothingItem[]): string {
+  return items.map((item) => `${item.category}:${normalizeGarmentType(item.subcategory || item.name)}`).sort().join('|')
+}
+
+export function dislikedOutfitCombinationTypes(feedback: RecommendationFeedback[]): Set<string> {
+  return new Set(feedback
+    .filter((event) => event.action === 'dislike' && event.source === 'daily-outfit' && event.combinationType)
+    .map((event) => event.combinationType as string))
+}
+
+/** Treat items visible together in a user-uploaded outfit as a gentle style signal. */
+export function feedbackFromOutfitPhoto(signal: OutfitPhotoStyleSignal, photoId: string, createdAt = new Date().toISOString()): RecommendationFeedback[] {
+  if (!Number.isFinite(signal.confidence) || signal.confidence < 0.45) return []
+  const pairingCategories = [...new Set(signal.items.map((item) => item.category))]
+  return signal.items.slice(0, 8).map((item, index) => {
+    const itemId = `outfit-photo:${photoId}:${index}`
+    return {
+      id: itemId,
+      itemId,
+      action: 'like' as const,
+      source: 'outfit-photo' as const,
+      traits: {
+        category: item.category,
+        pairingCategories: pairingCategories.filter((category) => category !== item.category),
+        subcategory: item.subcategory,
+        colours: item.colours.slice(0, 4),
+        pattern: item.pattern,
+        material: item.material,
+        formality: item.formality,
+        occasions: [],
+      },
+      createdAt,
+    }
+  })
 }
 
 export function traitsFromCatalog(item: CatalogItem): RecommendationTraits {
@@ -87,9 +144,9 @@ export function scoreRecommendationFeedback(
     if (similarity === 0) continue
 
     const weight = event.action === 'like'
-      ? 1
+      ? (event.source === 'daily-outfit' ? 1.5 : event.source === 'outfit-photo' ? 0.65 : 1)
       : event.action === 'dislike'
-        ? -1.25
+        ? (event.source === 'daily-outfit' ? -3 : -1.25)
         : Math.min(0.35, Math.max(0, (event.dwellSeconds ?? 0) - 3) * 0.07)
     score += similarity * weight * decay
   }
@@ -102,7 +159,7 @@ export function summarizeRecommendationFeedback(feedback: RecommendationFeedback
   const counts = new Map<string, { likes: number; dislikes: number; dwell: number }>()
   const safeTrait = (value: string) => value.toLowerCase().replace(/[^a-z0-9 -]/g, '').trim().slice(0, 32)
   for (const event of feedback) {
-    const weight = event.action === 'like' ? 1 : event.action === 'dislike' ? -1 : 0
+    const weight = event.action === 'like' ? (event.source === 'outfit-photo' ? 0.35 : 1) : event.action === 'dislike' ? -1 : 0
     const candidates = [
       event.traits.subcategory,
       ...event.traits.colours.slice(0, 2),
@@ -114,8 +171,8 @@ export function summarizeRecommendationFeedback(feedback: RecommendationFeedback
       const label = safeTrait(raw)
       if (!label) continue
       const entry = counts.get(label) ?? { likes: 0, dislikes: 0, dwell: 0 }
-      if (weight > 0) entry.likes += 1
-      if (weight < 0) entry.dislikes += 1
+      if (weight > 0) entry.likes += weight
+      if (weight < 0) entry.dislikes -= weight
       if (event.action === 'dwell') entry.dwell += 1
       counts.set(label, entry)
     }
