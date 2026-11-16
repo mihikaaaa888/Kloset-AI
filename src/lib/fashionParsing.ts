@@ -191,3 +191,30 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
 
   return { garments, containsPerson: segmentationAvailable && containsPerson, segmentationAvailable, sourceFallback: source }
 }
+
+/** Crop a detected garment from the original photo using normalized 0–1000 boxes. */
+export async function cropPhotoToBounds(
+  source: Blob,
+  box: [number, number, number, number],
+): Promise<Blob> {
+  const image = await decodeImage(source)
+  const [x1, y1, x2, y2] = box
+  const left = Math.max(0, Math.floor((x1 / 1000) * image.naturalWidth))
+  const top = Math.max(0, Math.floor((y1 / 1000) * image.naturalHeight))
+  const right = Math.min(image.naturalWidth, Math.ceil((x2 / 1000) * image.naturalWidth))
+  const bottom = Math.min(image.naturalHeight, Math.ceil((y2 / 1000) * image.naturalHeight))
+  if (right <= left || bottom <= top) throw new Error('The clothing crop was invalid.')
+  const padX = Math.round((right - left) * 0.06)
+  const padY = Math.round((bottom - top) * 0.06)
+  const cropLeft = Math.max(0, left - padX)
+  const cropTop = Math.max(0, top - padY)
+  const cropRight = Math.min(image.naturalWidth, right + padX)
+  const cropBottom = Math.min(image.naturalHeight, bottom + padY)
+  const canvas = document.createElement('canvas')
+  canvas.width = cropRight - cropLeft
+  canvas.height = cropBottom - cropTop
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Could not prepare the clothing crop.')
+  context.drawImage(image, cropLeft, cropTop, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height)
+  return canvasBlob(canvas)
+}

@@ -83,6 +83,32 @@ export async function analyzeImage(original: Blob): Promise<ClothingAnalysis | n
   return (data.analysis as ClothingAnalysis) ?? null
 }
 
+export interface DetectedOutfitPiece {
+  name: string
+  category: string
+  box: [number, number, number, number]
+}
+
+/** Cloud fallback for multi-piece outfit photos when local segmentation cannot load. */
+export async function detectOutfitPieces(original: Blob): Promise<DetectedOutfitPiece[]> {
+  const blob = await shrinkForAnalysis(original)
+  const imageData = await blobToBase64(blob)
+  const res = await apiFetch(apiUrl('/api/detect-outfit-pieces'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageData, mediaType: blob.type || 'image/jpeg' }),
+  })
+  if (!res.ok) throw new Error('Could not detect separate clothing pieces.')
+  const data = await res.json() as { pieces?: unknown[] }
+  return (data.pieces ?? []).flatMap((piece) => {
+    const candidate = piece as Partial<DetectedOutfitPiece>
+    if (typeof candidate.name !== 'string' || typeof candidate.category !== 'string' || !Array.isArray(candidate.box) || candidate.box.length !== 4) return []
+    const box = candidate.box.map(Number)
+    if (box.some((n) => !Number.isFinite(n) || n < 0 || n > 1000) || box[2] <= box[0] || box[3] <= box[1]) return []
+    return [{ name: candidate.name.slice(0, 100), category: candidate.category, box: box as [number, number, number, number] }]
+  }).slice(0, 8)
+}
+
 /**
  * Same analysis, but for an image the browser can display (via <img>) but
  * can't read the bytes of client-side — a pasted URL or a Pexels search

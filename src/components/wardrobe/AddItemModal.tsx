@@ -1,6 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Upload, ImagePlus, X, ChevronRight, SkipForward, Link, Search, ChevronLeft, ChevronRight as ChevronRightIcon } from 'lucide-react'
-import { HangerIcon } from '@/components/ui/HangerIcon'
 import { clsx } from 'clsx'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
@@ -17,8 +16,8 @@ import {
   compressImage,
 } from '@/lib/imageStorage'
 import { getPhotoUrl } from '@/lib/wardrobeService'
-import { analyzeImage, analyzeImageFromUrl } from '@/lib/analyzeImage'
-import { parseOutfitPhoto } from '@/lib/fashionParsing'
+import { analyzeImage, analyzeImageFromUrl, detectOutfitPieces } from '@/lib/analyzeImage'
+import { cropPhotoToBounds, parseOutfitPhoto } from '@/lib/fashionParsing'
 import { deleteWithUndo, finalizeScope } from '@/store/undoStore'
 import type { ClothingAnalysis } from '@/lib/analyzeImage'
 import type { ClothingItem, ClothingCategory, Pattern, Season, Occasion } from '@/types'
@@ -192,7 +191,6 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
 
   // AI analysis state
   const [aiAnalyzing, setAiAnalyzing] = useState(false)
-  const [aiApplied, setAiApplied] = useState(false)
   const [lowConfidenceFields, setLowConfidenceFields] = useState<string[]>([])
 
   // Photo tab state
@@ -223,7 +221,6 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
     setLegacyImageUrl(editItem?.imageUrl ?? null)
     setPreviewUrl(editItem?.imageUrl ?? null)
     setAiAnalyzing(false)
-    setAiApplied(false)
     setLowConfidenceFields([])
     setPhotoTab(initialTab)
     setUrlInput('')
@@ -277,18 +274,24 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
         setImageProcessingStep('Loading the on-device clothing scanner…')
         const compressed = await compressImage(file)
         const parsed = await parseOutfitPhoto(compressed)
-        if (!parsed.segmentationAvailable) {
-          // Keep the upload usable if the browser blocks or cannot initialize
-          // the local model. The original photo still goes through server-side
-          // auto-tagging, and the user can save it as a single item.
-          scannerFallback = true
-        }
-        if (parsed.containsPerson && parsed.garments.length === 0) {
-          throw new Error('We couldn’t detect a clothing item in this photo. Try a clearer photo with the garment in view; the original photo was not saved or analyzed.')
-        }
         let pieces: Array<{ blob: Blob; category?: ClothingCategory; name?: string }> = parsed.garments.length > 0
           ? parsed.garments
           : [{ blob: parsed.sourceFallback, category: undefined, name: undefined }]
+        if (!parsed.segmentationAvailable || parsed.garments.length === 0) {
+          scannerFallback = true
+          setImageProcessingStep('Finding separate clothing pieces…')
+          try {
+            const detected = await detectOutfitPieces(compressed)
+            const crops = await Promise.all(detected.map(async (piece) => ({
+              blob: await cropPhotoToBounds(compressed, piece.box),
+              category: VALID_CATEGORIES.has(piece.category) ? piece.category as ClothingCategory : undefined,
+              name: piece.name,
+            })))
+            if (crops.length) pieces = crops
+          } catch (error) {
+            console.warn('[wardrobe] cloud garment detection fallback failed', error)
+          }
+        }
         if (editItem && pieces.length > 1) {
           pieces = [pieces.find((piece) => piece.category === editItem.category) ?? pieces[0]]
         }
@@ -323,8 +326,8 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
       setUploadBatch(processed.length > 1 ? processed : [])
       setBatchIdx(0)
 
-      if (scannerFallback) {
-        setImageError('The on-device scanner is unavailable right now. Your photo is still loaded for auto-tagging; this upload will be saved as one item.')
+      if (scannerFallback && processed.length === 1) {
+        setImageError('We couldn’t separate multiple pieces from this photo. The image is ready; you can still add the item and tag it manually.')
       } else if (errs.length > 0) {
         setImageError(`${errs.length} file(s) skipped — unsupported format or too large.`)
       }
@@ -426,7 +429,6 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
 
   const runAiAnalysis = useCallback(async (blob: Blob, detectedCategory?: ClothingCategory, detectedName?: string) => {
     setAiAnalyzing(true)
-    setAiApplied(false)
     setLowConfidenceFields([])
     try {
       const analysis = await analyzeImage(blob)
@@ -435,7 +437,6 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
         return
       }
       applyAnalysis(analysis, detectedCategory, detectedName)
-      setAiApplied(true)
     } catch {
       setImageError('Auto-tagging could not analyze this crop. Check your connection, then review the name and type before saving.')
     } finally {
@@ -448,13 +449,11 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
   // the URL itself (see analyzeImageFromUrl).
   const runAiAnalysisFromUrl = useCallback(async (url: string) => {
     setAiAnalyzing(true)
-    setAiApplied(false)
     setLowConfidenceFields([])
     try {
       const analysis = await analyzeImageFromUrl(url)
       if (analysis) {
         applyAnalysis(analysis)
-        setAiApplied(true)
       }
     } catch {
       // silent — user fills manually
@@ -645,7 +644,6 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
       setDraft(draftForDetectedPiece(next.detectedCategory, next.detectedName))
       setErrors({})
       setImageError(null)
-      setAiApplied(false)
       runAiAnalysis(next.blob, next.detectedCategory, next.detectedName)
     } else {
       handleClose()
@@ -668,7 +666,6 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
       setDraft(draftForDetectedPiece(next.detectedCategory, next.detectedName))
       setErrors({})
       setImageError(null)
-      setAiApplied(false)
       runAiAnalysis(next.blob, next.detectedCategory, next.detectedName)
     }
 
@@ -914,28 +911,6 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
                   </div>
                 </>
               )}
-            </div>
-          )}
-
-          {/* AI auto-fill banner */}
-          {aiApplied && (
-            <div className="mt-3 flex items-start gap-2.5 px-3 py-2.5 rounded-2xl bg-text-primary/8 border border-text-primary/15">
-              <HangerIcon size={13} className="text-butter-yellow mt-0.5 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-butter-yellow">Auto-filled from your photo</p>
-                <p className="text-2xs text-text-muted mt-0.5">
-                  {editItem
-                    ? (lowConfidenceFields.length ? 'Highlighted fields need your confirmation. You can still save as-is.' : 'Review and adjust any fields before saving.')
-                    : 'Colour, fit, season and other details are saved automatically.'}
-                </p>
-              </div>
-              <button
-                onClick={() => setAiApplied(false)}
-                className="text-text-muted hover:text-text-primary transition-colors flex-shrink-0 mt-0.5"
-                aria-label="Dismiss"
-              >
-                <X size={12} />
-              </button>
             </div>
           )}
 
