@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { ArrowDown, ArrowRight, Camera, ShoppingBag, Sparkles, type LucideIcon } from 'lucide-react'
 import { clsx } from 'clsx'
 import { PIECES } from './landingData'
+import { CursorBlob } from './CursorBlob'
 import { ArcText, Hint, OvalTag } from './ornaments'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 
@@ -172,6 +173,7 @@ export function LandingHero({ onCTA }: { onCTA: () => void }) {
     <section id="top" ref={sectionRef} className="relative scroll-mt-20 overflow-hidden bg-warm-cream">
       {/* A pastel glow that trails the cursor */}
       <div aria-hidden="true" className="hero-linen pointer-events-none absolute inset-0" />
+      <CursorBlob areaRef={sectionRef} />
       <SwingTag />
 
       <div className="relative mx-auto min-h-[100dvh] max-w-[1440px] px-4 pb-10 pt-28 sm:px-8 lg:pt-24">
