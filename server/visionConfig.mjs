@@ -3,7 +3,7 @@ export const VISION_MODEL_DEFAULT = 'qwen/qwen3.8-27b'
 export const CATEGORY_VALUES = ['tops', 'bottoms', 'dresses', 'outerwear', 'shoes', 'accessories']
 
 export const SUBCATEGORY_VALUES = {
-  tops: ['t-shirt', 'shirt', 'polo', 'blouse', 'tank', 'other'],
+  tops: ['t-shirt', 'crop top', 'shirt', 'polo', 'blouse', 'tank', 'other'],
   bottoms: ['jeans', 'trousers', 'shorts', 'skirt', 'leggings', 'joggers', 'other'],
   dresses: ['mini dress', 'midi dress', 'maxi dress', 'wrap dress', 'shirt dress', 'slip dress', 'other'],
   outerwear: ['sweater', 'knit top', 'turtleneck', 'sweatshirt', 'hoodie', 'cardigan', 'coat', 'jacket', 'blazer', 'raincoat', 'puffer', 'parka', 'trench coat', 'other'],
@@ -30,6 +30,8 @@ Classification rules:
 ${Object.entries(SUBCATEGORY_VALUES).map(([category, values]) => `- ${category}: ${values.join(', ')}.`).join('\n')}
 - neckline_closure must be one of: ${NECKLINE_CLOSURE_VALUES.join(', ')}, null.
 - construction must be one of: ${CONSTRUCTION_VALUES.join(', ')}, null.
+- For tops, use subcategory "crop top" when the garment has a visibly short/cropped body length that ends around the natural waist or above. Use visible hem length, not how much skin happens to show because of a pose or camera crop; if the hem is not visible, do not guess "crop top".
+- This applies across top styles: a cropped t-shirt is a crop top, as is a cropped one-shoulder or other short-length top. Keep neckline, sleeve, fabric, and design details in the item name where visible.
 - quarter-zip knit = subcategory sweater and neckline_closure quarter-zip.
 - hooded fleece = subcategory hoodie.
 - Woolens is the user-facing name for the internal outerwear category. Classify sweaters, knitted tops, all turtlenecks, sweatshirts, hoodies, cardigans, jackets, blazers, and coats as outerwear/Woolens, even when lightweight.
@@ -40,7 +42,7 @@ ${Object.entries(SUBCATEGORY_VALUES).map(([category, values]) => `- ${category}:
 - Preserve the existing fields in the output. primaryColor must be exactly one of: ${PRIMARY_COLOR_VALUES.join(', ')}.
 - pattern must be exactly one of: ${PATTERN_VALUES.join(', ')}. fit must be one of ${FIT_VALUES.join(', ')}, null. formality must be one of ${FORMALITY_VALUES.join(', ')}, null. seasons may contain ${SEASON_VALUES.join(', ')}. occasions may contain ${OCCASION_VALUES.join(', ')} (choose 1-4).
 - name is the specific, user-facing item label, not just the broad category. Never use a generic name such as "Top", "Bottom", "Pants", "Skirt", "Dress", or "Shoes" by itself. Include the visible garment subtype and the strongest visible details (colour, pattern, silhouette/length, neckline/closure, or material) without guessing hidden details. Keep it concise, usually 3-7 words. Examples: "Blue Striped Linen Button-Up Shirt", "Dark Blue Denim Mini Skirt", "Black Straight-Leg Trousers", "Cream Cable-Knit Turtleneck", "Burgundy Pleated Midi Dress", "White Leather Low-Top Sneakers".
-- Choose the most specific valid subcategory from the image, and keep category broad only for the schema. For example, a skirt is category bottoms + subcategory skirt; jeans are bottoms + jeans; a shirt is tops + shirt; a sweater is outerwear/Woolens + sweater. Do not substitute the broad category for the name or subcategory.
+- Choose the most specific valid subcategory from the image, and keep category broad only for the schema. For example, a skirt is category bottoms + subcategory skirt; jeans are bottoms + jeans; a visibly short-length top is tops + crop top; a standard shirt is tops + shirt; a sweater is outerwear/Woolens + sweater. Do not substitute the broad category for the name or subcategory.
 
 Example output (literal JSON; every key is required):
 {"name":"Cream Quarter-Zip Sweater","category":"outerwear","subcategory":"sweater","neckline_closure":"quarter-zip","construction":"knit","primaryColor":"Cream","secondaryColors":[],"material":"Wool blend","pattern":"solid","fit":"regular","formality":"casual","seasons":["autumn","winter"],"occasions":["casual","weekend"],"confidence":{"category":0.96,"subcategory":0.94,"neckline_closure":0.98,"color":0.91,"material":0.72,"construction":0.95}}`
