@@ -3,7 +3,6 @@ import { ArrowRight, Camera, ShoppingBag, Sparkles, type LucideIcon } from 'luci
 import { clsx } from 'clsx'
 import { PIECES } from './landingData'
 import { usePointer } from './cursor'
-import { CursorBlob } from './CursorBlob'
 import { ArcText, Hint, OvalTag } from './ornaments'
 
 const RAIL = PIECES.slice(0, 5)
@@ -148,9 +147,6 @@ export function LandingHero({ onCTA }: { onCTA: () => void }) {
 
   return (
     <section id="top" ref={sectionRef} className="relative scroll-mt-20 overflow-hidden bg-warm-cream">
-      {/* A pastel glow that trails the cursor */}
-      <CursorBlob areaRef={sectionRef} />
-
       <div className="relative mx-auto min-h-[100dvh] max-w-[1440px] px-4 pb-10 pt-28 sm:px-8 lg:pt-24">
         {/* Masthead, kept clear so it always reads cleanly. */}
         <div className="reveal relative font-syne text-[clamp(1.8rem,7.9vw,8rem)] leading-[0.88] tracking-[-0.045em] text-text-primary">
