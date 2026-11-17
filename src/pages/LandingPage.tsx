@@ -6,11 +6,7 @@ import { HangerIcon } from '@/components/ui/HangerIcon'
 import { LandingNav, LANDING_SECTIONS } from '@/components/landing/LandingNav'
 import { LandingHero } from '@/components/landing/LandingHero'
 import { FeatureWalkthrough } from '@/components/landing/FeatureWalkthrough'
-import { LaundryDay } from '@/components/landing/LaundryDay'
-import { EverythingElse } from '@/components/landing/EverythingElse'
-import { ClosetDoorsCTA } from '@/components/landing/ClosetDoorsCTA'
 import { ClosetRail } from '@/components/landing/ClosetRail'
-import { Checker } from '@/components/landing/ornaments'
 import { authNavItems, publicNavItems } from '@/components/layout/Navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { useUserStore } from '@/store/userStore'
@@ -82,28 +78,7 @@ export function LandingPage() {
         <LandingHero onCTA={handleCTA} />
         <FeatureWalkthrough />
         <ClosetRail />
-        <LaundryDay />
-        <EverythingElse />
-        <ClosetDoorsCTA onCTA={handleCTA} />
       </main>
-
-      <Checker />
-      <footer className="px-4 py-10 sm:px-6 lg:px-8">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 md:flex-row">
-          <span className="flex items-center gap-2 font-brand text-lg text-butter-yellow">
-            <HangerIcon size={20} />
-            Kloset
-          </span>
-          <nav aria-label="Footer" className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-text-muted">
-            {LANDING_SECTIONS.map((s) => (
-              <a key={s.id} href={`#${s.id}`} className="transition-colors hover:text-text-primary">{s.label}</a>
-            ))}
-            <NavLink to="/privacy" className="transition-colors hover:text-text-primary">Privacy</NavLink>
-            {!user && <NavLink to="/login" className="transition-colors hover:text-text-primary">Sign in</NavLink>}
-          </nav>
-          <p className="text-xs text-text-muted">&copy; {new Date().getFullYear()} Kloset. All rights reserved.</p>
-        </div>
-      </footer>
 
       {/* ── Sidebar menu ──────────────────────────────────────────────────── */}
       <div

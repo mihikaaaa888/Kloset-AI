@@ -7,8 +7,6 @@ import { HangerIcon } from '@/components/ui/HangerIcon'
 export const LANDING_SECTIONS = [
   { id: 'features', label: 'How it works' },
   { id: 'rail', label: 'Every piece' },
-  { id: 'laundry', label: 'Laundry day' },
-  { id: 'more', label: 'Extras' },
 ] as const
 
 interface LandingNavProps {
@@ -28,7 +26,7 @@ export function LandingNav({ signedIn, onCTA, onOpenMenu, menuOpen }: LandingNav
   useEffect(() => {
     // Pinned panels stay "in view" under the one covering them, so the active
     // section is the last one (in page order) crossing the middle band.
-    const watched = ['top', 'features', 'rail', 'laundry', 'more', 'join']
+    const watched = ['top', 'features', 'rail']
     const inBand = new Set<string>()
     const observer = new IntersectionObserver(
       (entries) => {

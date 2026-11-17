@@ -291,7 +291,7 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
             <div className="mt-5 flex items-center justify-between gap-3 border-t border-text-primary/10 pt-3">
               <span className="text-[11px] text-text-muted">Rate this outfit</span>
               <div className="flex gap-2">
-                <button type="button" aria-label="This outfit and styling tip are helpful" aria-pressed={dailyRating === 'like'} onClick={() => rateDailyOutfit('like')} className={`rounded-full p-2 transition ${dailyRating === 'like' || tipRating === 'helpful' ? 'bg-[#355E3B]/10 text-[#355E3B]' : 'text-text-muted hover:bg-text-primary/5'}`}><ThumbsUp size={15} /></button>
+                <button type="button" aria-label="This outfit and styling tip are helpful" aria-pressed={dailyRating === 'like'} onClick={() => rateDailyOutfit('like')} className={`rounded-full p-2 transition ${dailyRating === 'like' || tipRating === 'helpful' ? 'bg-[#355E3B] text-white' : 'text-text-muted hover:bg-text-primary/5'}`}><ThumbsUp size={15} /></button>
                 <button type="button" aria-label="This outfit and styling tip are not helpful" aria-pressed={dailyRating === 'dislike'} onClick={() => rateDailyOutfit('dislike')} className={`rounded-full p-2 transition ${dailyRating === 'dislike' || tipRating === 'not-helpful' ? 'bg-text-primary/10 text-text-primary' : 'text-text-muted hover:bg-text-primary/5'}`}><ThumbsDown size={15} /></button>
               </div>
             </div>

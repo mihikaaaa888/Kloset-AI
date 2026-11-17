@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Upload, ImagePlus, X, ChevronRight, SkipForward, Link, Search, ChevronLeft, ChevronRight as ChevronRightIcon } from 'lucide-react'
+import { Upload, ImagePlus, X, ChevronRight, SkipForward, Link, Search } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
@@ -7,7 +7,6 @@ import { TextInput } from '@/components/ui/TextInput'
 import { SelectChip } from '@/components/ui/SelectChip'
 import { ColourSwatch } from '@/components/ui/ColourSwatch'
 import { COLOUR_PALETTE } from '@/lib/colourUtils'
-import { apiFetch, apiUrl } from '@/lib/apiUrl'
 import {
   saveImage,
   getImage,
@@ -17,10 +16,11 @@ import {
 } from '@/lib/imageStorage'
 import { getPhotoUrl } from '@/lib/wardrobeService'
 import { analyzeImage, analyzeImageFromUrl, detectOutfitPieces } from '@/lib/analyzeImage'
+import { cleanProductTitle, searchWebShop } from '@/lib/webShopService'
 import { cropPhotoToBounds, parseOutfitPhoto } from '@/lib/fashionParsing'
 import { deleteWithUndo, finalizeScope } from '@/store/undoStore'
 import type { ClothingAnalysis } from '@/lib/analyzeImage'
-import type { ClothingItem, ClothingCategory, Pattern, Season, Occasion } from '@/types'
+import type { ClothingItem, ClothingCategory, Pattern, Season, Occasion, WebShopResult } from '@/types'
 
 // ─── Analysis helpers ─────────────────────────────────────────────────────────
 
@@ -276,18 +276,23 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
         let pieces: Array<{ blob: Blob; category?: ClothingCategory; name?: string }> = parsed.garments.length > 0
           ? parsed.garments
           : [{ blob: parsed.sourceFallback, category: undefined, name: undefined }]
-        if (!parsed.segmentationAvailable || parsed.garments.length === 0) {
+        // The on-device model can return just one class for a layered outfit.
+        // Ask vision to find separate pieces when local detection found fewer
+        // than two garments, and prefer its crops only when it found more.
+        if (parsed.garments.length < 2) {
           setImageProcessingStep('Finding separate clothing pieces…')
           try {
             const detected = await detectOutfitPieces(compressed)
-            const crops = await Promise.all(detected.map(async (piece) => ({
-              blob: await cropPhotoToBounds(compressed, piece.box),
-              category: VALID_CATEGORIES.has(piece.category) ? piece.category as ClothingCategory : undefined,
-              name: piece.name,
-            })))
-            if (crops.length) pieces = crops
+            if (detected.length > parsed.garments.length) {
+              const crops = await Promise.all(detected.map(async (piece) => ({
+                blob: await cropPhotoToBounds(compressed, piece.box),
+                category: VALID_CATEGORIES.has(piece.category) ? piece.category as ClothingCategory : undefined,
+                name: piece.name,
+              })))
+              if (crops.length) pieces = crops
+            }
           } catch (error) {
-            console.warn('[wardrobe] cloud garment detection fallback failed', error)
+            console.warn('[wardrobe] cloud garment detection failed; keeping on-device results', error)
           }
         }
         if (editItem && pieces.length > 1) {
@@ -1148,43 +1153,40 @@ function SectionLabel({ children, error, review }: { children: React.ReactNode; 
   )
 }
 
-// ─── Image Search Browser ──────────────────────────────────────────────────────
-
-interface PexelsPhoto {
-  id: number
-  url: string
-  thumbUrl: string
-  alt: string
-  photographer: string
-}
+// ─── Product Search Browser ────────────────────────────────────────────────────
 
 const BROWSE_ITEM_QUERIES = [
-  ['Tops', 'single top shirt or blouse isolated product photo'],
-  ['Bottoms', 'single pair of trousers jeans or skirt isolated product photo'],
-  ['Dresses', 'single dress isolated product photo'],
-  ['Woolens', 'single sweater cardigan jacket or coat isolated product photo'],
-  ['Shoes', 'single pair of shoes isolated product photo'],
-  ['Accessories', 'single bag or accessory isolated product photo'],
+  ['Tops', 'shirt blouse t-shirt'],
+  ['Bottoms', 'trousers jeans skirt'],
+  ['Dresses', 'dress'],
+  ['Woolens', 'sweater cardigan jacket coat'],
+  ['Shoes', 'shoes'],
+  ['Accessories', 'bag jewellery accessory'],
 ] as const
 
 function buildSingleItemQuery(category?: string, subcategory?: string) {
-  if (!category && !subcategory) return ''
-  const item = subcategory || (category === 'tops' ? 'top shirt or blouse' : category === 'bottoms' ? 'trousers jeans or skirt' : category === 'dresses' ? 'dress' : category === 'outerwear' ? 'jacket coat or blazer' : category === 'shoes' ? 'pair of shoes' : 'bag or accessory')
-  return `single ${item} isolated product photo`
+  if (subcategory) return subcategory
+  if (category === 'tops') return 'shirt blouse t-shirt'
+  if (category === 'bottoms') return 'trousers jeans skirt'
+  if (category === 'dresses') return 'dress'
+  if (category === 'outerwear') return 'jacket coat cardigan'
+  if (category === 'shoes') return 'shoes'
+  if (category === 'accessories') return 'bag jewellery accessory'
+  return 'clothing shoes bags accessories'
 }
 
-function isolatedPhotoQuery(input: string, category?: ClothingCategory | '', subcategory?: string) {
+function productSearchQuery(input: string, category?: ClothingCategory | '', subcategory?: string) {
   const trimmed = input.trim()
   if (!trimmed) return ''
-  const categoryHint = subcategory || (category === 'tops' ? 'top shirt blouse or sweater'
+  const categoryHint = subcategory || (category === 'tops' ? 'tops shirt blouse or sweater'
     : category === 'bottoms' ? 'trousers jeans or skirt'
       : category === 'dresses' ? 'dress'
         : category === 'outerwear' ? 'jacket coat cardigan or sweater'
           : category === 'shoes' ? 'shoes'
             : category === 'accessories' ? 'bag jewellery or accessory'
               : 'clothing apparel shoes bags or jewellery')
-  const base = /^single\b/i.test(trimmed) ? trimmed : `single ${trimmed}`
-  return `${base} ${categoryHint} isolated fashion product photo, clothing and accessories only, no perfume, cosmetics, furniture, or home decor, no person, no outfit`
+  const base = trimmed.replace(/^single\s+/i, '').replace(/\s+isolated product photo$/i, '')
+  return `${base} ${categoryHint} single fashion item apparel product for sale`
 }
 
 function ImageSearchBrowser({
@@ -1199,46 +1201,40 @@ function ImageSearchBrowser({
   onSelect: (url: string) => void
 }) {
   const [query, setQuery] = useState(defaultQuery)
-  const [photos, setPhotos] = useState<PexelsPhoto[]>([])
+  const [products, setProducts] = useState<WebShopResult[]>([])
   const [loading, setLoading] = useState(false)
-  const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(0)
   const [noKey, setNoKey] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const search = useCallback(async (q: string, p = 1) => {
+  const search = useCallback(async (q: string) => {
     if (!q.trim()) return
     setLoading(true)
     setError(null)
     try {
-      const res = await apiFetch(apiUrl(`/api/search-images?q=${encodeURIComponent(q)}&page=${p}`))
-      const data = await res.json()
-      if (data.noKey) { setNoKey(true); return }
-      setPhotos(data.photos ?? [])
-      setTotalPages(data.totalPages ?? 0)
-      setPage(p)
+      const data = await searchWebShop(q)
+      if (data.noKey) { setNoKey(true); setProducts([]); return }
+      setNoKey(false)
+      if (data.error) throw new Error(data.error)
+      setProducts((data.results ?? []).filter((product) => Boolean(product.imageUrl)))
     } catch {
-      setError('Could not load images — make sure the API server is running.')
+      setError('Could not load product results. Please try again.')
     } finally {
       setLoading(false)
     }
   }, [])
 
+  useEffect(() => {
+    setQuery(defaultQuery)
+    void search(productSearchQuery(defaultQuery, category, subcategory))
+  }, [defaultQuery, category, subcategory, search])
+
   if (noKey) {
     return (
       <div className="rounded-2xl border border-text-primary/15 bg-text-primary/3 p-5 text-center space-y-2">
-        <p className="text-sm font-medium text-text-primary">Image search not set up</p>
+        <p className="text-sm font-medium text-text-primary">Product search is unavailable</p>
         <p className="text-xs text-text-muted leading-relaxed">
-          Add a free Pexels API key to <span className="font-mono bg-text-primary/8 px-1 rounded">PEXELS_API_KEY</span> in your <span className="font-mono bg-text-primary/8 px-1 rounded">.env</span> file, then restart the server.
+          Product browsing is not configured yet. Please try again later.
         </p>
-        <a
-          href="https://www.pexels.com/api/"
-          target="_blank"
-          rel="noreferrer"
-          className="inline-block text-xs text-butter-yellow underline underline-offset-2 mt-1"
-        >
-          Get a free key at pexels.com/api →
-        </a>
       </div>
     )
   }
@@ -1246,10 +1242,10 @@ function ImageSearchBrowser({
   return (
     <div className="space-y-3">
       <div>
-        <p className="mb-2 text-xs text-text-muted">Search for one item to see isolated product photos.</p>
+        <p className="mb-2 text-xs text-text-muted">Browse single clothing and accessory products from retailers.</p>
         <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Browse item categories">
           {BROWSE_ITEM_QUERIES.map(([label, itemQuery]) => (
-            <button key={label} type="button" onClick={() => { setQuery(itemQuery); search(itemQuery, 1) }} className="shrink-0 rounded-full border border-text-primary/15 px-3 py-1.5 text-xs text-text-muted transition-colors hover:border-text-primary/35 hover:text-text-primary">{label}</button>
+            <button key={label} type="button" onClick={() => { setQuery(itemQuery); search(productSearchQuery(itemQuery, category, subcategory)) }} className="shrink-0 rounded-full border border-text-primary/15 px-3 py-1.5 text-xs text-text-muted transition-colors hover:border-text-primary/35 hover:text-text-primary">{label}</button>
           ))}
         </div>
       </div>
@@ -1261,14 +1257,14 @@ function ImageSearchBrowser({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') search(isolatedPhotoQuery(query, category, subcategory), 1) }}
+            onKeyDown={(e) => { if (e.key === 'Enter') search(productSearchQuery(query, category, subcategory)) }}
             placeholder="Search one item, e.g. pink cardigan…"
             className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-text-primary/20 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-primary/50 bg-surface"
           />
         </div>
         <button
           type="button"
-          onClick={() => search(isolatedPhotoQuery(query, category, subcategory), 1)}
+          onClick={() => search(productSearchQuery(query, category, subcategory))}
           disabled={loading}
           className="px-4 py-2.5 rounded-xl bg-dark-purple text-butter-yellow text-sm font-medium hover:bg-deep-purple transition-colors disabled:opacity-40"
         >
@@ -1278,7 +1274,7 @@ function ImageSearchBrowser({
         </button>
       </div>
 
-      {/* Results grid */}
+      {/* Retailer product results */}
       {error ? (
         <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-xl">{error}</p>
       ) : loading ? (
@@ -1287,64 +1283,27 @@ function ImageSearchBrowser({
             <div key={i} className="aspect-[3/4] rounded-xl bg-text-primary/8 animate-pulse" />
           ))}
         </div>
-      ) : photos.length === 0 ? (
-        <p className="text-sm text-text-muted text-center py-6">{query ? `No single-item photos found for "${query}" — try another item.` : 'Choose a category or search for one item to browse product photos.'}</p>
+      ) : products.length === 0 ? (
+        <p className="text-sm text-text-muted text-center py-6">{query ? `No product images found for "${query}" — try a different item or brand.` : 'Choose a category or search for an item or brand.'}</p>
       ) : (
         <div className="grid grid-cols-3 gap-2">
-          {photos.map((photo) => (
-            <button
-              key={photo.id}
-              type="button"
-              onClick={() => onSelect(photo.url)}
-              className="relative aspect-[3/4] rounded-xl overflow-hidden hover:scale-[0.97] hover:shadow-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow"
-              title={photo.alt}
-            >
-              <img
-                src={photo.thumbUrl}
-                alt={photo.alt}
-                className="w-full h-full object-cover"
-                loading="lazy"
-              />
-            </button>
+          {products.map((product) => (
+            <article key={product.id} className="min-w-0 overflow-hidden rounded-xl border border-text-primary/10 bg-surface">
+              <button
+                type="button"
+                onClick={() => product.imageUrl && onSelect(product.imageUrl)}
+                className="block aspect-[3/4] w-full overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-butter-yellow"
+                title={`Use ${cleanProductTitle(product.title)} image`}
+              >
+                <img src={product.imageUrl!} alt={cleanProductTitle(product.title)} className="h-full w-full object-cover" loading="lazy" />
+              </button>
+              <div className="space-y-1 p-2">
+                <p className="truncate text-xs font-medium text-text-primary" title={cleanProductTitle(product.title)}>{cleanProductTitle(product.title)}</p>
+                <a href={product.url} target="_blank" rel="noreferrer" className="block truncate text-[10px] text-text-muted underline underline-offset-2">{product.retailer} · View product</a>
+              </div>
+            </article>
           ))}
         </div>
-      )}
-
-      {/* Pagination */}
-      {totalPages > 1 && !loading && (
-        <div className="flex items-center justify-between pt-1">
-          <button
-            type="button"
-            onClick={() => search(query, page - 1)}
-            disabled={page <= 1}
-            className="flex items-center gap-1 text-xs text-text-muted hover:text-text-primary disabled:opacity-30 transition-colors"
-          >
-            <ChevronLeft size={13} />
-            Prev
-          </button>
-          <span className="text-xs text-text-muted">
-            {page} / {totalPages}
-          </span>
-          <button
-            type="button"
-            onClick={() => search(query, page + 1)}
-            disabled={page >= totalPages}
-            className="flex items-center gap-1 text-xs text-text-muted hover:text-text-primary disabled:opacity-30 transition-colors"
-          >
-            Next
-            <ChevronRightIcon size={13} />
-          </button>
-        </div>
-      )}
-
-      {/* Pexels attribution */}
-      {photos.length > 0 && (
-        <p className="text-2xs text-text-muted text-center">
-          Photos provided by{' '}
-          <a href="https://www.pexels.com" target="_blank" rel="noreferrer" className="underline underline-offset-2">
-            Pexels
-          </a>
-        </p>
       )}
     </div>
   )
