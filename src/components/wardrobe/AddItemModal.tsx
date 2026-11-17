@@ -269,7 +269,6 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
 
     try {
       const processed: QueuedImage[] = []
-      let scannerFallback = false
       for (const file of valid) {
         setImageProcessingStep('Loading the on-device clothing scanner…')
         const compressed = await compressImage(file)
@@ -278,7 +277,6 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
           ? parsed.garments
           : [{ blob: parsed.sourceFallback, category: undefined, name: undefined }]
         if (!parsed.segmentationAvailable || parsed.garments.length === 0) {
-          scannerFallback = true
           setImageProcessingStep('Finding separate clothing pieces…')
           try {
             const detected = await detectOutfitPieces(compressed)
@@ -326,9 +324,7 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
       setUploadBatch(processed.length > 1 ? processed : [])
       setBatchIdx(0)
 
-      if (scannerFallback && processed.length === 1) {
-        setImageError('We couldn’t separate multiple pieces from this photo. The image is ready; you can still add the item and tag it manually.')
-      } else if (errs.length > 0) {
+      if (errs.length > 0) {
         setImageError(`${errs.length} file(s) skipped — unsupported format or too large.`)
       }
 
