@@ -22,7 +22,7 @@ function swing(e: ReactPointerEvent<HTMLElement>) {
 /** Scroll down, the rail slides sideways: every piece in one closet. */
 export function ClosetRail() {
   return (
-    <section id="rail" className="pan-section relative bg-tile" aria-label="Every piece on one rail">
+    <div className="pan-section relative bg-tile">
       <div className="pan-sticky flex flex-col justify-center py-20 lg:py-0">
         {/* Giant category words drift behind at half speed. */}
         <div
@@ -52,6 +52,6 @@ export function ClosetRail() {
         </div>
 
       </div>
-    </section>
+    </div>
   )
 }
