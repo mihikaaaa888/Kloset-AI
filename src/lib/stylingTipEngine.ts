@@ -8,7 +8,13 @@ export interface StylingTip { id: string; text: string; category: string; format
 interface TipLogEntry { tipId: string; action: StylingTipAction; createdAt: string; category: string; format: string; contextKey?: string }
 
 const tips = tipData.tips as StylingTip[]
-const neutralColours = new Set(['black', 'white', 'cream', 'ivory', 'grey', 'gray', 'beige', 'brown', 'camel', 'tan', 'navy', 'denim', 'silver'])
+const neutralColours = new Set([
+  'black', 'white', 'off white', 'ivory', 'alabaster', 'snow', 'ultra pure white', 'white orchid', 'plantation white',
+  'eggshell', 'cream', 'champagne', 'bone', 'grey', 'gray', 'silver', 'slate', 'charcoal', 'greige', 'gray cliffs',
+  'far horizon', 'drift of mist', 'beige', 'warm beige', 'tan', 'sand', 'nude brown', 'pale olive', 'ivory tusk',
+  'toasted meringue', 'mushroom', 'fawn', 'taupe', 'chocolate', 'espresso', 'iron ore', 'virtual taupe', 'sage',
+  'evergreen', 'slate blue', 'mauve finery', 'cinnamon slate', 'camel', 'brown',
+])
 const boldHints = recommendationGuide.outfitRules.boldColourHints.map((value) => value.toLowerCase())
 
 function logKey(userId: string) { return `kloset:styling-tip-log:v1:${userId}` }
@@ -31,7 +37,11 @@ function tipItemsMatch(tip: StylingTip, outfit: ClothingItem[]) {
   const tags = outfit.flatMap((item) => [item.name, item.category, item.subcategory ?? ''])
   return matchingTags(tip.appliesTo, tags)
 }
-function isBold(item: ClothingItem) { return item.colour.some((colour) => boldHints.some((hint) => colour.toLowerCase().includes(hint))) }
+function isNeutral(colour: string) {
+  const normalized = normalize(colour)
+  return [...neutralColours].some((neutral) => normalized === neutral || normalized.includes(neutral))
+}
+function isBold(item: ClothingItem) { return item.colour.some((colour) => !isNeutral(colour) && boldHints.some((hint) => colour.toLowerCase().includes(hint))) }
 function isPatterned(item: ClothingItem) { return item.pattern !== 'solid' && item.pattern !== 'other' }
 
 function triggerMatches(tip: StylingTip, outfit: ClothingItem[], wardrobe: ClothingItem[], weather: WeatherCondition | null, occasions: string[], createdAt?: string): boolean {
@@ -48,12 +58,12 @@ function triggerMatches(tip: StylingTip, outfit: ClothingItem[], wardrobe: Cloth
   if (trigger === 'T_WEATHER_COLD') return weather === 'cold' || weather === 'cool'
   if (trigger === 'T_OUTFIT_TWO_BOLD') return outfit.filter(isBold).length >= 2
   if (trigger === 'T_OUTFIT_TWO_PATTERNS') return outfit.filter(isPatterned).length >= 2
-  if (trigger === 'T_OUTFIT_ALL_NEUTRAL') return outfit.length > 0 && outfit.every((item) => item.colour.every((colour) => neutralColours.has(colour.toLowerCase())))
+  if (trigger === 'T_OUTFIT_ALL_NEUTRAL') return outfit.length > 0 && outfit.every((item) => item.colour.every(isNeutral))
   if (trigger === 'T_ITEM_UNWORN') return outfit.some((item) => item.timesWorn === 0)
   if (trigger === 'T_WARDROBE_NO_FORMAL') return !wardrobe.some((item) => /formal|3 formal/i.test(item.formality ?? ''))
   if (trigger === 'T_SHOPPING') return ['bottoms', 'shoes', 'accessories'].some((category) => wardrobe.filter((item) => item.category === category).length <= 1)
   if (trigger === 'T_WARDROBE_FEW_BOTTOMS') return wardrobe.filter((item) => item.category === 'bottoms').length < Math.max(2, wardrobe.filter((item) => item.category === 'tops').length / 3)
-  if (trigger === 'T_WARDROBE_FEW_NEUTRALS') return wardrobe.length > 0 && wardrobe.filter((item) => item.colour.every((colour) => neutralColours.has(colour.toLowerCase()))).length / wardrobe.length < 0.35
+  if (trigger === 'T_WARDROBE_FEW_NEUTRALS') return wardrobe.length > 0 && wardrobe.filter((item) => item.colour.every(isNeutral)).length / wardrobe.length < 0.35
   if (trigger === 'T_WARDROBE_SMALL') return wardrobe.length < 8
   if (trigger === 'T_NO_ACCESSORY') return !wardrobe.some((item) => item.category === 'accessories')
   if (trigger === 'T_FIRST_WEEK') return !!createdAt && (Date.now() - new Date(createdAt).getTime()) / 86_400_000 <= 7

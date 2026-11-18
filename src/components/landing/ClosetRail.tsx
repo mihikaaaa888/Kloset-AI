@@ -1,5 +1,4 @@
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { Hint } from './ornaments'
 
 const GARMENTS = [
   'white-tee-butter-skirt', 'burgundy-rib-knit-top', 'red-asymmetric-skirt', 'cream-faux-fur-coat', 'pale-blue-wrap-skirt',
@@ -34,13 +33,12 @@ export function ClosetRail() {
         </div>
 
         <div className="relative mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
-          <Hint text="hover to swing them" rotate={-25} className="absolute -bottom-12 right-[18%] hidden sm:flex" />
           <h2 className="max-w-[18ch] font-display text-5xl font-medium uppercase leading-[0.95] tracking-tight text-text-primary sm:text-7xl">
             Every piece you own, <em className="normal-case italic text-butter-yellow">on one rail.</em>
           </h2>
         </div>
 
-        <div className="pan-track relative mt-12 w-max pl-4 pr-[12vw] sm:pl-6 lg:pl-[max(2rem,calc((100vw-80rem)/2+2rem))]">
+        <div className="pan-track relative mt-20 w-max pl-4 pr-[12vw] sm:mt-24 sm:pl-6 lg:pl-[max(2rem,calc((100vw-80rem)/2+2rem))]">
           <div className="absolute inset-x-0 top-1 h-2.5 rounded-full shadow-[0_6px_10px_-4px_rgba(36,27,41,0.4)]" style={{ background: GOLD }} aria-hidden="true" />
           <ul className="flex items-start">
             {GARMENTS.map((src, i) => (
@@ -53,12 +51,6 @@ export function ClosetRail() {
           </ul>
         </div>
 
-        <div className="relative mx-auto mt-10 flex w-full max-w-7xl items-center gap-4 px-4 sm:px-6 lg:px-8">
-          <p className="text-sm text-text-muted">{GARMENTS.length} pieces, tagged and ready to style</p>
-          <span className="relative hidden h-px flex-1 bg-text-primary/15 lg:block" aria-hidden="true">
-            <span className="pan-progress absolute inset-0 bg-butter-yellow" />
-          </span>
-        </div>
       </div>
     </section>
   )

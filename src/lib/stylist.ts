@@ -113,8 +113,17 @@ export async function generateOutfit(
 // ─── Colour data ──────────────────────────────────────────────────────────────
 
 const NEUTRALS = new Set([
-  'Black', 'White', 'Cream', 'Beige', 'Charcoal', 'Grey', 'Camel', 'Tan', 'Silver',
+  'black', 'white', 'off white', 'ivory', 'alabaster', 'snow', 'ultra pure white', 'white orchid', 'plantation white',
+  'eggshell', 'cream', 'champagne', 'bone', 'grey', 'gray', 'silver', 'slate', 'charcoal', 'greige',
+  'gray cliffs', 'far horizon', 'drift of mist', 'beige', 'warm beige', 'tan', 'sand', 'nude brown', 'pale olive',
+  'ivory tusk', 'toasted meringue', 'mushroom', 'fawn', 'taupe', 'chocolate', 'espresso', 'iron ore',
+  'virtual taupe', 'sage', 'evergreen', 'slate blue', 'mauve finery', 'cinnamon slate', 'camel', 'brown',
 ])
+
+function isNeutralColour(colour: string) {
+  const normalized = colour.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  return [...NEUTRALS].some((neutral) => normalized === neutral || normalized.includes(neutral))
+}
 
 // ─── Weather → Season mapping ─────────────────────────────────────────────────
 
@@ -139,6 +148,21 @@ function isUnsuitableForBusinessMeeting(item: ClothingItem) {
   if (/\bshorts?\b/.test(details)) return true
   const isSkirt = /\bskirt\b/.test(details)
   return isSkirt && /\bmini\b|\bmicro\b|above[\s-]?knee|short skirt/.test(details)
+}
+
+function isStandaloneWoolen(item: ClothingItem) {
+  return /\b(sweater|knit top|knitted top|turtleneck|roll.?neck|high.?neck|sweatshirt|hoodie|vest|waistcoat)\b/i
+    .test(`${item.name} ${item.subcategory ?? ''} ${item.construction ?? ''}`)
+}
+
+function canBeCollaredLayer(item: ClothingItem) {
+  const details = `${item.name} ${item.subcategory ?? ''} ${item.neckline_closure ?? ''}`
+  if (/\b(t-?shirt|tee|crew.?neck)\b/i.test(details)) return false
+  return /\b(collared|polo|button.?up|shirt|blouse)\b/i.test(details)
+}
+
+function canBeVestCoverage(item: ClothingItem) {
+  return /\b(tank|camisole|cami)\b/i.test(`${item.name} ${item.subcategory ?? ''}`)
 }
 
 function isPrint(item: ClothingItem) {
@@ -219,7 +243,7 @@ function scoreItem(
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
-  const dressy = /formal|dress|evening|occasion|elegant|satin|silk|heel|blazer|tailored/.test(garmentDetails)
+  const dressy = /formal|dress|evening|occasion|elegant|satin|silk|heel|blazer|tailored|vest|waistcoat/.test(garmentDetails)
   const relaxed = /casual|relaxed|cozy|cosy|soft|knit|sweat|sneaker|loose|comfortable/.test(garmentDetails)
   if (['cold', 'cool'].includes(request.weather)) {
     if (item.category === 'outerwear') score += 10
@@ -229,6 +253,7 @@ function scoreItem(
   if (['date-night', 'formal', 'special-event'].includes(request.occasion)) {
     if (dressy) score += 5
     if (relaxed && !dressy) score -= 2
+    if (/\b(vest|waistcoat)\b/.test(garmentDetails) && profile?.genderStylePreference === 'feminine') score += 5
   } else if (['casual', 'weekend', 'travel'].includes(request.occasion)) {
     if (relaxed) score += 4
     if (dressy) score -= 2
@@ -513,8 +538,8 @@ function generateWhyItWorks(
   request: StyleRequest
 ): string {
   const allColours = [...new Set(items.flatMap((i) => i.colour))]
-  const neutralCount = allColours.filter((c) => NEUTRALS.has(c)).length
-  const accentColours = allColours.filter((c) => !NEUTRALS.has(c))
+  const neutralCount = allColours.filter(isNeutralColour).length
+  const accentColours = allColours.filter((c) => !isNeutralColour(c))
   const isAllNeutral = allColours.length > 0 && neutralCount === allColours.length
   const hasImage = items.some((i) => i.imageUrl)
 
@@ -563,12 +588,16 @@ function generateStylingTips(
 ): string[] {
   const tips: string[] = []
   const roles = items.map((i) => i.role)
+  const garmentDetails = items.map(({ item }) => `${item.name} ${item.subcategory ?? ''} ${item.construction ?? ''}`).join(' ').toLowerCase()
 
   if (roles.includes('top') && roles.includes('bottom')) {
     tips.push('Half-tuck the top for an easy waistline.')
   }
   if (roles.includes('outerwear')) {
     tips.push('Wear the outer layer open to show the look underneath.')
+  }
+  if (/\b(vest|waistcoat)\b/.test(garmentDetails)) {
+    tips.push('Style the vest as the main top; add only a fine tank for coverage, or a coat/blazer over it when it is cold.')
   }
   if (roles.includes('accessory')) {
     tips.push('Choose one statement accessory.')
@@ -648,7 +677,10 @@ function mockEngine(
     const roleMap: Record<string, OutfitItemResult['role']> = {
       tops: 'top', bottoms: 'bottom', dresses: 'dress', outerwear: 'outerwear', shoes: 'shoes', accessories: 'accessory',
     }
-    addItem(pinnedItem, roleMap[pinnedItem.category] ?? 'top')
+    const pinnedRole = pinnedItem.category === 'outerwear' && isStandaloneWoolen(pinnedItem)
+      ? 'top'
+      : roleMap[pinnedItem.category] ?? 'top'
+    addItem(pinnedItem, pinnedRole)
   }
 
   // 1. Try a dress first for certain occasions (skip if pinned item is a dress or top/bottom)
@@ -675,7 +707,24 @@ function mockEngine(
   const needsOuterwear = ['cold', 'cool', 'rainy'].includes(request.weather)
   if (needsOuterwear && pinnedItem?.category !== 'outerwear') {
     const outer = pickBest(wardrobe, 'outerwear', request, profile, selected, attempt, colourConfig, feedback)
-    if (outer) addItem(outer, 'outerwear')
+    if (outer) {
+      const existingTopIndex = resultItems.findIndex((result) => result.role === 'top')
+      const existingTop = existingTopIndex >= 0 ? resultItems[existingTopIndex].item : undefined
+      const isVest = /\b(vest|waistcoat)\b/i.test(`${outer.name} ${outer.subcategory ?? ''}`)
+      const canLayerTop = existingTop && (isVest ? canBeVestCoverage(existingTop) : canBeCollaredLayer(existingTop))
+
+      if (isStandaloneWoolen(outer) && existingTop && !canLayerTop && pinnedItem) {
+        // Keep the user's pinned starting item; don't add an incompatible inner layer.
+      } else if (isStandaloneWoolen(outer) && existingTop && !canLayerTop) {
+        selected.splice(selected.indexOf(existingTop), 1)
+        resultItems.splice(existingTopIndex, 1)
+        addItem(outer, 'top')
+      } else if (isStandaloneWoolen(outer) && !existingTop) {
+        addItem(outer, 'top')
+      } else {
+        addItem(outer, 'outerwear')
+      }
+    }
   }
 
   // 4. Shoes

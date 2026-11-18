@@ -75,7 +75,7 @@ export function LandingPage() {
       <LandingNav signedIn={!!user} onCTA={handleCTA} onOpenMenu={() => setMenuOpen(true)} menuOpen={menuOpen} />
 
       <main>
-        <LandingHero onCTA={handleCTA} />
+        <LandingHero />
         <FeatureWalkthrough />
         <ClosetRail />
       </main>

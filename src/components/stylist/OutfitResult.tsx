@@ -48,7 +48,7 @@ export function OutfitResult({
       suggestion.weather,
       profile,
       new Date(),
-      `stylist:${suggestion.occasion}`,
+      `stylist:${suggestion.occasion}:${outfitItemKey}`,
       [suggestion.occasion],
     ))
   }, [userId, outfitItemKey, wardrobe, suggestion.id, suggestion.weather, suggestion.occasion, profile])

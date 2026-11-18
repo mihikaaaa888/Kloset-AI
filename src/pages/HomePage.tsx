@@ -219,7 +219,8 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
   useEffect(() => {
     if (!recommendedItems.length) { setStylingTip(null); return }
     setTipRating(null)
-    setStylingTip(getDailyStylingTip(userId, recommendedItems, items, weather?.condition ?? null, profile, today))
+    const outfitKey = recommendedItems.map((item) => item.id).join('|')
+    setStylingTip(getDailyStylingTip(userId, recommendedItems, items, weather?.condition ?? null, profile, today, `daily:${outfitKey}`))
   }, [userId, recommendedItems.map((item) => item.id).join('|'), items, weather?.condition, profile, todayKey])
 
   useEffect(() => {

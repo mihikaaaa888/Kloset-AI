@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { ArrowDown, ArrowRight, Camera, ShoppingBag, Sparkles, type LucideIcon } from 'lucide-react'
+import { ArrowDown, Camera, ShoppingBag, Sparkles, type LucideIcon } from 'lucide-react'
 import { clsx } from 'clsx'
 import { PIECES } from './landingData'
 import { CursorBlob } from './CursorBlob'
-import { ArcText, Hint, OvalTag } from './ornaments'
+import { ArcText, Hint } from './ornaments'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 
 const RAIL = PIECES.slice(0, 5)
@@ -114,7 +114,7 @@ function SwingTag() {
   )
 }
 
-export function LandingHero({ onCTA }: { onCTA: () => void }) {
+export function LandingHero() {
   const [picked, setPicked] = useState<string | null>(null)
   const sectionRef = useRef<HTMLElement>(null)
   const pickedPiece = RAIL.find((p) => p.id === picked)
@@ -185,12 +185,8 @@ export function LandingHero({ onCTA }: { onCTA: () => void }) {
             <span className="block overflow-hidden pb-[0.08em]">
               <span className="line-rise block">Your wardrobe,</span>
             </span>
-            {/* The tag rides on the same line as "reimagined." so it reads as part of the title. */}
-            <span className="flex flex-wrap items-center gap-x-[0.3em] gap-y-2 pl-[0.04em] lg:pl-[0.9em]">
-              <span className="block overflow-hidden pb-[0.12em]">
-                <span className="line-rise block italic text-butter-yellow" style={{ ['--d' as string]: '140ms' }}>reimagined.</span>
-              </span>
-              <OvalTag className="line-fade rotate-[-6deg] !px-4 !py-1.5 !text-sm text-butter-yellow sm:!text-lg" style={{ ['--d' as string]: '700ms' }}>with Kloset</OvalTag>
+            <span className="block overflow-hidden pb-[0.12em] pl-[0.04em] lg:pl-[0.9em]">
+              <span className="line-rise block italic text-butter-yellow" style={{ ['--d' as string]: '140ms' }}>reimagined.</span>
             </span>
           </h1>
         </div>
@@ -241,15 +237,6 @@ export function LandingHero({ onCTA }: { onCTA: () => void }) {
               )}
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-4">
-              <button onClick={onCTA} className="btn-ticket group px-8 py-4">
-                Build my Kloset
-                <ArrowRight size={16} className="transition-transform duration-200 group-hover:translate-x-1" />
-              </button>
-              <a href="#features" className="rounded-full px-4 py-4 font-display text-xl italic text-text-primary underline decoration-text-primary/25 underline-offset-8 transition-colors hover:decoration-text-primary">
-                See how it works
-              </a>
-            </div>
           </div>
         </div>
       </div>
