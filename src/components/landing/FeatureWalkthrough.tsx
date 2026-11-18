@@ -442,9 +442,9 @@ export function FeatureWalkthrough() {
     <section id="features" className="relative scroll-mt-20" aria-label="How it works">
       {/* ── Desktop: one pinned stage, scroll steps through it ── */}
       <div className="relative hidden lg:block">
-        <div className="sticky top-0 flex h-[100dvh] flex-col overflow-hidden bg-tile px-8 pb-8 pt-24">
+        <div className="sticky top-0 isolate flex h-[100dvh] flex-col overflow-visible bg-tile px-8 pb-8 pt-24 after:pointer-events-none after:absolute after:inset-x-0 after:-bottom-[4vw] after:h-[4vw] after:bg-tile after:content-['']">
           {/* Giant word for the current step, behind everything. */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[24vw] text-center font-sans text-[27vw] font-extrabold lowercase leading-[0.78] tracking-[-0.06em] text-white" aria-hidden="true">
+          <div className="pointer-events-none absolute inset-x-0 bottom-[-2vw] h-[30vw] text-center font-sans text-[25vw] font-extrabold lowercase leading-[0.95] tracking-[-0.06em] text-white" aria-hidden="true">
             {STEPS.map((s, i) => (
               <span key={s.short} className={clsx('absolute inset-x-0 bottom-0 transition-[opacity,transform] duration-700', active === i ? 'opacity-100' : 'translate-y-8 opacity-0')}>
                 {s.short}
@@ -529,7 +529,7 @@ export function FeatureWalkthrough() {
                     aria-hidden={!on}
                     // Hidden panels must not take focus (React 18 types don't know `inert` yet).
                     {...({ inert: on ? undefined : '' } as Record<string, string | undefined>)}
-                    className={clsx('absolute inset-0 flex items-center justify-end transition-[opacity,transform] duration-500', on ? 'opacity-100' : 'pointer-events-none translate-x-6 opacity-0')}
+                    className={clsx('absolute inset-0 flex items-center justify-end transition-[opacity,transform] duration-500', on ? clsx('opacity-100', s.short === 'Plan' && 'translate-y-12') : 'pointer-events-none translate-x-6 opacity-0')}
                   >
                     <Panel demo={demo} />
                   </div>

@@ -22,11 +22,11 @@ function swing(e: ReactPointerEvent<HTMLElement>) {
 /** Scroll down, the rail slides sideways: every piece in one closet. */
 export function ClosetRail() {
   return (
-    <div className="pan-section relative bg-tile">
+    <div className="pan-section relative border-t border-text-primary/10 bg-surface">
       <div className="pan-sticky flex flex-col justify-center py-20 lg:py-0">
         {/* Giant category words drift behind at half speed. */}
         <div
-          className="pan-words pointer-events-none absolute left-0 top-[46%] flex w-max gap-[6vw] whitespace-nowrap pl-[6vw] font-sans text-[30vw] font-extrabold lowercase leading-[0.8] tracking-[-0.06em] text-white lg:text-[20vw]"
+          className="pan-words pointer-events-none absolute left-0 top-[46%] flex w-max gap-[6vw] whitespace-nowrap pl-[6vw] font-sans text-[30vw] font-extrabold lowercase leading-[0.8] tracking-[-0.06em] text-text-primary/[0.035] lg:text-[20vw]"
           aria-hidden="true"
         >
           {WORDS.map((w) => <span key={w}>{w}</span>)}
@@ -34,7 +34,7 @@ export function ClosetRail() {
 
         <div className="relative mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
           <h2 className="max-w-[18ch] font-display text-5xl font-medium uppercase leading-[0.95] tracking-tight text-text-primary sm:text-7xl">
-            Every piece you own, <em className="normal-case italic text-butter-yellow">in one place.</em>
+            Every piece you own, <em className="normal-case italic text-[#355E3B]">in one place.</em>
           </h2>
         </div>
 

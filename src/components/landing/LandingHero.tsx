@@ -3,7 +3,7 @@ import { ArrowDown, Sparkles } from 'lucide-react'
 import { clsx } from 'clsx'
 import { PIECES } from './landingData'
 import { CursorBlob } from './CursorBlob'
-import { ArcText, Hint } from './ornaments'
+import { ArcText } from './ornaments'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 
 const RAIL = PIECES.slice(0, 5)
@@ -188,7 +188,9 @@ export function LandingHero() {
         <div className="mt-12 grid items-start gap-12 lg:mt-6 lg:grid-cols-12 lg:gap-8">
           <div className="reveal lg:col-span-5 lg:pt-20" style={{ ['--reveal-delay' as string]: '140ms' }}>
             <p className="max-w-[34ch] text-lg leading-relaxed text-text-muted sm:text-xl">
-              Snap your clothes once. Kloset tags them, styles them with Kaia, and finds only what's missing.
+              Upload your clothes, get outfit recommendations and styling tips,
+              <br />
+              shop for what's missing
             </p>
 
           </div>
@@ -216,10 +218,7 @@ export function LandingHero() {
                     ))}
                   </ul>
                 </div>
-              ) : (
-                // Arrow points straight up at the garments.
-                <Hint text="brush the rail, or tap a piece" arrowFirst rotate={135} className="!text-[1.4rem] sm:!text-[1.7rem]" />
-              )}
+              ) : null}
             </div>
 
           </div>
