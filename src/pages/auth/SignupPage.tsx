@@ -35,7 +35,7 @@ export function SignupPage() {
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/wardrobe`,
+        emailRedirectTo: `${window.location.origin}/onboarding`,
       },
     })
 
@@ -61,7 +61,7 @@ export function SignupPage() {
       return
     }
 
-    console.log('[signup] confirmation email requested', { redirectTo: `${window.location.origin}/wardrobe` })
+    console.log('[signup] confirmation email requested', { redirectTo: `${window.location.origin}/onboarding` })
     setSuccess(true)
     setLoading(false)
   }

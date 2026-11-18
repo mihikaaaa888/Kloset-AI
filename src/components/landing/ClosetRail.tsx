@@ -34,7 +34,7 @@ export function ClosetRail() {
 
         <div className="relative mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
           <h2 className="max-w-[18ch] font-display text-5xl font-medium uppercase leading-[0.95] tracking-tight text-text-primary sm:text-7xl">
-            Every piece you own, <em className="normal-case italic text-butter-yellow">on one rail.</em>
+            Every piece you own, <em className="normal-case italic text-butter-yellow">in one place.</em>
           </h2>
         </div>
 

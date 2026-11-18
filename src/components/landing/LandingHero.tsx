@@ -178,7 +178,7 @@ export function LandingHero() {
             <span className="block overflow-hidden pb-[0.08em]">
               <span className="line-rise block">Your wardrobe,</span>
             </span>
-            <span className="block overflow-hidden pb-[0.12em] pl-[0.04em] lg:pl-[0.9em]">
+            <span className="block overflow-hidden pb-[0.12em]">
               <span className="line-rise block italic text-butter-yellow" style={{ ['--d' as string]: '140ms' }}>reimagined.</span>
             </span>
           </h1>

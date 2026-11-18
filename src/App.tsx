@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { useDataSync } from '@/hooks/useDataSync'
 import { useApplyTheme } from '@/hooks/useTheme'
 import { useOutfitStore } from '@/store/outfitStore'
+import { useUserStore } from '@/store/userStore'
 import { LandingPage } from '@/pages/LandingPage'
 import { PrivacyPolicyPage } from '@/pages/PrivacyPolicyPage'
 
@@ -62,9 +63,16 @@ function RequireAuth({ children }: { children: ReactNode }) {
 // Redirects already-authenticated users away from auth pages.
 function RedirectIfAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
+  const profile = useUserStore((s) => s.profile)
+  const loadedForUserId = useUserStore((s) => s.loadedForUserId)
 
   if (loading) return null
-  if (user) return <Navigate to="/home" replace />
+  if (user) {
+    // Wait for this account's profile sync before deciding whether onboarding
+    // is complete. New accounts should go straight to the setup questions.
+    if (loadedForUserId !== user.id) return <PageSpinner />
+    return <Navigate to={profile?.onboardingComplete ? '/wardrobe' : '/onboarding'} replace />
+  }
   return <>{children}</>
 }
 
