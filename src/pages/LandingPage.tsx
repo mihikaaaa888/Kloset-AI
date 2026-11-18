@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { clsx } from 'clsx'
-import { Heart, X } from 'lucide-react'
+import { ArrowRight, Heart, X } from 'lucide-react'
 import { LandingNav, LANDING_SECTIONS } from '@/components/landing/LandingNav'
 import { LandingHero } from '@/components/landing/LandingHero'
 import { FeatureWalkthrough } from '@/components/landing/FeatureWalkthrough'
@@ -77,6 +77,20 @@ export function LandingPage() {
         <LandingHero />
         <FeatureWalkthrough />
         <ClosetRail />
+        <section aria-labelledby="kaia-onboarding-title" className="border-t border-text-primary/10 bg-surface px-5 py-24 sm:px-8 sm:py-32 lg:py-40">
+          <div className="mx-auto flex max-w-5xl flex-col items-center gap-8 text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#355E3B]">Your Kloset, thoughtfully styled</p>
+            <h2 id="kaia-onboarding-title" className="max-w-3xl font-display text-4xl font-medium leading-tight text-text-primary sm:text-6xl">
+              Onboard your personal stylist
+            </h2>
+            <p className="max-w-2xl text-base leading-relaxed text-text-muted sm:text-lg">
+              Meet Kaia and get outfit ideas built around the pieces you already own.
+            </p>
+            <NavLink to="/home" className="inline-flex min-h-14 items-center justify-center gap-3 rounded-full bg-[#355E3B] px-8 py-4 text-sm font-semibold uppercase tracking-[0.16em] text-[#FFFDD0] transition-colors hover:bg-[#2B4E31] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#355E3B]">
+              Open Home <ArrowRight size={18} aria-hidden="true" />
+            </NavLink>
+          </div>
+        </section>
       </main>
 
       {/* ── Sidebar menu ──────────────────────────────────────────────────── */}

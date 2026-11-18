@@ -157,8 +157,10 @@ function isStandaloneWoolen(item: ClothingItem) {
 
 function canBeCollaredLayer(item: ClothingItem) {
   const details = `${item.name} ${item.subcategory ?? ''} ${item.neckline_closure ?? ''}`
-  if (/\b(t-?shirt|tee|crew.?neck)\b/i.test(details)) return false
-  return /\b(collared|polo|button.?up|shirt|blouse)\b/i.test(details)
+  // Only an explicitly collared piece is an intentional layer under knitwear.
+  // Regular shirts, long-sleeve tops and crop tops are complete top layers.
+  if (/\b(t-?shirt|tee|crew.?neck|crop(?:ped)? top|long[ -]?sleeve|twist(?:ed)? shirt|vest|waistcoat)\b/i.test(details)) return false
+  return /\b(collared|polo|button[ -]?up)\b/i.test(details)
 }
 
 function canBeVestCoverage(item: ClothingItem) {

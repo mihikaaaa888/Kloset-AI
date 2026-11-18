@@ -37,6 +37,10 @@ function tipItemsMatch(tip: StylingTip, outfit: ClothingItem[]) {
   const tags = outfit.flatMap((item) => [item.name, item.category, item.subcategory ?? ''])
   return matchingTags(tip.appliesTo, tags)
 }
+function isOutfitSpecificTip(tip: StylingTip) {
+  if (tip.trigger.startsWith('T_OUTFIT_')) return true
+  return tip.trigger === 'T_GARMENT' && normalize(tip.appliesTo) !== 'any'
+}
 function isNeutral(colour: string) {
   const normalized = normalize(colour)
   return [...neutralColours].some((neutral) => normalized === neutral || normalized.includes(neutral))
@@ -84,15 +88,18 @@ export function getDailyStylingTip(userId: string, outfit: ClothingItem[], wardr
   const log = readLog(userId)
   const dayKey = date.toISOString().slice(0, 10)
   const todaysShown = [...log].reverse().find((entry) => entry.action === 'shown' && entry.contextKey === contextKey && entry.createdAt.slice(0, 10) === dayKey)
-  if (todaysShown) return tips.find((tip) => tip.id === todaysShown.tipId) ?? null
+  const todaysTip = todaysShown ? tips.find((tip) => tip.id === todaysShown.tipId) : null
+  if (todaysTip && isOutfitSpecificTip(todaysTip)) return todaysTip
 
   const occasions = [...new Set([...contextOccasions, 'casual', ...(profile?.typicalOccasions ?? []), ...outfit.flatMap((item) => item.occasions)])]
-  const eligible = tips.filter((tip) => tipLevelAllowed(tip, profile, log)
+  // The daily outfit card is for styling the current look. Keep wardrobe
+  // maintenance nudges (such as unworn-item reminders) out of this tip slot.
+  const eligible = tips.filter((tip) => isOutfitSpecificTip(tip)
+    && tipLevelAllowed(tip, profile, log)
     && matchingTags(tip.occasion, occasions)
     && tipItemsMatch(tip, outfit)
     && triggerMatches(tip, outfit, wardrobe, weather, occasions, profile?.createdAt))
-  const evergreens = tips.filter((tip) => tipLevelAllowed(tip, profile, log) && tip.trigger === 'EVERGREEN')
-  let pool = eligible.length >= 5 ? eligible : [...new Map([...eligible, ...evergreens].map((tip) => [tip.id, tip])).values()]
+  let pool = eligible
   const helpfulCategories = new Set(log.filter((entry) => entry.action === 'helpful' || entry.action === 'applied').map((entry) => entry.category))
   const recent = log.filter((entry) => entry.action === 'shown').slice(-2).reverse()
   const now = date.getTime()
@@ -103,12 +110,7 @@ export function getDailyStylingTip(userId: string, outfit: ClothingItem[], wardr
     return true
   })
   if (cooldownFiltered.length) pool = cooldownFiltered
-  if (!pool.length) pool = tips.filter((tip) => !log.some((entry) => entry.tipId === tip.id && entry.action === 'known')).sort((a, b) => {
-    const aLast = [...log].reverse().find((entry) => entry.tipId === a.id && entry.action === 'shown')?.createdAt ?? ''
-    const bLast = [...log].reverse().find((entry) => entry.tipId === b.id && entry.action === 'shown')?.createdAt ?? ''
-    return aLast.localeCompare(bLast)
-  })
-  if (!pool.length) return null
+  if (!pool.length) return createOutfitSpecificFallback(userId, outfit, date, contextKey)
   const varietyPool = pool.filter((tip) => !recent.some((entry) => entry.category === tip.category))
   if (varietyPool.length) pool = varietyPool
   const formatPool = pool.filter((tip) => !(recent.length >= 2 && recent[0].format === recent[1].format && recent[0].format === tip.format))
@@ -124,6 +126,36 @@ export function getDailyStylingTip(userId: string, outfit: ClothingItem[], wardr
   const choice = scored[Number.parseInt(dayKey.replace(/-/g, ''), 10) % Math.max(1, scored.length)]?.tip ?? pool[0]
   writeLog(userId, [...log, { tipId: choice.id, action: 'shown', createdAt: date.toISOString(), category: choice.category, format: choice.format, contextKey }])
   return choice
+}
+
+function createOutfitSpecificFallback(userId: string, outfit: ClothingItem[], date: Date, contextKey: string): StylingTip {
+  const top = outfit.find((item) => ['tops', 'woolens'].includes(normalize(item.category)))
+  const bottom = outfit.find((item) => normalize(item.category) === 'bottoms')
+  const shoes = outfit.find((item) => normalize(item.category) === 'shoes')
+  const layer = outfit.find((item) => ['outerwear', 'woolens'].includes(normalize(item.category)) && item.id !== top?.id)
+  const text = layer && top
+    ? `Layer ${layer.name} over ${top.name} for extra warmth.`
+    : top && bottom && shoes
+      ? `Pair ${top.name} with ${bottom.name}, then let ${shoes.name} finish the look.`
+      : top && bottom
+        ? `Pair ${top.name} with ${bottom.name} to keep this outfit balanced.`
+        : `Let ${outfit[0].name} lead the look and keep the other pieces simple.`
+  const tip: StylingTip = {
+    id: `daily-outfit:${outfit.map((item) => item.id).join(':')}`,
+    text,
+    category: 'Outfit pairing',
+    format: 'Try',
+    appliesTo: outfit.map((item) => item.name).join(', '),
+    occasion: 'any',
+    season: 'any',
+    priority: 1,
+    cooldownDays: 0,
+    trigger: 'T_OUTFIT_PAIRING',
+    level: 'Basic',
+    rotation: 0,
+  }
+  writeLog(userId, [...readLog(userId), { tipId: tip.id, action: 'shown', createdAt: date.toISOString(), category: tip.category, format: tip.format, contextKey }])
+  return tip
 }
 
 export function rateStylingTip(userId: string, tip: StylingTip, action: Exclude<StylingTipAction, 'shown'>) {

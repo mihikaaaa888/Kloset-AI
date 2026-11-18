@@ -3,7 +3,7 @@ import { Camera, MessageCircle, ShoppingBag, CalendarDays, Heart, Sparkles, Arro
 import { clsx } from 'clsx'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { PIECES, pieceById } from './landingData'
-import { Hint, OvalTag } from './ornaments'
+import { Hint } from './ornaments'
 
 const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 const img = (name: string) => `/images/landing/sm/${name}-on-hanger.webp`
@@ -251,7 +251,6 @@ function WeekScreen({ active, demo }: { active: boolean; demo: DemoState }) {
 function TryCard({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
   return (
     <div className="frame-2 relative w-full max-w-sm rotate-[-1.5deg] p-8">
-      <OvalTag className="absolute -right-4 -top-5 rotate-[8deg] text-butter-yellow">try it</OvalTag>
       <p className="font-display text-2xl font-semibold uppercase tracking-wide text-butter-yellow">{title}</p>
       <p className="mt-1 font-display text-base italic text-text-muted">{hint}</p>
       <div className="mt-5">{children}</div>

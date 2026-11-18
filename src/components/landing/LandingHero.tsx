@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { ArrowDown, Camera, ShoppingBag, Sparkles, type LucideIcon } from 'lucide-react'
+import { ArrowDown, Sparkles } from 'lucide-react'
 import { clsx } from 'clsx'
 import { PIECES } from './landingData'
 import { CursorBlob } from './CursorBlob'
@@ -7,12 +7,6 @@ import { ArcText, Hint } from './ornaments'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 
 const RAIL = PIECES.slice(0, 5)
-
-const POINTS: { icon: LucideIcon; text: string }[] = [
-  { icon: Camera, text: 'One photo per piece. Kloset fills in the details.' },
-  { icon: Sparkles, text: 'Kaia styles you from what you already own.' },
-  { icon: ShoppingBag, text: 'Buy or rent only the pieces that fill a gap.' },
-]
 
 /** Restart the swing animation on a hanger, pushed in the pointer's direction. */
 function swing(el: HTMLElement, dir: number) {
@@ -41,7 +35,6 @@ function glideTo(el: HTMLElement, duration = 750) {
  * A garment swing tag hanging on a thread from the top of the page. It sways once
  * shortly after load to catch the eye, sways again when brushed, and on click tugs
  * down like a pull cord, then glides the page to "How it works".
- * Only on wide screens, where it clears the nav pill.
  */
 function SwingTag() {
   const swingRef = useRef<HTMLDivElement>(null)
@@ -70,18 +63,18 @@ function SwingTag() {
   return (
     <div
       ref={swingRef}
-      className="absolute -top-6 right-[6.5%] z-30 hidden origin-top select-none min-[1400px]:block"
+      className="absolute right-4 top-[4.25rem] z-30 origin-top select-none sm:-top-6 sm:right-[6.5%]"
       onPointerEnter={(e) => swing(e.currentTarget, e.movementX < 0 ? -1 : 1)}
     >
       <div className="hang-in" style={{ ['--d' as string]: '900ms' }}>
         <div ref={pullRef} className="flex flex-col items-center">
           {/* Starts above the page edge so the tug never shows a gap at the top. */}
-          <span aria-hidden="true" className="block h-[136px] w-px bg-text-primary/35" />
+          <span aria-hidden="true" className="block h-16 w-px bg-text-primary/35 sm:h-[136px]" />
           <button
             type="button"
             onClick={onPull}
             aria-label="See how Kloset works"
-            className="group relative -mt-1 w-[88px] cursor-pointer rounded-md drop-shadow-[0_12px_16px_rgba(36,27,41,0.16)] transition-[filter,transform] duration-300 ease-out hover:-translate-y-0.5 hover:drop-shadow-[0_18px_22px_rgba(36,27,41,0.22)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-butter-yellow"
+            className="group relative -mt-1 w-[78px] cursor-pointer rounded-md drop-shadow-[0_12px_16px_rgba(36,27,41,0.16)] transition-[filter,transform] duration-300 ease-out hover:-translate-y-0.5 hover:drop-shadow-[0_18px_22px_rgba(36,27,41,0.22)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-butter-yellow sm:w-[88px]"
           >
             <svg viewBox="0 0 88 150" aria-hidden="true" className="block h-auto w-full">
               <path
@@ -179,7 +172,7 @@ export function LandingHero() {
       <div className="relative mx-auto min-h-[100dvh] max-w-[1440px] px-4 pb-10 pt-28 sm:px-8 lg:pt-24">
         {/* Masthead, kept clear so it always reads cleanly. */}
         {/* Masthead in the house serif. Each line rises out of its own mask once, on load. */}
-        <div className="relative font-display text-[clamp(2.9rem,8.4vw,6rem)] leading-[0.95] tracking-[-0.02em] text-text-primary">
+        <div className="relative font-display text-[clamp(3.3rem,9vw,7rem)] leading-[0.95] tracking-[-0.02em] text-text-primary">
           <ArcText className="reveal !mx-0 mb-2 !h-9 !w-60 text-butter-yellow">your closet, styled</ArcText>
           <h1 className="font-medium">
             <span className="block overflow-hidden pb-[0.08em]">
@@ -198,14 +191,6 @@ export function LandingHero() {
               Snap your clothes once. Kloset tags them, styles them with Kaia, and finds only what's missing.
             </p>
 
-            <ul className="mt-10 grid max-w-md gap-3 border-t border-text-primary/10 pt-6 text-sm text-text-muted">
-              {POINTS.map(({ icon: Icon, text }) => (
-                <li key={text} className="flex items-center gap-3">
-                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-deep-purple text-butter-yellow"><Icon size={15} strokeWidth={1.8} /></span>
-                  {text}
-                </li>
-              ))}
-            </ul>
           </div>
 
           <div className="lg:col-span-7">
