@@ -105,7 +105,7 @@ async function requireUser(req, res, next) {
   next()
 }
 app.use(
-  ['/api/search-images', '/api/product-image', '/api/analyze-image', '/api/detect-outfit-pieces', '/api/analyze-image-url', '/api/refine-garment-image', '/api/remove-background', '/api/web-shop-search', '/api/chat'],
+  ['/api/search-images', '/api/product-image', '/api/discover-feed', '/api/analyze-image', '/api/detect-outfit-pieces', '/api/analyze-image-url', '/api/refine-garment-image', '/api/remove-background', '/api/web-shop-search', '/api/chat'],
   requireUser,
 )
 
@@ -183,7 +183,7 @@ app.get('/api/cron/inactive-accounts', async (req, res) => {
 // app icons, avatars, social-share cards, hero banners, lazy-load
 // placeholders, tiny thumbnails. The browser also drops tiny or very wide
 // images once it knows their real size (see ImageSearchBrowser).
-const JUNK_IMAGE_RE = /logo|wordmark|avatar|gravatar|favicon|apple-touch|android-icon|\/icons?\/|[-_]icons?[-_.]|sprite|seal|certif|award|wysiwyg|bazaarvoice|reviews?\/|placeholder|transparent|spinner|loader|1x1|pixel\.|lazyload|fallback|no-img|blank|spacer|badge|banner|hero|masthead|open-graph|og[_-]?image|social|1200x630|1920x1080|16x9|16:9|150x150|w_1920|fit=128|\/w_(16|90)[,%]|\.svg(\?|$)|\.gif(\?|$)/i
+const JUNK_IMAGE_RE = /logo|wordmark|avatar|gravatar|favicon|apple-touch|android-icon|\/icons?\/|[-_]icons?[-_.]|sprite|swatch|_chip\.|%7B|\{|seal|certif|award|wysiwyg|bazaarvoice|reviews?\/|placeholder|transparent|spinner|loader|1x1|pixel\.|lazyload|fallback|no-img|blank|spacer|badge|banner|hero|masthead|open-graph|og[_-]?image|social|1200x630|1920x1080|16x9|16:9|150x150|w_1920|fit=128|\/w_(16|90)[,%]|\.svg(\?|$)|\.gif(\?|$)/i
 
 // Words that make a search about a specific kind of item. A search without one
 // ("nike", "dior") is a brand name on its own, so it's widened to the brand's
@@ -207,6 +207,11 @@ function upsizeImageUrl(url) {
     .replace(/([?&])hei=\d+/i, '$1hei=800')
     .replace(/([?&])imwidth=\d+/i, '$1imwidth=800')
     .replace(/([?&])sw=\d+/i, '$1sw=800')
+    // Shopify "?width=100&height=109&crop=center": ask for 800 wide, let height follow.
+    .replace(/([?&])width=(\d{2,3})(?=&|$)/i, (m, sep, w) => (Number(w) < 600 ? `${sep}width=800` : m))
+    .replace(/[?&]height=\d+(&crop=[a-z]+)?/i, (m) => (m.startsWith('?') ? '?' : ''))
+    // Amazon thumbnails: ".../31hEBW9wWmL._SX38_SY50_CR,0,0,38,50_.jpg" → the full image.
+    .replace(/\._[A-Z0-9,_]+_\.(jpe?g|png|webp)$/i, '.$1')
     .replace(/([?&])sh=\d+/i, '$1sh=800')
     // Cloudinary-style "w_500" in the path. Skipped when a height is set too
     // ("h_573,w_458"): a cropping fill would turn a wider w_ into a wide strip.
@@ -305,6 +310,132 @@ async function searchWebImages(q, apiKey) {
 }
 
 const WEB_IMAGES_PER_PAGE = 18
+
+// ─── Discover feed: products from around the web ──────────────────────────────
+
+// Shop's own catalog is a few dozen hand-picked pieces. This feed adds live
+// products from any store, searched with queries the browser builds from the
+// user's taste ("women's black linen shirt minimalist").
+
+// Sites that write about clothes rather than sell a single piece.
+const NON_SHOP_DOMAIN_RE = /(^|\.)(vogue|elle|harpersbazaar|whowhatwear|glamour|cosmopolitan|refinery29|instyle|gq|esquire|wwd|hypebeast|highsnobiety|complex|buzzfeed|nytimes|theguardian|forbes|wikipedia|pinterest|reddit|youtube|instagram|tiktok|facebook|x|twitter|medium|quora|lyst)\.[a-z.]+$/i
+// URL shapes of a single product, across common shop platforms.
+const PRODUCT_URL_RE = /\/products?\/|\/p\/|\/dp\/|\/pd\/|\/t\/|\/item\/|\/shop\/p\/|-p\d{5,}|\/\d{6,}|[A-Z0-9]{6,}\.html|productpage|\/buy-|\/[a-z0-9-]+-\d{5,}(\.html)?$/
+// URL shapes of listings, editorials and other non-product pages.
+const LISTING_URL_RE = /\/(c|category|categories|collections\/[^/]+\/?$|search|blog|blogs|article|articles|news|stories|editorial|journal|lookbook|guide|guides|brands?\/[^/]+\/?$)(\/|$|\?)/i
+
+function looksLikeProductPage(url) {
+  let u
+  try { u = new URL(url) } catch { return false }
+  const host = u.hostname.replace(/^www\d*\./, '')
+  if (NON_SHOP_DOMAIN_RE.test(host)) return false
+  if (isProductPage(url)) return true
+  if (LISTING_URL_RE.test(u.pathname)) return false
+  return PRODUCT_URL_RE.test(u.pathname)
+}
+
+// "₹2,999", "Rs. 1,499", "INR 899", "$45.00", "£39", "€59.95": first one wins.
+function priceFrom(text) {
+  const match = String(text ?? '').match(/(₹|Rs\.?|INR|\$|£|€)\s?(\d{1,3}(?:[,\d]{0,9})(?:\.\d{1,2})?)/)
+  if (!match) return null
+  const symbol = match[1].startsWith('R') || match[1] === 'INR' ? '₹' : match[1]
+  // "₹3" is a size or rating caught by mistake, not a price.
+  const amount = Number(match[2].replace(/,/g, ''))
+  if (!(amount >= (symbol === '₹' ? 99 : 5))) return null
+  return `${symbol}${match[2].replace(/\.00$/, '')}`
+}
+
+/** "adidas" for adidas.co.in / shop.adidas.com, "hm" for www2.hm.com. */
+function siteKeyOf(domain) {
+  const parts = domain.split('.')
+  const secondLevel = parts.length > 2 && ['co', 'com', 'net', 'org', 'gov', 'ac'].includes(parts[parts.length - 2])
+  return (parts[parts.length - (secondLevel ? 3 : 2)] ?? domain).toLowerCase()
+}
+
+function siteNameOf(domain) {
+  const name = siteKeyOf(domain)
+  return name.length <= 3 ? name.toUpperCase() : name.charAt(0).toUpperCase() + name.slice(1)
+}
+
+const discoverCache = new Map()
+const DISCOVER_CACHE_TTL_MS = 6 * 60 * 60 * 1000
+
+async function discoverForQuery(query, apiKey) {
+  const cacheKey = query.toLowerCase()
+  const cached = discoverCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) return cached.items
+
+  const response = await fetch('https://api.exa.ai/search', {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: `${query} product page buy online`,
+      type: 'auto',
+      numResults: 12,
+      // A little page text is enough to find the price.
+      contents: { text: { maxCharacters: 800 }, extras: { imageLinks: 8 } },
+    }),
+  })
+  if (!response.ok) throw new Error(`Exa ${response.status}: ${await response.text()}`)
+  const data = await response.json()
+
+  const items = []
+  for (const page of data.results ?? []) {
+    if (!looksLikeProductPage(page.url)) continue
+    const domain = domainOf(page.url)
+    const site = siteKeyOf(domain)
+    // Drop a trailing " | Store" / " – Store" / " - Store.com" only when it is the store's name.
+    let title = titleFor(page).replace(/\s+/g, ' ').replace(/\s*[|–—-]\s*([^|–—-]{2,40})$/, (m, tail) =>
+      site && tail.replace(/\.(com|in|co\.in)$/i, '').replace(/[^a-z0-9]/gi, '').toLowerCase().includes(site) ? '' : m).trim()
+    // Shop phrasing: "Buy Black Linen Shirt Online", "... - Buy PUMA ... Online at Best Prices".
+    title = title.replace(/^(buy|shop)\s+/i, '').replace(/\s+-\s+buy\b.*$/i, '').replace(/\s+online(\s+(in|at)\b.*)?$/i, '').trim()
+    // A button label ("close", "menu") instead of a name: use the link's slug.
+    if (title.length < 6) title = titleFor({ url: page.url, title: '' })
+    title = title.charAt(0).toUpperCase() + title.slice(1)
+    const keywords = queryKeywords(title)
+    const candidates = [...(page.extras?.imageLinks ?? []), page.image]
+      .filter((u) => typeof u === 'string' && /^https?:\/\//i.test(u) && !JUNK_IMAGE_RE.test(u))
+      .filter((u) => u !== page.url && !/\/(\?|#|$)/.test(u.replace(/^https?:\/\/[^/]+/i, '')))
+      .map((u) => upsizeImageUrl(u.replace(/^http:\/\//i, 'https://').replace(/&amp;/g, '&')))
+    if (!candidates.length) continue
+    const imageUrl = candidates.find((u) => keywordScore(u.replace(/^https?:\/\/[^/]+/i, '').split('?')[0], keywords) >= 2) ?? candidates[0]
+    items.push({ id: page.url, url: page.url, title, retailer: siteNameOf(domain), domain, imageUrl, price: priceFrom(page.text), query })
+  }
+
+  discoverCache.set(cacheKey, { items, expiresAt: Date.now() + DISCOVER_CACHE_TTL_MS })
+  return items
+}
+
+app.post('/api/discover-feed', async (req, res) => {
+  const queries = (Array.isArray(req.body?.queries) ? req.body.queries : [])
+    .filter((q) => typeof q === 'string' && q.trim())
+    .map((q) => q.trim().replace(/[^\p{L}\p{N}' -]/gu, ' ').replace(/\s+/g, ' ').slice(0, 80))
+    .slice(0, 6)
+  if (!queries.length) return res.status(400).json({ error: 'queries are required' })
+  const apiKey = process.env.EXA_API_KEY
+  if (!apiKey) return res.json({ items: [], noKey: true })
+
+  const settled = await Promise.allSettled(queries.map((q) => discoverForQuery(q, apiKey)))
+  for (const result of settled) if (result.status === 'rejected') console.error('[discover-feed] Exa error:', result.reason?.message ?? result.reason)
+  const lists = settled.map((result) => (result.status === 'fulfilled' ? result.value : []))
+
+  // One per query per round, so every search is represented near the top;
+  // no store more than 3 times in a batch; no repeated pages.
+  const seen = new Set()
+  const perStore = new Map()
+  const items = []
+  for (let i = 0; lists.some((list) => list.length > i); i++) {
+    for (const list of lists) {
+      const item = list[i]
+      if (!item || seen.has(item.url) || (perStore.get(item.domain) ?? 0) >= 3) continue
+      seen.add(item.url)
+      perStore.set(item.domain, (perStore.get(item.domain) ?? 0) + 1)
+      items.push(item)
+    }
+  }
+  console.log(`[discover-feed] ${queries.length} searches → ${items.length} products`)
+  return res.json({ items })
+})
 
 // ─── Product page → item photo ────────────────────────────────────────────────
 

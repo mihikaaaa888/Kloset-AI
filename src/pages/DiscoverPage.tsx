@@ -12,6 +12,7 @@ import { useRecommendationStore } from '@/store/recommendationStore'
 import { deleteItem as dbDeleteItem, insertItem } from '@/lib/wardrobeService'
 import { deleteWithUndo, notify, offerUndo } from '@/store/undoStore'
 import { ALL_CATALOG_ITEMS, matchesStylePreference } from '@/lib/catalogData'
+import { WebDiscoverFeed } from '@/components/shop/WebDiscoverFeed'
 import { catalogToItem } from '@/lib/outfitPieces'
 import {
   BUDGET_BANDS,
@@ -322,6 +323,8 @@ export function DiscoverPage() {
             {rest.length > 0 && <section aria-label="More pieces" className="mt-12 border-t border-text-primary/10 pt-6"><h2 className="mb-4 text-sm font-medium text-text-muted">More pieces</h2>{renderGrid(rest)}</section>}
           </>
         )}
+        {/* Endless live picks beyond the curated catalog, searched with the user's taste. */}
+        <WebDiscoverFeed key={category} profile={profile} category={category} feedback={feedback} />
         </>}
       </div>
     </div>

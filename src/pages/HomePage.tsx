@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Shirt, Heart, Plus, ArrowRight, Cloud, CloudDrizzle, CloudLightning, CloudOff, CloudRain, CloudSnow, CloudSun, Sun, ThumbsUp, ThumbsDown, type LucideIcon } from 'lucide-react'
+import { Shirt, Heart, Plus, ArrowRight, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { useUserStore } from '@/store/userStore'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useItemImage } from '@/hooks/useItemImage'
 import type { ClothingItem } from '@/types'
-import { generateOutfit, type WeatherCondition } from '@/lib/stylist'
-import { getLocalWeather } from '@/lib/weather'
+import { generateOutfit } from '@/lib/stylist'
+import { getLocalWeather, type LocalWeather } from '@/lib/weather'
+import { WeatherCard } from '@/components/home/WeatherCard'
 import { useRecommendationStore } from '@/store/recommendationStore'
 import { outfitCombinationType, traitsFromWardrobe } from '@/lib/recommendationFeedback'
 import { getDailyStylingTip, rateStylingTip, type StylingTip } from '@/lib/stylingTipEngine'
@@ -65,46 +66,12 @@ export function HomePage() {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-type CurrentWeather = { temperature: number; label: string; condition: WeatherCondition; code: number; dateKey: string }
+type CurrentWeather = LocalWeather & { dateKey: string }
 
 function stableHash(value: string): number {
   return [...value].reduce((hash, character) => (Math.imul(hash, 31) + character.charCodeAt(0)) >>> 0, 7)
 }
 
-function weatherDescription(code: number): string {
-  if (code === 0) return 'Clear sky'
-  if (code === 1) return 'Mostly clear'
-  if (code === 2) return 'Partly cloudy'
-  if (code === 3) return 'Overcast'
-  if (code === 45 || code === 48) return 'Foggy'
-  if (code >= 51 && code <= 57) return 'Drizzle'
-  if (code >= 61 && code <= 67) return 'Rain'
-  if (code >= 71 && code <= 77) return 'Snow'
-  if (code >= 80 && code <= 82) return 'Rain showers'
-  if (code === 85 || code === 86) return 'Snow showers'
-  if (code >= 95) return 'Thunderstorm'
-  return 'Current conditions'
-}
-
-// One line under today's weather on what it means for getting dressed.
-const WEAR_HINT: Record<WeatherCondition, string> = {
-  hot: 'Breathable pieces today',
-  warm: 'Light layers today',
-  cool: 'Bring a layer',
-  cold: 'Wrap up warm',
-  rainy: 'Dress for the rain',
-}
-
-function weatherIcon(code: number): LucideIcon {
-  if (code <= 1) return Sun
-  if (code === 2) return CloudSun
-  if (code === 3 || code === 45 || code === 48) return Cloud
-  if (code >= 51 && code <= 57) return CloudDrizzle
-  if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return CloudRain
-  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return CloudSnow
-  if (code >= 95) return CloudLightning
-  return CloudSun
-}
 
 function DailyOutfitCard({ items, profile, onAskStylist }: {
   items: ClothingItem[]
@@ -165,8 +132,8 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
     const weatherDateKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
     setWeather(null)
     setWeatherError(false)
-    getLocalWeather().then(({ temperature, code, condition }) => {
-      setWeather({ temperature, label: weatherDescription(code), condition, code, dateKey: weatherDateKey })
+    getLocalWeather().then((value) => {
+      setWeather({ ...value, dateKey: weatherDateKey })
     }).catch(() => setWeatherError(true))
   }, [today.getDate(), today.getMonth(), today.getFullYear()])
 
@@ -271,28 +238,17 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
 
   return (
     <section ref={sectionRef} className="mb-16 lg:mb-20" aria-labelledby="daily-outfit-title">
-      <h2 id="daily-outfit-title" className="m-0 text-left font-display text-3xl sm:text-4xl lg:text-5xl font-medium leading-tight text-text-primary">
-        Today’s outfit <em className="italic text-butter-yellow">recommendation</em>
-      </h2>
-      {/* Date and today's weather on one line under the heading. */}
-      <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-left" aria-live="polite">
-        <span className="text-2xs uppercase tracking-ultra-wide text-text-muted">{dateLabel}</span>
-        <span className="hidden h-3.5 w-px bg-text-primary/20 sm:block" aria-hidden="true" />
-        {weather ? (() => {
-          const Icon = weatherIcon(weather.code)
-          return <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-            <Icon size={17} strokeWidth={1.5} className="shrink-0 text-butter-yellow" aria-hidden="true" />
-            <span className="font-display text-lg font-semibold leading-none tabular-nums text-text-primary">{Math.round(weather.temperature)}°C</span>
-            <span className="font-medium text-text-primary">{weather.label}</span>
-            <span className="text-text-muted" aria-hidden="true">·</span>
-            <span className="font-display text-base italic text-butter-yellow">{WEAR_HINT[weather.condition]}</span>
-          </span>
-        })() : (
-          <span className="flex items-center gap-2 text-sm text-text-muted">
-            <CloudOff size={16} className="shrink-0" aria-hidden="true" />
-            {weatherError ? 'Weather unavailable — allow location access to see local conditions.' : 'Checking today’s weather…'}
-          </span>
-        )}
+      {/* Heading on the left; today's weather as a compact card to the side. */}
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between lg:gap-10">
+        <div className="min-w-0">
+        <h2 id="daily-outfit-title" className="m-0 text-left font-display text-3xl sm:text-4xl lg:text-5xl font-medium leading-tight text-text-primary">
+          Today’s outfit <em className="italic text-butter-yellow">recommendation</em>
+        </h2>
+          <p className="mt-4 text-left text-2xs uppercase tracking-ultra-wide text-text-muted">{dateLabel}</p>
+        </div>
+        <div className="w-full sm:max-w-sm lg:w-[340px] lg:shrink-0">
+          <WeatherCard weather={weather} error={weatherError} />
+        </div>
       </div>
       <div className="daily-outfit-shell mt-6">
         <div className={`daily-outfit-layout${useRecommendationGrid ? ' daily-outfit-layout--many' : ''}`}>

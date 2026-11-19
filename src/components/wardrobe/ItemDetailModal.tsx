@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Pencil, Trash2, Plus, X, Send, Sparkles } from 'lucide-react'
+import { Pencil, Trash2, Plus, X, Send } from 'lucide-react'
 import { colourNameToHex, isLightColour } from '@/lib/colourUtils'
 import { useItemImage } from '@/hooks/useItemImage'
 import { CATEGORY_LABEL, CategoryGlyph } from '@/components/wardrobe/categoryVisuals'
@@ -130,7 +130,6 @@ export function ItemDetailModal({
               onClick={onStyle}
               className="mb-3 flex w-full items-center justify-center gap-2 h-12 ring-1 ring-inset ring-text-primary/20 text-text-primary text-xs font-medium uppercase tracking-widest hover:ring-text-primary/50 transition-colors"
             >
-              <Sparkles size={14} strokeWidth={1.5} />
               Style this item
             </button>
             <button

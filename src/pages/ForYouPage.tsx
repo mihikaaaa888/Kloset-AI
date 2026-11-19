@@ -1,6 +1,6 @@
 import { useMemo, useState, type PointerEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { Heart, RotateCcw, Shirt, Sparkles, ThumbsDown } from 'lucide-react'
+import { Heart, RotateCcw, Shirt, ThumbsDown } from 'lucide-react'
 import { ALL_CATALOG_ITEMS, matchesStylePreference } from '@/lib/catalogData'
 import { rankForUser } from '@/lib/shopping'
 import { learnTasteProfile, scoreRecommendationFeedback, traitsFromCatalog, traitsFromWardrobe, type RecommendationFeedback, type RecommendationTraits } from '@/lib/recommendationFeedback'
@@ -256,10 +256,7 @@ function TastePanel({ taste }: { taste: ReturnType<typeof learnTasteProfile> }) 
   const hasAvoids = CHIP_GROUPS.some(({ key }) => taste.avoids[key].length)
   return (
     <aside aria-live="polite" aria-label="Your taste so far" className="rounded-3xl border border-text-primary/10 bg-surface p-6 lg:sticky lg:top-28">
-      <div className="flex items-center gap-2 text-text-primary">
-        <Sparkles size={16} className="text-butter-yellow" aria-hidden="true" />
-        <h2 className="font-display text-2xl">Your taste so far</h2>
-      </div>
+      <h2 className="font-display text-2xl text-text-primary">Your taste so far</h2>
       <p className="mt-1 text-xs text-text-muted">From {taste.ratedCount} rating{taste.ratedCount === 1 ? '' : 's'}: swipes here and thumbs on your daily outfit.</p>
 
       {!hasLoves && !hasAvoids ? (

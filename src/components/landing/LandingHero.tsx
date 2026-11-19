@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { ArrowDown, Sparkles } from 'lucide-react'
+import { ArrowDown } from 'lucide-react'
 import { clsx } from 'clsx'
 import { PIECES } from './landingData'
 import { CursorBlob } from './CursorBlob'
@@ -202,8 +202,7 @@ export function LandingHero() {
             <div className="relative mt-4 flex min-h-[88px] justify-center" aria-live="polite">
               {pickedPiece ? (
                 <div key={pickedPiece.id} className="w-full text-center">
-                  <p className="chip-pop mb-3 flex items-center justify-center gap-2 text-sm font-medium text-text-primary">
-                    <Sparkles size={15} className="text-butter-yellow" />
+                  <p className="chip-pop mb-3 text-sm font-medium text-text-primary">
                     Kloset tagged this {pickedPiece.name.toLowerCase()}
                   </p>
                   <ul className="flex flex-wrap justify-center gap-2">

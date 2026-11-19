@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
-import { Camera, MessageCircle, ShoppingBag, CalendarDays, Heart, Sparkles, ArrowUp, RotateCcw, Send } from 'lucide-react'
+import { Camera, MessageCircle, ShoppingBag, CalendarDays, Heart, ArrowUp, RotateCcw, Send } from 'lucide-react'
 import { clsx } from 'clsx'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { PIECES, pieceById } from './landingData'
@@ -118,8 +118,8 @@ function WardrobeScreen({ active, demo }: { active: boolean; demo: DemoState }) 
       </div>
       {active && (
         <div key={tagged.id} className="chip-pop absolute inset-x-3 bottom-3 rounded-[1.25rem] bg-surface p-4 shadow-lifted" style={{ ['--d' as string]: '900ms' }}>
-          <p className="flex items-center gap-1.5 text-xs font-semibold text-text-primary">
-            <Sparkles size={13} className="text-butter-yellow" /> Tagged {tagged.name.toLowerCase()}
+          <p className="text-xs font-semibold text-text-primary">
+            Tagged {tagged.name.toLowerCase()}
           </p>
           <ul className="mt-2.5 flex flex-wrap gap-1.5">
             {tagged.tags.map((tag, t) => (
@@ -188,11 +188,11 @@ function ShopScreen({ demo }: { active: boolean; demo: DemoState }) {
         <span className="rounded-full bg-tile px-3 py-1.5 text-[11px] font-semibold capitalize text-text-primary">{demo.mode}</span>
       </PhoneHeader>
       <p className="px-5 pt-3 text-[11px] text-text-muted">
-        Under {inr.format(demo.budget)}{demo.mode === 'rent' ? ' a week' : ''}, picked to fill a gap
+        {demo.mode === 'rent' ? 'Rentals are coming soon' : `Under ${inr.format(demo.budget)}, picked to fill a gap`}
       </p>
       <div className="grid grid-cols-2 gap-3 p-4">
         {SHOP.map((item) => {
-          const fits = price(item) <= demo.budget
+          const fits = demo.mode === 'buy' && price(item) <= demo.budget
           return (
             <div key={item.name} className={clsx('transition-opacity duration-300', !fits && 'opacity-30')}>
               <div className="aspect-[3/4] overflow-hidden rounded-2xl bg-tile">
@@ -200,7 +200,7 @@ function ShopScreen({ demo }: { active: boolean; demo: DemoState }) {
               </div>
               <p className="mt-1.5 truncate text-[11px] text-text-primary">{item.name}</p>
               <p className="text-xs font-semibold text-text-primary">
-                {inr.format(price(item))}{demo.mode === 'rent' ? ' / week' : ''}
+                {demo.mode === 'rent' ? 'Coming soon' : inr.format(price(item))}
               </p>
             </div>
           )
@@ -321,7 +321,7 @@ function ShopPanel({ demo }: { demo: DemoState }) {
     demo.setBudget(m === 'buy' ? 4000 : 700)
   }
   return (
-    <TryCard title="Set a budget" hint="Buy it outright or rent it for the week.">
+    <TryCard title="Set a budget" hint="Shop pieces that fit what you want to spend.">
       <div className="flex rounded-full bg-tile p-1 text-sm font-semibold" role="group" aria-label="Buy or rent">
         {(['buy', 'rent'] as const).map((m) => (
           <button
@@ -335,8 +335,11 @@ function ShopPanel({ demo }: { demo: DemoState }) {
           </button>
         ))}
       </div>
+      {demo.mode === 'rent' ? (
+        <p className="mt-5 py-6 text-center font-display text-2xl text-text-primary" aria-live="polite">Coming soon</p>
+      ) : <>
       <label className="mt-5 block text-sm text-text-primary">
-        Up to <span className="font-semibold">{inr.format(demo.budget)}</span>{demo.mode === 'rent' ? ' a week' : ''}
+        Up to <span className="font-semibold">{inr.format(demo.budget)}</span>
         <input
           type="range"
           min={range.min}
@@ -348,6 +351,7 @@ function ShopPanel({ demo }: { demo: DemoState }) {
         />
       </label>
       <p className="mt-2 text-xs text-text-muted" aria-live="polite">{fits} of {SHOP.length} pieces fit</p>
+      </>}
     </TryCard>
   )
 }
