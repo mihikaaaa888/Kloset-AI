@@ -16,11 +16,11 @@ import {
 } from '@/lib/imageStorage'
 import { getPhotoUrl } from '@/lib/wardrobeService'
 import { analyzeImage, analyzeImageFromUrl, detectOutfitPieces } from '@/lib/analyzeImage'
-import { cleanProductTitle, searchWebShop } from '@/lib/webShopService'
+import { apiFetch, apiUrl } from '@/lib/apiUrl'
 import { cropPhotoToBounds, parseOutfitPhoto } from '@/lib/fashionParsing'
 import { deleteWithUndo, finalizeScope } from '@/store/undoStore'
 import type { ClothingAnalysis } from '@/lib/analyzeImage'
-import type { ClothingItem, ClothingCategory, Pattern, Season, Occasion, WebShopResult } from '@/types'
+import type { ClothingItem, ClothingCategory, Pattern, Season, Occasion } from '@/types'
 
 // ─── Analysis helpers ─────────────────────────────────────────────────────────
 
@@ -837,8 +837,6 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
           ) : photoTab === 'browse' ? (
             <ImageSearchBrowser
               defaultQuery={buildSingleItemQuery(draft.category, draft.subcategory)}
-              category={draft.category}
-              subcategory={draft.subcategory}
               onSelect={(url) => {
                 setPreviewUrl(url)
                 setLegacyImageUrl(url)
@@ -1174,49 +1172,62 @@ function buildSingleItemQuery(category?: string, subcategory?: string) {
   return 'clothing shoes bags accessories'
 }
 
-function productSearchQuery(input: string, category?: ClothingCategory | '', subcategory?: string) {
+// A web image search works like Google Images: what the user typed is the
+// query. A specific search ("dior heels") is left alone; a bare generic word
+// gets a fashion hint so "black" doesn't return paint swatches.
+function imageSearchQuery(input: string) {
   const trimmed = input.trim()
   if (!trimmed) return ''
-  const categoryHint = subcategory || (category === 'tops' ? 'tops shirt blouse or sweater'
-    : category === 'bottoms' ? 'trousers jeans or skirt'
-      : category === 'dresses' ? 'dress'
-        : category === 'outerwear' ? 'jacket coat cardigan or sweater'
-          : category === 'shoes' ? 'shoes'
-            : category === 'accessories' ? 'bag jewellery or accessory'
-              : 'clothing apparel shoes bags or jewellery')
-  const base = trimmed.replace(/^single\s+/i, '').replace(/\s+isolated product photo$/i, '')
-  return `${base} ${categoryHint} single fashion item apparel product for sale`
+  return trimmed.split(/\s+/).length === 1 ? `${trimmed} fashion` : trimmed
+}
+
+interface WebImage {
+  id: string | number
+  url: string
+  thumbUrl: string
+  alt: string
+  photographer: string
+  /** Set for web results: the site the photo was found on. */
+  source?: string
+  sourceUrl?: string
 }
 
 function ImageSearchBrowser({
   defaultQuery,
-  category,
-  subcategory,
   onSelect,
 }: {
   defaultQuery: string
-  category?: ClothingCategory | ''
-  subcategory?: string
   onSelect: (url: string) => void
 }) {
   const [query, setQuery] = useState(defaultQuery)
-  const [products, setProducts] = useState<WebShopResult[]>([])
+  const [photos, setPhotos] = useState<WebImage[]>([])
   const [loading, setLoading] = useState(false)
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(0)
   const [noKey, setNoKey] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [source, setSource] = useState<'web' | 'pexels'>('web')
+  // Hotlinked web images can 404 or block embedding — drop them from the grid.
+  const [broken, setBroken] = useState<Set<string>>(new Set())
 
-  const search = useCallback(async (q: string) => {
-    if (!q.trim()) return
+  const search = useCallback(async (q: string, p = 1) => {
+    const searchQuery = imageSearchQuery(q)
+    if (!searchQuery) return
     setLoading(true)
     setError(null)
     try {
-      const data = await searchWebShop(q)
-      if (data.noKey) { setNoKey(true); setProducts([]); return }
+      const res = await apiFetch(apiUrl(`/api/search-images?q=${encodeURIComponent(searchQuery)}&page=${p}&source=web`))
+      const data = await res.json()
+      if (data.noKey) { setNoKey(true); setPhotos([]); return }
       setNoKey(false)
-      if (data.error) throw new Error(data.error)
-      setProducts((data.results ?? []).filter((product) => Boolean(product.imageUrl)))
+      if (!res.ok) throw new Error(data.error)
+      setPhotos(data.photos ?? [])
+      setSource(data.source === 'web' ? 'web' : 'pexels')
+      setBroken(new Set())
+      setTotalPages(data.totalPages ?? 0)
+      setPage(p)
     } catch {
-      setError('Could not load product results. Please try again.')
+      setError('Could not load images. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -1224,27 +1235,29 @@ function ImageSearchBrowser({
 
   useEffect(() => {
     setQuery(defaultQuery)
-    void search(productSearchQuery(defaultQuery, category, subcategory))
-  }, [defaultQuery, category, subcategory, search])
+    void search(defaultQuery, 1)
+  }, [defaultQuery, search])
 
   if (noKey) {
     return (
       <div className="rounded-2xl border border-text-primary/15 bg-text-primary/3 p-5 text-center space-y-2">
-        <p className="text-sm font-medium text-text-primary">Product search is unavailable</p>
+        <p className="text-sm font-medium text-text-primary">Image search is unavailable</p>
         <p className="text-xs text-text-muted leading-relaxed">
-          Product browsing is not configured yet. Please try again later.
+          Image browsing is not configured yet. Please try again later.
         </p>
       </div>
     )
   }
 
+  const visible = photos.filter((p) => !broken.has(p.url))
+
   return (
     <div className="space-y-3">
       <div>
-        <p className="mb-2 text-xs text-text-muted">Browse single clothing and accessory products from retailers.</p>
+        <p className="mb-2 text-xs text-text-muted">Search any item or brand, like you would on Google Images.</p>
         <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Browse item categories">
           {BROWSE_ITEM_QUERIES.map(([label, itemQuery]) => (
-            <button key={label} type="button" onClick={() => { setQuery(itemQuery); search(productSearchQuery(itemQuery, category, subcategory)) }} className="shrink-0 rounded-full border border-text-primary/15 px-3 py-1.5 text-xs text-text-muted transition-colors hover:border-text-primary/35 hover:text-text-primary">{label}</button>
+            <button key={label} type="button" onClick={() => { setQuery(itemQuery); search(itemQuery, 1) }} className="shrink-0 rounded-full border border-text-primary/15 px-3 py-1.5 text-xs text-text-muted transition-colors hover:border-text-primary/35 hover:text-text-primary">{label}</button>
           ))}
         </div>
       </div>
@@ -1256,14 +1269,14 @@ function ImageSearchBrowser({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') search(productSearchQuery(query, category, subcategory)) }}
-            placeholder="Search one item, e.g. pink cardigan…"
+            onKeyDown={(e) => { if (e.key === 'Enter') search(query, 1) }}
+            placeholder="e.g. Dior heels, Zara black blazer…"
             className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-text-primary/20 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-primary/50 bg-surface"
           />
         </div>
         <button
           type="button"
-          onClick={() => search(productSearchQuery(query, category, subcategory))}
+          onClick={() => search(query, 1)}
           disabled={loading}
           className="px-4 py-2.5 rounded-xl bg-dark-purple text-butter-yellow text-sm font-medium hover:bg-deep-purple transition-colors disabled:opacity-40"
         >
@@ -1273,7 +1286,7 @@ function ImageSearchBrowser({
         </button>
       </div>
 
-      {/* Retailer product results */}
+      {/* Results grid */}
       {error ? (
         <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-xl">{error}</p>
       ) : loading ? (
@@ -1282,27 +1295,68 @@ function ImageSearchBrowser({
             <div key={i} className="aspect-[3/4] rounded-xl bg-text-primary/8 animate-pulse" />
           ))}
         </div>
-      ) : products.length === 0 ? (
-        <p className="text-sm text-text-muted text-center py-6">{query ? `No product images found for "${query}" — try a different item or brand.` : 'Choose a category or search for an item or brand.'}</p>
+      ) : visible.length === 0 ? (
+        <p className="text-sm text-text-muted text-center py-6">{query ? `No images found for "${query}" — try a different item or brand.` : 'Choose a category or search for an item or brand.'}</p>
       ) : (
         <div className="grid grid-cols-3 gap-2">
-          {products.map((product) => (
-            <article key={product.id} className="min-w-0 overflow-hidden rounded-xl border border-text-primary/10 bg-surface">
-              <button
-                type="button"
-                onClick={() => product.imageUrl && onSelect(product.imageUrl)}
-                className="block aspect-[3/4] w-full overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-butter-yellow"
-                title={`Use ${cleanProductTitle(product.title)} image`}
-              >
-                <img src={product.imageUrl!} alt={cleanProductTitle(product.title)} className="h-full w-full object-cover" loading="lazy" />
-              </button>
-              <div className="space-y-1 p-2">
-                <p className="truncate text-xs font-medium text-text-primary" title={cleanProductTitle(product.title)}>{cleanProductTitle(product.title)}</p>
-                <a href={product.url} target="_blank" rel="noreferrer" className="block truncate text-[10px] text-text-muted underline underline-offset-2">{product.retailer} · View product</a>
-              </div>
-            </article>
+          {visible.map((photo) => (
+            <button
+              key={photo.id}
+              type="button"
+              onClick={() => onSelect(photo.url)}
+              className="relative aspect-[3/4] rounded-xl overflow-hidden hover:scale-[0.97] hover:shadow-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow"
+              title={photo.source ? `${photo.alt} — ${photo.source}` : photo.alt}
+            >
+              <img
+                src={photo.thumbUrl}
+                alt={photo.alt}
+                className="w-full h-full object-cover bg-white"
+                loading="lazy"
+                referrerPolicy="no-referrer"
+                onError={() => setBroken((prev) => new Set(prev).add(photo.url))}
+              />
+              {photo.source && (
+                <span className="absolute bottom-0 inset-x-0 px-1.5 py-0.5 text-[10px] text-white bg-black/45 truncate text-left">
+                  {photo.source}
+                </span>
+              )}
+            </button>
           ))}
         </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && !loading && (
+        <div className="flex items-center justify-between pt-1">
+          <button
+            type="button"
+            onClick={() => search(query, page - 1)}
+            disabled={page <= 1}
+            className="text-xs text-text-muted hover:text-text-primary disabled:opacity-30 transition-colors"
+          >
+            ‹ Prev
+          </button>
+          <span className="text-xs text-text-muted">
+            {page} / {totalPages}
+          </span>
+          <button
+            type="button"
+            onClick={() => search(query, page + 1)}
+            disabled={page >= totalPages}
+            className="text-xs text-text-muted hover:text-text-primary disabled:opacity-30 transition-colors"
+          >
+            Next ›
+          </button>
+        </div>
+      )}
+
+      {/* Attribution */}
+      {visible.length > 0 && (
+        <p className="text-[10px] text-text-muted text-center">
+          {source === 'web'
+            ? "Images from around the web — check you're happy using a photo before saving it."
+            : <>Photos provided by <a href="https://www.pexels.com" target="_blank" rel="noreferrer" className="underline underline-offset-2">Pexels</a></>}
+        </p>
       )}
     </div>
   )

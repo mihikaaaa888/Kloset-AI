@@ -177,11 +177,94 @@ app.get('/api/cron/inactive-accounts', async (req, res) => {
   }
 })
 
-// ─── Image search (Pexels) ────────────────────────────────────────────────────
+// ─── Image search (web via Exa, or Pexels stock) ──────────────────────────────
+
+// Images on a results page that are site chrome, not the product: logos,
+// avatars, social-share cards, icons, placeholders, tiny thumbnails.
+const JUNK_IMAGE_RE = /logo|avatar|gravatar|favicon|sprite|icon|placeholder|no-img|blank|spacer|badge|banner|open-graph|og[_-]?image|\/social\/|1200x630|150x150|\.svg(\?|$)|\.gif(\?|$)/i
+
+const webImageCache = new Map()
+
+// Google-images-style search: run a web search and collect the photos on the
+// matching pages (brand sites, Lyst, resale, editorials), so "dior heels"
+// returns actual Dior heels rather than stock photography.
+async function searchWebImages(q, apiKey) {
+  const cacheKey = q.toLowerCase()
+  const cached = webImageCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) return cached.photos
+
+  const response = await fetch('https://api.exa.ai/search', {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: q,
+      type: 'auto',
+      numResults: 25,
+      // imageLinks only comes back when contents are requested; 1 char of
+      // text keeps the payload (and cost) minimal.
+      contents: { text: { maxCharacters: 1 }, extras: { imageLinks: 6 } },
+    }),
+  })
+  if (!response.ok) throw new Error(`Exa ${response.status}: ${await response.text()}`)
+
+  const data = await response.json()
+  const seen = new Set()
+  const perPage = []
+  for (const r of data.results ?? []) {
+    const domain = domainOf(r.url)
+    const candidates = [...(r.extras?.imageLinks ?? []), r.image].filter(Boolean)
+    const list = []
+    for (const raw of candidates) {
+      if (typeof raw !== 'string' || !/^https?:\/\//i.test(raw) || JUNK_IMAGE_RE.test(raw)) continue
+      // The live site is https — an http:// image is mixed content.
+      const url = raw.replace(/^http:\/\//i, 'https://').replace(/&amp;/g, '&')
+      // Same photo often appears at several sizes; dedupe on the path.
+      const key = url.split('?')[0]
+      if (seen.has(key)) continue
+      seen.add(key)
+      list.push({
+        url,
+        thumbUrl: url,
+        alt: (r.title ?? q).trim().slice(0, 120),
+        photographer: domain,
+        sourceUrl: r.url,
+        source: domain,
+      })
+    }
+    if (list.length) perPage.push(list)
+  }
+
+  // Round-robin across pages so one site (often the brand's own) doesn't
+  // fill the whole first screen; relevance order is kept within each round.
+  const photos = []
+  for (let i = 0; perPage.some((l) => l.length > i); i++) {
+    for (const list of perPage) if (list[i]) photos.push({ ...list[i], id: `web-${photos.length}` })
+  }
+
+  webImageCache.set(cacheKey, { photos, expiresAt: Date.now() + WEB_SHOP_CACHE_TTL_MS })
+  return photos
+}
+
+const WEB_IMAGES_PER_PAGE = 18
 
 app.get('/api/search-images', async (req, res) => {
   const q = String(req.query.q || 'fashion clothing').trim().slice(0, 100)
   const page = Math.max(1, parseInt(String(req.query.page || '1'), 10))
+  const exaKey = process.env.EXA_API_KEY
+
+  if (req.query.source === 'web' && exaKey) {
+    try {
+      const all = await searchWebImages(q, exaKey)
+      const start = (page - 1) * WEB_IMAGES_PER_PAGE
+      const photos = all.slice(start, start + WEB_IMAGES_PER_PAGE)
+      console.log(`[search-images] web "${q}" → ${all.length} images`)
+      if (all.length) return res.json({ photos, totalPages: Math.ceil(all.length / WEB_IMAGES_PER_PAGE), page, source: 'web' })
+      // Nothing usable on the web — fall through to stock photos.
+    } catch (e) {
+      console.error('[search-images] Exa error:', e?.message)
+    }
+  }
+
   const apiKey = process.env.PEXELS_API_KEY
 
   if (!apiKey) {
