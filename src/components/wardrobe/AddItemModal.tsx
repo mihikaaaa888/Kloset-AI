@@ -300,11 +300,11 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
         }
         for (const piece of pieces) {
           setImageProcessingStep('Saving garment…')
-          // Keep the complete uploaded photo as the item's display image. Use
-          // the garment crop only for recognition so the saved photo does not
-          // unexpectedly zoom into one part of the outfit.
-          const imageId = await saveImage(compressed)
-          const url = URL.createObjectURL(compressed)
+          // Save and preview the garment crop so each wardrobe item is framed
+          // around the detected piece. If detection falls back, piece.blob is
+          // the original compressed photo.
+          const imageId = await saveImage(piece.blob)
+          const url = URL.createObjectURL(piece.blob)
           processed.push({ imageId, previewUrl: url, blob: piece.blob, detectedCategory: piece.category, detectedName: piece.name })
           pendingMap.current.set(imageId, url)
         }
