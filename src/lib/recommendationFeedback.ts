@@ -189,3 +189,63 @@ export function summarizeRecommendationFeedback(feedback: RecommendationFeedback
     avoids.length ? `Often skipped: ${avoids.join(', ')}` : '',
   ].filter(Boolean).join('. ')
 }
+
+export interface TasteProfile {
+  /** Thumbs up / down counted (views excluded). */
+  ratedCount: number
+  /** 'prints' or 'solids' once one clearly wins, else null. */
+  patternLean: 'prints' | 'solids' | null
+  loves: { colours: string[]; patterns: string[]; styles: string[]; materials: string[]; pieces: string[] }
+  avoids: { colours: string[]; patterns: string[]; styles: string[]; materials: string[]; pieces: string[] }
+}
+
+/**
+ * What a user's likes and dislikes say about their taste, per dimension —
+ * shown on For You so the learning is visible ("leans towards prints, loves
+ * black and navy"). Uses the same weights and fading as recommendation
+ * scoring: outfit ratings count more, older ratings count less.
+ */
+export function learnTasteProfile(feedback: RecommendationFeedback[]): TasteProfile {
+  const dimensions = ['colours', 'patterns', 'styles', 'materials', 'pieces'] as const
+  const scores = Object.fromEntries(dimensions.map((d) => [d, new Map<string, number>()])) as Record<(typeof dimensions)[number], Map<string, number>>
+  const add = (dimension: (typeof dimensions)[number], raw: string | undefined, weight: number) => {
+    const label = raw?.toLowerCase().replace(/[^a-z0-9 &-]/g, '').trim()
+    if (!label || label === 'other' || label === 'mixed') return
+    scores[dimension].set(label, (scores[dimension].get(label) ?? 0) + weight)
+  }
+  let prints = 0
+  let solids = 0
+  let ratedCount = 0
+
+  for (const event of feedback) {
+    if (event.action === 'dwell') continue
+    ratedCount += 1
+    const ageDays = Math.max(0, (Date.now() - new Date(event.createdAt).getTime()) / 86_400_000)
+    const decay = Math.exp(-ageDays / 120)
+    const base = event.action === 'like'
+      ? (event.source === 'daily-outfit' ? 1.5 : event.source === 'outfit-photo' ? 0.65 : 1)
+      : (event.source === 'daily-outfit' ? -1.5 : -1)
+    const weight = base * decay
+    const { traits } = event
+    for (const colour of traits.colours.slice(0, 2)) add('colours', colour, weight)
+    if (traits.pattern) {
+      if (traits.pattern === 'solid') solids += weight
+      else if (traits.pattern !== 'mixed') { prints += weight; add('patterns', traits.pattern, weight) }
+    }
+    for (const style of traits.aesthetics ?? []) add('styles', style, weight)
+    add('materials', traits.material, weight)
+    // Pairing cards join subcategories with " + "; count each piece type.
+    for (const piece of (traits.subcategory ?? '').split('+')) add('pieces', piece, weight)
+  }
+
+  // Needs a clear signal: at least two net ratings' worth, and ahead of the other side.
+  const pick = (map: Map<string, number>, sign: 1 | -1) => [...map.entries()]
+    .filter(([, score]) => score * sign >= 1.5)
+    .sort((a, b) => (b[1] - a[1]) * sign)
+    .slice(0, 4)
+    .map(([label]) => label)
+  const loves = Object.fromEntries(dimensions.map((d) => [d, pick(scores[d], 1)])) as TasteProfile['loves']
+  const avoids = Object.fromEntries(dimensions.map((d) => [d, pick(scores[d], -1)])) as TasteProfile['avoids']
+  const patternLean = prints >= 2 && prints > solids + 1 ? 'prints' : solids >= 2 && solids > prints + 1 ? 'solids' : null
+  return { ratedCount, patternLean, loves, avoids }
+}

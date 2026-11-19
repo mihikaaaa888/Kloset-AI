@@ -1,8 +1,9 @@
 import { useMemo, useState, type PointerEvent } from 'react'
-import { Heart, RotateCcw, Shirt, ThumbsDown } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Heart, RotateCcw, Shirt, Sparkles, ThumbsDown } from 'lucide-react'
 import { ALL_CATALOG_ITEMS, matchesStylePreference } from '@/lib/catalogData'
 import { rankForUser } from '@/lib/shopping'
-import { scoreRecommendationFeedback, traitsFromCatalog, traitsFromWardrobe, type RecommendationFeedback, type RecommendationTraits } from '@/lib/recommendationFeedback'
+import { learnTasteProfile, scoreRecommendationFeedback, traitsFromCatalog, traitsFromWardrobe, type RecommendationFeedback, type RecommendationTraits } from '@/lib/recommendationFeedback'
 import { useRecommendationStore } from '@/store/recommendationStore'
 import { useUserStore } from '@/store/userStore'
 import { useWardrobeStore } from '@/store/wardrobeStore'
@@ -111,6 +112,9 @@ export function ForYouPage() {
   const [ratedThisSession, setRatedThisSession] = useState(0)
   const [dragX, setDragX] = useState(0)
   const [swiping, setSwiping] = useState(false)
+  // "Not sure" cards: hidden for this visit, nothing recorded.
+  const [skipped, setSkipped] = useState<Set<string>>(() => new Set())
+  const taste = useMemo(() => learnTasteProfile(feedback), [feedback])
 
   const deck = useMemo(() => {
     const preference = profile?.genderStylePreference
@@ -123,8 +127,10 @@ export function ForYouPage() {
     const rankedShop = rankForUser(pool, profile, wardrobe, feedback)
     const diverseShop = diverseShopCards(rankedShop)
     const pairings = wardrobePairings(wardrobe, feedback)
-    return mixedDeck(diverseShop, pairings)
-  }, [feedback, profile, wardrobe])
+    // Re-ranked after every swipe: each rating changes `feedback`, so the
+    // cards still to come move towards what the user likes.
+    return mixedDeck(diverseShop, pairings).filter((entry) => !skipped.has(entry.id))
+  }, [feedback, profile, wardrobe, skipped])
 
   const card = deck[0]
   const decide = (action: 'like' | 'dislike') => {
@@ -138,6 +144,13 @@ export function ForYouPage() {
       createdAt: new Date().toISOString(),
     })
     setRatedThisSession((current) => current + 1)
+    setDragX(0)
+    setSwiping(false)
+  }
+
+  const notSure = () => {
+    if (!card) return
+    setSkipped((current) => new Set(current).add(card.id))
     setDragX(0)
     setSwiping(false)
   }
@@ -161,14 +174,17 @@ export function ForYouPage() {
   return (
     <main className="min-h-screen bg-warm-cream px-5 pb-28 pt-28 md:pt-32">
       <div className="mx-auto max-w-5xl">
-        <p className="mb-2 text-xs uppercase tracking-[0.24em] text-text-muted">Made for your taste</p>
+        <p className="mb-2 text-xs uppercase tracking-[0.24em] text-text-muted">Optional · made for your taste</p>
         <div className="mb-8 flex items-end justify-between gap-4">
           <div>
             <h1 className="font-display text-4xl text-text-primary sm:text-5xl">For you</h1>
-            <p className="mt-2 max-w-xl text-sm text-text-muted">Swipe right for pieces you like, left for ones you’d skip. Kloset will use your choices to tune future outfit and shop recommendations.</p>
+            <p className="mt-2 max-w-xl text-sm text-text-muted">Swipe as many or as few as you like: right for pieces you like, left for ones you’d skip. Every swipe tunes your daily outfits, Shop and Kaia.</p>
           </div>
-          <span className="shrink-0 text-xs text-text-muted">{feedback.filter((event) => event.action !== 'dwell').length} rated</span>
+          <Link to="/home" className="shrink-0 text-xs text-text-muted underline-offset-4 hover:text-text-primary hover:underline">Done for now</Link>
         </div>
+
+        <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div>
 
         {card ? (
           <div className="mx-auto max-w-md">
@@ -195,21 +211,25 @@ export function ForYouPage() {
                 {dragX < -28 && <span className="absolute right-5 top-5 rounded-lg border-2 border-rose-700 bg-white/90 px-3 py-1 text-sm font-bold uppercase tracking-widest text-rose-800">Skip</span>}
               </div>
             </article>
-            <div className="mt-5 flex items-center justify-center gap-6">
+            <div className="mt-5 flex items-center justify-center gap-5">
               <button onClick={() => decide('dislike')} aria-label="Show me fewer like this" className="flex h-14 w-14 items-center justify-center rounded-full border border-text-primary/15 bg-surface text-text-muted transition hover:border-rose-300 hover:text-rose-700"><ThumbsDown size={21} /></button>
-              <span className="min-w-16 text-center text-xs tabular-nums text-text-muted">{ratedThisSession + 1} / {ratedThisSession + deck.length}</span>
+              <button onClick={notSure} className="h-10 rounded-full px-4 text-xs text-text-muted transition hover:bg-text-primary/5 hover:text-text-primary">Not sure</button>
               <button onClick={() => decide('like')} aria-label="I like this" className="flex h-14 w-14 items-center justify-center rounded-full bg-deep-purple text-butter-yellow transition hover:scale-105"><Heart size={22} /></button>
             </div>
-            <p className="mt-3 text-center text-xs text-text-muted">← Skip this style · Like this style →</p>
+            <p className="mt-3 text-center text-xs text-text-muted">← Skip this style · Like this style → <span className="tabular-nums">· {ratedThisSession} rated this visit</span></p>
           </div>
         ) : (
           <div className="mx-auto flex max-w-lg flex-col items-center rounded-3xl border border-text-primary/10 bg-surface px-8 py-14 text-center shadow-lifted">
             <Heart size={28} className="text-deep-purple" />
             <h2 className="mt-4 font-display text-3xl text-text-primary">You’re all caught up</h2>
             <p className="mt-2 text-sm text-text-muted">Your choices are saved and will shape future recommendations.</p>
-            <button onClick={() => { clearSwipeFeedback(userId); setRatedThisSession(0) }} className="mt-6 inline-flex items-center gap-2 rounded-full bg-deep-purple px-5 py-3 text-sm text-butter-yellow"><RotateCcw size={16} /> Start over</button>
+            <button onClick={() => { clearSwipeFeedback(userId); setRatedThisSession(0); setSkipped(new Set()) }} className="mt-6 inline-flex items-center gap-2 rounded-full bg-deep-purple px-5 py-3 text-sm text-butter-yellow"><RotateCcw size={16} /> Start over</button>
           </div>
         )}
+        </div>
+
+        <TastePanel taste={taste} />
+        </div>
       </div>
     </main>
   )
@@ -218,4 +238,67 @@ export function ForYouPage() {
 function PairingImage({ item }: { item: ClothingItem }) {
   const imageUrl = useItemImage(item)
   return imageUrl ? <img src={imageUrl} alt={item.name} draggable={false} className="h-full min-h-0 w-full object-cover" /> : <div className="flex h-full items-center justify-center bg-cream-200"><Shirt size={36} className="text-text-muted/50" /></div>
+}
+
+const CHIP_GROUPS: { key: keyof ReturnType<typeof learnTasteProfile>['loves']; label: string }[] = [
+  { key: 'colours', label: 'Colours' },
+  { key: 'patterns', label: 'Patterns' },
+  { key: 'styles', label: 'Style' },
+  { key: 'materials', label: 'Fabrics' },
+  { key: 'pieces', label: 'Pieces' },
+]
+
+const titleCase = (value: string) => value.replace(/(^|[\s-])\w/g, (m) => m.toUpperCase())
+
+/** What Kloset has learned so far, updated with every swipe and outfit rating. */
+function TastePanel({ taste }: { taste: ReturnType<typeof learnTasteProfile> }) {
+  const hasLoves = CHIP_GROUPS.some(({ key }) => taste.loves[key].length) || taste.patternLean
+  const hasAvoids = CHIP_GROUPS.some(({ key }) => taste.avoids[key].length)
+  return (
+    <aside aria-live="polite" aria-label="Your taste so far" className="rounded-3xl border border-text-primary/10 bg-surface p-6 lg:sticky lg:top-28">
+      <div className="flex items-center gap-2 text-text-primary">
+        <Sparkles size={16} className="text-butter-yellow" aria-hidden="true" />
+        <h2 className="font-display text-2xl">Your taste so far</h2>
+      </div>
+      <p className="mt-1 text-xs text-text-muted">From {taste.ratedCount} rating{taste.ratedCount === 1 ? '' : 's'}: swipes here and thumbs on your daily outfit.</p>
+
+      {!hasLoves && !hasAvoids ? (
+        <p className="mt-5 text-sm leading-relaxed text-text-muted">
+          {taste.ratedCount < 4 ? 'Rate a few pieces and Kloset will start to spot what you love — colours, prints, fabrics and styles.' : 'No clear pattern yet. Keep going and it will sharpen.'}
+        </p>
+      ) : (
+        <div className="mt-5 space-y-5">
+          {taste.patternLean && (
+            <p className="font-display text-lg italic text-text-primary">
+              {taste.patternLean === 'prints' ? 'You lean towards prints.' : 'You lean towards solids.'}
+            </p>
+          )}
+          {hasLoves && <TasteChips title="You love" groups={taste.loves} tone="love" />}
+          {hasAvoids && <TasteChips title="Not for you" groups={taste.avoids} tone="avoid" />}
+        </div>
+      )}
+    </aside>
+  )
+}
+
+function TasteChips({ title, groups, tone }: { title: string; groups: ReturnType<typeof learnTasteProfile>['loves']; tone: 'love' | 'avoid' }) {
+  return (
+    <div>
+      <p className="mb-2 text-2xs uppercase tracking-ultra-wide text-text-muted">{title}</p>
+      <dl className="space-y-2">
+        {CHIP_GROUPS.filter(({ key }) => groups[key].length).map(({ key, label }) => (
+          <div key={key} className="flex flex-wrap items-baseline gap-1.5">
+            <dt className="w-16 shrink-0 text-xs text-text-muted">{label}</dt>
+            {groups[key].map((value) => (
+              <dd key={value} className={tone === 'love'
+                ? 'rounded-full bg-butter-yellow/15 px-2.5 py-0.5 text-xs text-text-primary'
+                : 'rounded-full border border-text-primary/15 px-2.5 py-0.5 text-xs text-text-muted line-through decoration-text-muted/50'}>
+                {titleCase(value)}
+              </dd>
+            ))}
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
 }

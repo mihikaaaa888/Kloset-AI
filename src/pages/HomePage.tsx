@@ -274,26 +274,24 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
       <h2 id="daily-outfit-title" className="m-0 text-left font-display text-3xl sm:text-4xl lg:text-5xl font-medium leading-tight text-text-primary">
         Today’s outfit <em className="italic text-butter-yellow">recommendation</em>
       </h2>
-      {/* Today's weather: a centred band between the heading and the outfit. */}
-      <div className="mt-8 border-y border-text-primary/10 py-8 text-center" aria-live="polite">
-        <p className="text-2xs uppercase tracking-ultra-wide text-text-muted">{dateLabel}</p>
+      {/* Date and today's weather on one line under the heading. */}
+      <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-left" aria-live="polite">
+        <span className="text-2xs uppercase tracking-ultra-wide text-text-muted">{dateLabel}</span>
+        <span className="hidden h-3.5 w-px bg-text-primary/20 sm:block" aria-hidden="true" />
         {weather ? (() => {
           const Icon = weatherIcon(weather.code)
-          return <>
-            <div className="mt-4 flex items-center justify-center gap-4 sm:gap-5">
-              <Icon size={44} strokeWidth={1.25} className="shrink-0 text-butter-yellow" aria-hidden="true" />
-              <span className="font-display text-6xl font-semibold leading-none tabular-nums text-text-primary sm:text-7xl">
-                {Math.round(weather.temperature)}°<span className="align-super text-2xl font-medium text-text-muted sm:text-3xl">C</span>
-              </span>
-            </div>
-            <p className="mt-4 text-sm font-semibold uppercase tracking-[0.25em] text-text-primary">{weather.label}</p>
-            <p className="mt-2 font-display text-lg italic text-butter-yellow sm:text-xl">{WEAR_HINT[weather.condition]}</p>
-          </>
+          return <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+            <Icon size={17} strokeWidth={1.5} className="shrink-0 text-butter-yellow" aria-hidden="true" />
+            <span className="font-display text-lg font-semibold leading-none tabular-nums text-text-primary">{Math.round(weather.temperature)}°C</span>
+            <span className="font-medium text-text-primary">{weather.label}</span>
+            <span className="text-text-muted" aria-hidden="true">·</span>
+            <span className="font-display text-base italic text-butter-yellow">{WEAR_HINT[weather.condition]}</span>
+          </span>
         })() : (
-          <p className="mt-4 flex items-center justify-center gap-2 text-sm text-text-muted">
-            <CloudOff size={18} className="shrink-0 text-text-muted" aria-hidden="true" />
-            <span>{weatherError ? 'Weather unavailable — allow location access to see local conditions.' : 'Checking today’s weather…'}</span>
-          </p>
+          <span className="flex items-center gap-2 text-sm text-text-muted">
+            <CloudOff size={16} className="shrink-0" aria-hidden="true" />
+            {weatherError ? 'Weather unavailable — allow location access to see local conditions.' : 'Checking today’s weather…'}
+          </span>
         )}
       </div>
       <div className="daily-outfit-shell mt-6">
