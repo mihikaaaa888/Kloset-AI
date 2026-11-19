@@ -70,7 +70,7 @@ function requestLocation(): Promise<Coordinates> {
   })
 }
 
-const PLACE_KEY = 'kloset-weather-place-v2'
+const PLACE_KEY = 'kloset-weather-place-v3'
 
 /**
  * The area name for the weather card ("Sonipat, Haryana"). Looked up once per
@@ -88,7 +88,7 @@ async function getPlaceName({ latitude, longitude }: Coordinates): Promise<strin
   } catch { /* storage unavailable: look it up */ }
   try {
     const params = new URLSearchParams({ latitude: String(lat), longitude: String(lon), localityLanguage: 'en' })
-    const response = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?${params}`)
+    const response = await fetch(`https://api-bdc.io/data/reverse-geocode-client?${params}`)
     if (!response.ok) return null
     const data = await response.json() as { locality?: string; city?: string; principalSubdivision?: string; countryName?: string }
     // "Area, City" when the neighbourhood differs from the city; otherwise "City, State".

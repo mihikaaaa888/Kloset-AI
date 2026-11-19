@@ -279,6 +279,7 @@
     width: auto;
     height: auto;
     min-height: 0;
+    align-self: start;
   }
   .daily-outfit-layout--many .daily-outfit-ask {
     grid-column: 1 / -1;
@@ -300,11 +301,14 @@
     .daily-outfit-piece {
       width: 18rem;
     }
+    /* Only as tall as the tip, sitting at the top beside the outfit; it used
+       to stretch to the photos' height and leave a tall empty box. */
     .daily-outfit-tips {
       grid-column: 2;
       width: 20rem;
-      height: 100%;
+      height: auto;
       min-height: 0;
+      align-self: start;
     }
     .daily-outfit-ask {
       grid-column: 1 / -1;
@@ -729,4 +733,61 @@
 @keyframes hint-bob {
   0%, 100% { translate: 0 0; }
   50% { translate: 0 -4px; }
+}
+
+/* ─── Weather scene (Home weather strip) ──────────────────────────────────────
+   A small animated sky behind today's weather, in the spirit of Apple Weather.
+   Layers are absolutely positioned inside .wx-scene; text sits above them.
+   Motion stops under prefers-reduced-motion. */
+.wx-scene { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.wx-sky-clear-day  { background: linear-gradient(115deg, #1f5fa8 0%, #3a86c8 55%, #f2b866 130%); }
+.wx-sky-clear-night{ background: linear-gradient(115deg, #070b1f 0%, #142050 60%, #2a2f6b 100%); }
+.wx-sky-cloudy-day { background: linear-gradient(115deg, #3f5b7a 0%, #6d88a6 70%, #a3b3c4 120%); }
+.wx-sky-cloudy-night{ background: linear-gradient(115deg, #10172b 0%, #27314d 70%, #3b4566 100%); }
+.wx-sky-rain       { background: linear-gradient(115deg, #1d2834 0%, #34495e 65%, #4e6377 100%); }
+.wx-sky-storm      { background: linear-gradient(115deg, #121820 0%, #26303d 65%, #3a3f52 100%); }
+.wx-sky-snow       { background: linear-gradient(115deg, #4d6684 0%, #7f97b2 70%, #b7c6d6 120%); }
+.wx-sky-fog        { background: linear-gradient(115deg, #555f6b 0%, #7c8692 70%, #a3abb4 120%); }
+
+/* Sun: a warm glow with slowly turning rays */
+.wx-sun { position: absolute; right: 1%; top: -100px; width: 180px; height: 180px; border-radius: 9999px;
+  background: radial-gradient(circle, rgba(255,226,140,0.8) 0%, rgba(255,196,90,0.4) 28%, rgba(255,196,90,0) 68%); }
+.wx-sun::before { content: ''; position: absolute; inset: -60px; border-radius: 9999px;
+  background: repeating-conic-gradient(from 0deg, rgba(255,231,160,0.16) 0deg 6deg, transparent 6deg 24deg);
+  mask: radial-gradient(circle, transparent 30%, #000 45%, transparent 72%);
+  -webkit-mask: radial-gradient(circle, transparent 30%, #000 45%, transparent 72%);
+  animation: wx-spin 60s linear infinite; }
+
+/* Night: moon glow and twinkling stars */
+.wx-moon { position: absolute; right: 9%; top: -40px; width: 120px; height: 120px; border-radius: 9999px;
+  background: radial-gradient(circle, rgba(235,238,255,0.55) 0%, rgba(200,210,255,0.18) 35%, rgba(200,210,255,0) 70%); }
+.wx-star { position: absolute; width: 2px; height: 2px; border-radius: 9999px; background: #fff; animation: wx-twinkle 3.5s ease-in-out infinite; }
+
+/* Clouds drift slowly left to right */
+.wx-cloud { position: absolute; border-radius: 9999px; background: rgba(255,255,255,0.55); filter: blur(14px);
+  animation: wx-drift linear infinite; }
+
+/* Rain: thin falling streaks */
+.wx-drop { position: absolute; top: -20%; width: 1px; height: 18px; background: linear-gradient(to bottom, rgba(210,230,255,0), rgba(210,230,255,0.45));
+  animation: wx-fall linear infinite; }
+.wx-flash { position: absolute; inset: 0; background: rgba(220,230,255,0.55); opacity: 0; animation: wx-flash 7s infinite; }
+
+/* Snow: soft drifting flakes */
+.wx-flake { position: absolute; top: -10%; border-radius: 9999px; background: rgba(255,255,255,0.9); animation: wx-snow linear infinite; }
+
+/* Fog: wide, soft bands sliding past */
+.wx-mist { position: absolute; left: -30%; width: 160%; height: 40%; border-radius: 9999px; background: rgba(255,255,255,0.22); filter: blur(18px);
+  animation: wx-mist ease-in-out infinite alternate; }
+
+@keyframes wx-spin    { to { transform: rotate(360deg); } }
+@keyframes wx-twinkle { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+@keyframes wx-drift   { from { transform: translateX(-40%); } to { transform: translateX(140%); } }
+@keyframes wx-fall    { from { transform: translateY(0) translateX(0); } to { transform: translateY(260px) translateX(-24px); } }
+@keyframes wx-flash   { 0%, 91%, 95%, 100% { opacity: 0; } 92% { opacity: 1; } 93% { opacity: 0.2; } 94% { opacity: 0.8; } }
+@keyframes wx-snow    { from { transform: translateY(0) translateX(0); } 50% { transform: translateY(130px) translateX(12px); } to { transform: translateY(260px) translateX(-6px); } }
+@keyframes wx-mist    { from { transform: translateX(-6%); } to { transform: translateX(6%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .wx-scene *, .wx-scene *::before { animation: none !important; }
+  .wx-flash { display: none; }
 }
