@@ -180,8 +180,48 @@ app.get('/api/cron/inactive-accounts', async (req, res) => {
 // ─── Image search (web via Exa, or Pexels stock) ──────────────────────────────
 
 // Images on a results page that are site chrome, not the product: logos,
-// avatars, social-share cards, icons, placeholders, tiny thumbnails.
-const JUNK_IMAGE_RE = /logo|avatar|gravatar|favicon|sprite|icon|placeholder|no-img|blank|spacer|badge|banner|open-graph|og[_-]?image|\/social\/|1200x630|150x150|\.svg(\?|$)|\.gif(\?|$)/i
+// app icons, avatars, social-share cards, hero banners, lazy-load
+// placeholders, tiny thumbnails. The browser also drops tiny or very wide
+// images once it knows their real size (see ImageSearchBrowser).
+const JUNK_IMAGE_RE = /logo|wordmark|avatar|gravatar|favicon|apple-touch|android-icon|\/icons?\/|[-_]icons?[-_.]|sprite|seal|certif|award|wysiwyg|bazaarvoice|reviews?\/|placeholder|transparent|spinner|loader|1x1|pixel\.|lazyload|fallback|no-img|blank|spacer|badge|banner|hero|masthead|open-graph|og[_-]?image|social|1200x630|1920x1080|150x150|w_1920|fit=128|\/w_(16|90)[,%]|\.svg(\?|$)|\.gif(\?|$)/i
+
+// Words that make a search about a specific kind of item. A search without one
+// ("nike", "dior") is a brand name on its own, so it's widened to the brand's
+// shoes and clothing.
+const FASHION_ITEM_RE = /\b(shirts?|t-?shirts?|tees?|blouses?|tops?|tanks?|camis?|sweaters?|jumpers?|cardigans?|hoodies?|sweatshirts?|jackets?|coats?|blazers?|vests?|trousers?|pants|jeans|denim|shorts|skirts?|dress(es)?|gowns?|suits?|jumpsuits?|leggings|joggers|kurtas?|kurtis?|sarees?|saris?|lehengas?|dupattas?|shoes?|sneakers?|trainers?|boots?|heels?|pumps?|flats?|sandals?|slides?|loafers?|mules?|slingbacks?|wedges?|bags?|handbags?|totes?|clutch(es)?|backpacks?|wallets?|belts?|scarf|scarves|hats?|caps?|beanies?|sunglasses|jewell?ery|earrings?|necklaces?|bracelets?|rings?|watch(es)?|socks?|lingerie|bra|swimsuits?|bikinis?)\b/i
+
+// Searched as typed, "shoes" returns category pages, editorials and
+// lookbooks: photos of people and outfits. Asking for product pages returns
+// single items for sale, whose photos are the item on its own.
+function webImageQuery(q) {
+  const item = FASHION_ITEM_RE.test(q) ? q : `${q} shoes and clothing`
+  return `${item} product page buy online`
+}
+
+// Image CDNs (Scene7 at Foot Locker/Dick's/Dior, Zalando, Shopify) put the
+// size in the URL and listing pages often link 100px thumbnails. Ask for a
+// size that looks sharp in the grid and as the item photo.
+function upsizeImageUrl(url) {
+  return url
+    .replace(/([?&])wid=\d+/i, '$1wid=800')
+    .replace(/([?&])hei=\d+/i, '$1hei=800')
+    .replace(/([?&])imwidth=\d+/i, '$1imwidth=800')
+    .replace(/_(\d{2,3})x(\d{2,3})?(\.(jpe?g|png|webp))/i, (m, w, h, ext) => (Number(w) < 600 ? `_800x${ext}` : m))
+}
+
+// Lower-cased words of the search worth matching ("dunk", "slingback"),
+// skipping filler words.
+function queryKeywords(q) {
+  const stop = new Set(['the', 'and', 'for', 'with', 'women', 'womens', 'men', 'mens', 'new', 'buy'])
+  return [...new Set(q.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !stop.has(w)))]
+}
+
+function keywordScore(text, keywords) {
+  let decoded = text
+  try { decoded = decodeURIComponent(text) } catch { /* keep raw */ }
+  const haystack = decoded.toLowerCase().replace(/[^a-z0-9]+/g, ' ')
+  return keywords.filter((k) => haystack.includes(k)).length
+}
 
 const webImageCache = new Map()
 
@@ -197,7 +237,7 @@ async function searchWebImages(q, apiKey) {
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      query: q,
+      query: webImageQuery(q),
       type: 'auto',
       numResults: 25,
       // imageLinks only comes back when contents are requested; 1 char of
@@ -216,8 +256,10 @@ async function searchWebImages(q, apiKey) {
     const list = []
     for (const raw of candidates) {
       if (typeof raw !== 'string' || !/^https?:\/\//i.test(raw) || JUNK_IMAGE_RE.test(raw)) continue
+      // Some sites list a page link as an image; real images don't end in "/".
+      if (raw === r.url || /\/(\?|#|$)/.test(raw.replace(/^https?:\/\/[^/]+/i, ''))) continue
       // The live site is https — an http:// image is mixed content.
-      const url = raw.replace(/^http:\/\//i, 'https://').replace(/&amp;/g, '&')
+      const url = upsizeImageUrl(raw.replace(/^http:\/\//i, 'https://').replace(/&amp;/g, '&'))
       // Same photo often appears at several sizes; dedupe on the path.
       const key = url.split('?')[0]
       if (seen.has(key)) continue
@@ -231,14 +273,26 @@ async function searchWebImages(q, apiKey) {
         source: domain,
       })
     }
-    if (list.length) perPage.push(list)
+    // A product page mostly holds the same item from several angles; a few
+    // is enough, or one shoe fills the whole first screen.
+    if (list.length) perPage.push(list.slice(0, 3))
   }
 
-  // Round-robin across pages so one site (often the brand's own) doesn't
-  // fill the whole first screen; relevance order is kept within each round.
+  // Pages whose images name what was searched go first, e.g. ".../NIKE+DUNK+LOW.png"
+  // for "nike dunk low". The image's own path counts most (not its host, or
+  // every static.nike.com image would match "nike"); the page's title is a
+  // weaker signal. Then take one image per page per round, so the first row
+  // shows several items instead of one item from every angle.
+  const keywords = queryKeywords(q)
+  const pageScore = (list) => Math.max(...list.map((p) =>
+    keywordScore(p.url.replace(/^https?:\/\/[^/]+/i, '').split('?')[0], keywords) * 2 + keywordScore(p.alt, keywords)))
+  const ranked = perPage
+    .map((list, i) => ({ list, i, score: pageScore(list) }))
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .map(({ list }) => list)
   const photos = []
-  for (let i = 0; perPage.some((l) => l.length > i); i++) {
-    for (const list of perPage) if (list[i]) photos.push({ ...list[i], id: `web-${photos.length}` })
+  for (let i = 0; ranked.some((l) => l.length > i); i++) {
+    for (const list of ranked) if (list[i]) photos.push({ ...list[i], id: `web-${photos.length}` })
   }
 
   webImageCache.set(cacheKey, { photos, expiresAt: Date.now() + WEB_SHOP_CACHE_TTL_MS })

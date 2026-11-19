@@ -836,7 +836,7 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
             </div>
           ) : photoTab === 'browse' ? (
             <ImageSearchBrowser
-              defaultQuery={buildSingleItemQuery(draft.category, draft.subcategory)}
+              defaultQuery={draft.subcategory ?? ''}
               onSelect={(url) => {
                 setPreviewUrl(url)
                 setLegacyImageUrl(url)
@@ -1161,24 +1161,11 @@ const BROWSE_ITEM_QUERIES = [
   ['Accessories', 'bag jewellery accessory'],
 ] as const
 
-function buildSingleItemQuery(category?: string, subcategory?: string) {
-  if (subcategory) return subcategory
-  if (category === 'tops') return 'shirt blouse t-shirt'
-  if (category === 'bottoms') return 'trousers jeans skirt'
-  if (category === 'dresses') return 'dress'
-  if (category === 'outerwear') return 'jacket coat cardigan'
-  if (category === 'shoes') return 'shoes'
-  if (category === 'accessories') return 'bag jewellery accessory'
-  return 'clothing shoes bags accessories'
-}
-
-// A web image search works like Google Images: what the user typed is the
-// query. A specific search ("dior heels") is left alone; a bare generic word
-// gets a fashion hint so "black" doesn't return paint swatches.
-function imageSearchQuery(input: string) {
-  const trimmed = input.trim()
-  if (!trimmed) return ''
-  return trimmed.split(/\s+/).length === 1 ? `${trimmed} fashion` : trimmed
+// Logos, app icons and site banners are small or much wider than tall once
+// loaded; product photos are roughly square or portrait.
+function looksLikeLogoOrBanner(img: HTMLImageElement) {
+  const { naturalWidth: w, naturalHeight: h } = img
+  return w < 160 || h < 160 || w / h > 1.6
 }
 
 interface WebImage {
@@ -1207,11 +1194,12 @@ function ImageSearchBrowser({
   const [noKey, setNoKey] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [source, setSource] = useState<'web' | 'pexels'>('web')
-  // Hotlinked web images can 404 or block embedding — drop them from the grid.
+  // Hotlinked web images can 404, block embedding, or turn out to be a logo
+  // or banner once loaded — drop them from the grid.
   const [broken, setBroken] = useState<Set<string>>(new Set())
 
   const search = useCallback(async (q: string, p = 1) => {
-    const searchQuery = imageSearchQuery(q)
+    const searchQuery = q.trim()
     if (!searchQuery) return
     setLoading(true)
     setError(null)
@@ -1313,6 +1301,7 @@ function ImageSearchBrowser({
                 className="w-full h-full object-cover bg-white"
                 loading="lazy"
                 referrerPolicy="no-referrer"
+                onLoad={(e) => { if (looksLikeLogoOrBanner(e.currentTarget)) setBroken((prev) => new Set(prev).add(photo.url)) }}
                 onError={() => setBroken((prev) => new Set(prev).add(photo.url))}
               />
               {photo.source && (
