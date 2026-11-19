@@ -238,17 +238,13 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
 
   return (
     <section ref={sectionRef} className="mb-16 lg:mb-20" aria-labelledby="daily-outfit-title">
-      {/* Heading on the left; today's weather as a compact card to the side. */}
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between lg:gap-10">
-        <div className="min-w-0">
-        <h2 id="daily-outfit-title" className="m-0 text-left font-display text-3xl sm:text-4xl lg:text-5xl font-medium leading-tight text-text-primary">
-          Today’s outfit <em className="italic text-butter-yellow">recommendation</em>
-        </h2>
-          <p className="mt-4 text-left text-2xs uppercase tracking-ultra-wide text-text-muted">{dateLabel}</p>
-        </div>
-        <div className="w-full sm:max-w-sm lg:w-[340px] lg:shrink-0">
-          <WeatherCard weather={weather} error={weatherError} />
-        </div>
+      {/* Heading, date, and today's weather as a wide strip right under the date. */}
+      <h2 id="daily-outfit-title" className="m-0 text-left font-display text-3xl sm:text-4xl lg:text-5xl font-medium leading-tight text-text-primary">
+        Today’s outfit <em className="italic text-butter-yellow">recommendation</em>
+      </h2>
+      <p className="mt-4 text-left text-2xs uppercase tracking-ultra-wide text-text-muted">{dateLabel}</p>
+      <div className="mt-3 w-full max-w-5xl">
+        <WeatherCard weather={weather} error={weatherError} />
       </div>
       <div className="daily-outfit-shell mt-6">
         <div className={`daily-outfit-layout${useRecommendationGrid ? ' daily-outfit-layout--many' : ''}`}>

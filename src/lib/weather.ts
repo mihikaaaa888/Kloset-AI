@@ -22,7 +22,7 @@ export interface LocalWeather {
   sunset?: string
   timeZone?: string
   days?: DailyForecast[]
-  /** "Sonipat, Haryana": the area name, when it could be looked up. */
+  /** "Mission District, San Francisco" or "Sonipat, Haryana", when it could be looked up. */
   place?: string
 }
 
@@ -70,7 +70,7 @@ function requestLocation(): Promise<Coordinates> {
   })
 }
 
-const PLACE_KEY = 'kloset-weather-place-v1'
+const PLACE_KEY = 'kloset-weather-place-v2'
 
 /**
  * The area name for the weather card ("Sonipat, Haryana"). Looked up once per
@@ -91,9 +91,10 @@ async function getPlaceName({ latitude, longitude }: Coordinates): Promise<strin
     const response = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?${params}`)
     if (!response.ok) return null
     const data = await response.json() as { locality?: string; city?: string; principalSubdivision?: string; countryName?: string }
+    // "Area, City" when the neighbourhood differs from the city; otherwise "City, State".
     const area = data.locality || data.city
-    const region = data.principalSubdivision || data.countryName
-    const name = [area, region && region !== area ? region : null].filter(Boolean).join(', ')
+    const wider = data.city && data.city !== area ? data.city : (data.principalSubdivision || data.countryName)
+    const name = [area, wider && wider !== area ? wider : null].filter(Boolean).join(', ')
     if (!name) return null
     try { localStorage.setItem(PLACE_KEY, JSON.stringify({ id: cacheId, name })) } catch { /* fine */ }
     return name
