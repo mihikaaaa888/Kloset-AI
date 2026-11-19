@@ -28,6 +28,7 @@ export const POLICY_BLOCKS: PolicyBlock[] = [
     ['Account', 'Email address; password (stored only as a secure hash by our authentication provider); sign-in session tokens. If you use a third-party sign-in option, we receive your name, email address and profile picture from that provider instead of a password', 'You, at sign-up, or the sign-in provider you choose'],
     ['Profile', 'Name; age; occupation; lifestyle; whether you prefer feminine, masculine or both styles; style preferences and favourite and avoided colours; pieces you picked in the style quiz; how often you want suggestions; optional profile photo', 'You, during onboarding and in Profile'],
     ['Wardrobe', 'Photos of your clothing; item details (name, category, colour, material, pattern, fit, formality, seasons, occasions, brand, notes); favourites; how many times you wore an item and the date you last wore it', 'You, plus details our AI suggests from your photos (Section 4)'],
+    ['Recommendation feedback', 'Thumbs up and down you give outfits, styling tips and shop pieces, and which suggested pieces you looked at for a while', 'You, and how you use Kloset'],
     ['Outfits and boards', 'Saved outfits, collections, outfit boards and the pieces placed on them', 'You'],
     ['Styling chat', 'Messages you send to Kaia, our AI stylist, and any images you attach', 'You'],
     ['Friends and sharing', 'Email addresses you enter to find friends; friend requests and their status; items and outfits you share, with any note you add', 'You and the friends you connect with'],

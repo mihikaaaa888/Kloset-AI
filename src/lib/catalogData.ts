@@ -1268,10 +1268,34 @@ export const ALL_CATALOG_ITEMS: CatalogItem[] = RAW_CATALOG_ITEMS.map((item) => 
   return enrichCatalogItem(item, idx)
 })
 
-// CATALOG_ITEMS stays women's-only: the outfit builders, chat and "complete the
-// look" were written against it and would mix men's pieces into women's outfits.
+// Suggestions use catalogForPreference below, not these fixed lists.
 export const CATALOG_ITEMS: CatalogItem[] = ALL_CATALOG_ITEMS.filter((i) => i.gender !== 'men')
 export const MEN_CATALOG_ITEMS: CatalogItem[] = ALL_CATALOG_ITEMS.filter((i) => i.gender === 'men')
+
+/**
+ * Which catalog genders to suggest for the profile's clothing style
+ * preference: feminine → women's, masculine → men's, androgynous / no
+ * preference / unset → both. Clothes, shoes and bags follow it; other
+ * accessories (jewellery, belts, scarves, sunglasses…) are suggested from both.
+ */
+export function suggestedGenders(preference: string | null | undefined): Array<'women' | 'men'> {
+  const p = String(preference ?? '').toLowerCase()
+  if (['feminine', 'female', 'women'].includes(p)) return ['women']
+  if (['masculine', 'male', 'men'].includes(p)) return ['men']
+  return ['women', 'men']
+}
+
+const BAG_RE = /\b(bags?|backpacks?|totes?|crossbody|clutch(es)?|handbags?|satchels?|duffels?)\b/i
+
+export function matchesStylePreference(item: Pick<CatalogItem, 'category' | 'gender' | 'subcategory' | 'name'>, preference: string | null | undefined): boolean {
+  if (item.category === 'accessories' && !BAG_RE.test(`${item.subcategory ?? ''} ${item.name}`)) return true
+  return suggestedGenders(preference).includes(item.gender ?? 'women')
+}
+
+/** The catalog filtered to what this preference should be suggested. */
+export function catalogForPreference(preference: string | null | undefined): CatalogItem[] {
+  return ALL_CATALOG_ITEMS.filter((item) => matchesStylePreference(item, preference))
+}
 
 export const CATALOG_STYLE_LABELS: Record<string, string> = {
   classic: 'Classic',

@@ -5,7 +5,7 @@ import { clsx } from 'clsx'
 import { useItemImage } from '@/hooks/useItemImage'
 import { colourNameToHex, isLightColour } from '@/lib/colourUtils'
 import { CATEGORY_LABEL, CategoryGlyph } from '@/components/wardrobe/categoryVisuals'
-import { CATALOG_ITEMS } from '@/lib/catalogData'
+import { ALL_CATALOG_ITEMS, catalogForPreference } from '@/lib/catalogData'
 import { formatINR, rankForUser } from '@/lib/shopping'
 import { ROLE_FOR_CATEGORY, catalogSnapshot, catalogToItem } from '@/lib/outfitPieces'
 import { useUserStore } from '@/store/userStore'
@@ -65,8 +65,8 @@ export function CreateOutfitModal({ open, items, onClose, onSave }: CreateOutfit
   }, [open, onClose])
 
   // Shop pieces, most on-style first. Keyed by catalog id, which never collides with wardrobe UUIDs.
-  const shopPieces = useMemo(() => rankForUser(CATALOG_ITEMS, profile, items, recommendationFeedback), [profile, items, recommendationFeedback])
-  const catalogById = useMemo(() => new Map(CATALOG_ITEMS.map((c) => [c.id, c])), [])
+  const shopPieces = useMemo(() => rankForUser(catalogForPreference(profile?.genderStylePreference), profile, items, recommendationFeedback), [profile, items, recommendationFeedback])
+  const catalogById = useMemo(() => new Map(ALL_CATALOG_ITEMS.map((c) => [c.id, c])), [])
   const shopItems = useMemo(() => shopPieces.map((c) => catalogToItem(c)), [shopPieces])
   const byId = useMemo(() => new Map([...items, ...shopItems].map((i) => [i.id, i])), [items, shopItems])
 

@@ -86,6 +86,15 @@ function weatherDescription(code: number): string {
   return 'Current conditions'
 }
 
+// One line under today's weather on what it means for getting dressed.
+const WEAR_HINT: Record<WeatherCondition, string> = {
+  hot: 'Breathable pieces today',
+  warm: 'Light layers today',
+  cool: 'Bring a layer',
+  cold: 'Wrap up warm',
+  rainy: 'Dress for the rain',
+}
+
 function weatherIcon(code: number): LucideIcon {
   if (code <= 1) return Sun
   if (code === 2) return CloudSun
@@ -116,9 +125,11 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
     ? items.filter((item) => recommendation.includes(item.id))
     : []
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-  // A dwell event should shape the next recommendation, not reshuffle the
-  // outfit while the user is looking at today's one.
-  const rankingFeedback = feedback.filter((event) => event.action !== 'dwell' || event.createdAt.slice(0, 10) !== todayKey)
+  // Views and today's thumbs-up should shape the next recommendation, not
+  // replace the outfit the user is looking at (liking it used to swap it out).
+  // A thumbs-down does take effect now: today's look is replaced with another.
+  const rankingFeedback = feedback.filter((event) => event.createdAt.slice(0, 10) !== todayKey
+    || (event.action !== 'dwell' && !(event.action === 'like' && event.source === 'daily-outfit')))
   const rankingFeedbackKey = stableHash(rankingFeedback.map((event) => `${event.id}:${event.action}`).join('|')).toString(36)
   const useRecommendationGrid = recommendedItems.length > 3
   const userId = profile?.id ?? 'guest'
@@ -263,12 +274,27 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
       <h2 id="daily-outfit-title" className="m-0 text-left font-display text-3xl sm:text-4xl lg:text-5xl font-medium leading-tight text-text-primary">
         Today’s outfit <em className="italic text-butter-yellow">recommendation</em>
       </h2>
-      <p className="mt-4 ml-0 text-left text-2xs uppercase tracking-ultra-wide text-text-muted">{dateLabel}</p>
-      <div className="mt-3 ml-0 flex items-center gap-2 text-left text-sm text-text-muted" aria-live="polite">
+      {/* Today's weather: a centred band between the heading and the outfit. */}
+      <div className="mt-8 border-y border-text-primary/10 py-8 text-center" aria-live="polite">
+        <p className="text-2xs uppercase tracking-ultra-wide text-text-muted">{dateLabel}</p>
         {weather ? (() => {
           const Icon = weatherIcon(weather.code)
-          return <><Icon size={18} className="text-deep-purple" /><span>{weather.label} · {Math.round(weather.temperature)}°C</span></>
-        })() : <><CloudOff size={18} className="text-deep-purple" /><span>{weatherError ? 'Weather unavailable — allow location access to see local conditions.' : 'Checking today’s weather…'}</span></>}
+          return <>
+            <div className="mt-4 flex items-center justify-center gap-4 sm:gap-5">
+              <Icon size={44} strokeWidth={1.25} className="shrink-0 text-butter-yellow" aria-hidden="true" />
+              <span className="font-display text-6xl font-semibold leading-none tabular-nums text-text-primary sm:text-7xl">
+                {Math.round(weather.temperature)}°<span className="align-super text-2xl font-medium text-text-muted sm:text-3xl">C</span>
+              </span>
+            </div>
+            <p className="mt-4 text-sm font-semibold uppercase tracking-[0.25em] text-text-primary">{weather.label}</p>
+            <p className="mt-2 font-display text-lg italic text-butter-yellow sm:text-xl">{WEAR_HINT[weather.condition]}</p>
+          </>
+        })() : (
+          <p className="mt-4 flex items-center justify-center gap-2 text-sm text-text-muted">
+            <CloudOff size={18} className="shrink-0 text-text-muted" aria-hidden="true" />
+            <span>{weatherError ? 'Weather unavailable — allow location access to see local conditions.' : 'Checking today’s weather…'}</span>
+          </p>
+        )}
       </div>
       <div className="daily-outfit-shell mt-6">
         <div className={`daily-outfit-layout${useRecommendationGrid ? ' daily-outfit-layout--many' : ''}`}>

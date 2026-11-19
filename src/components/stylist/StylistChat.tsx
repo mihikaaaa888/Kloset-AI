@@ -19,7 +19,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { insertItem } from '@/lib/wardrobeService'
 import { useItemImage } from '@/hooks/useItemImage'
 import { CategoryGlyph } from '@/components/wardrobe/categoryVisuals'
-import { CATALOG_ITEMS } from '@/lib/catalogData'
+import { ALL_CATALOG_ITEMS } from '@/lib/catalogData'
 import recommendationWorkbookGuide from '../../../recommendation-workbook-guidance.json'
 import type { CatalogItem, ClothingCategory, ClothingItem, WebShopResult } from '@/types'
 
@@ -49,13 +49,22 @@ function followUpForRequest(text: string): FollowUp | null {
   return null
 }
 
+const FOLLOW_UP_QUESTIONS = new Set([
+  ...recommendationWorkbookGuide.followUps.map((entry) => entry.question),
+  'What kind of look are you after?',
+  'What’s the plan for the evening?',
+])
+function isFollowUpQuestion(content: string): boolean {
+  return FOLLOW_UP_QUESTIONS.has(content.trim())
+}
+
 // Kaia is grounded on a sample of the catalog (see chatService's shopSummary)
 // and will name real pieces by their exact catalog name — matching on that
 // name lets the chat surface an "Add to Kloset" action for anything she
 // suggests, instead of leaving the user to go find it on Discover themselves.
 function findMentionedCatalogItems(content: string): CatalogItem[] {
   const lower = content.toLowerCase()
-  return CATALOG_ITEMS.filter((item) => lower.includes(item.name.toLowerCase()))
+  return ALL_CATALOG_ITEMS.filter((item) => lower.includes(item.name.toLowerCase()))
 }
 
 function removeDuplicateCatalogCopy(content: string, items: CatalogItem[]): string {
@@ -316,7 +325,15 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
     setAttachedImages([])
     setAttachedPreviews([])
     setAttachmentNotice(null)
-    const followUp = !imageFiles.length ? followUpForRequest(typedContent) : null
+    // A reply to Kaia's follow-up question is the answer, not a new request:
+    // tapping "Cocktail" for "What does the invitation say?" used to match the
+    // cocktail check again and ask the same question forever.
+    const lastMessage = messages[messages.length - 1]
+    // "What are you dressing for?" is open-ended: its answer ("a wedding") is a
+    // new request and may still need its own follow-up.
+    const answeringFollowUp = (!!pendingFollowUp && isFollowUpQuestion(pendingFollowUp.question))
+      || (lastMessage?.role === 'assistant' && isFollowUpQuestion(lastMessage.content))
+    const followUp = !imageFiles.length && !answeringFollowUp ? followUpForRequest(typedContent) : null
     if (followUp) {
       setPendingFollowUp(followUp)
       setOtherFollowUp(false)
@@ -515,7 +532,8 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
             )}
             {pendingFollowUp && !loading && (
               <div className="ml-9 flex flex-wrap gap-2" aria-label="Choose a follow-up answer">
-                {pendingFollowUp.options.map((option) => <button key={option} type="button" onClick={() => { setPendingFollowUp(null); void send(option) }} className="rounded-full border border-text-primary/15 bg-surface px-4 py-2 text-sm text-text-primary hover:border-text-primary/40">{option}</button>)}
+                {/* "Other" is the button below, which asks for the answer in words. */}
+                {pendingFollowUp.options.filter((option) => option.toLowerCase() !== 'other').map((option) => <button key={option} type="button" onClick={() => { setPendingFollowUp(null); void send(option) }} className="rounded-full border border-text-primary/15 bg-surface px-4 py-2 text-sm text-text-primary hover:border-text-primary/40">{option}</button>)}
                 {!otherFollowUp && <button type="button" onClick={() => setOtherFollowUp(true)} className="rounded-full border border-text-primary/15 bg-surface px-4 py-2 text-sm text-text-muted hover:border-text-primary/40">Other</button>}
                 {otherFollowUp && <form className="flex w-full gap-2" onSubmit={(event) => { event.preventDefault(); const answer = otherFollowUpText.trim(); if (!answer) return; setPendingFollowUp(null); setOtherFollowUp(false); void send(`Other: ${answer}`) }}><input autoFocus value={otherFollowUpText} onChange={(event) => setOtherFollowUpText(event.target.value)} placeholder="Add your answer" className="min-w-0 flex-1 rounded-full border border-text-primary/15 bg-surface px-4 py-2 text-sm outline-none"/><button className="rounded-full bg-dark-purple px-4 py-2 text-sm text-white">Send</button></form>}
               </div>

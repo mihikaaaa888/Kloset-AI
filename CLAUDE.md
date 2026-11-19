@@ -33,7 +33,7 @@ Start everything with `npm run dev:all` (site on :5173, API on :3001). `npm run 
 - `src/lib/`: services. `*Service.ts` talk to Supabase; `chatService.ts` talks to "Kaia" the stylist chat; `stylist.ts` is the mock outfit engine; `imageStorage.ts` keeps photos in IndexedDB and mirrors them to the private `wardrobe-images` bucket.
 - `src/contexts/AuthContext.tsx` + `src/hooks/useDataSync.ts`: load data on login, clear on logout.
 - `server/app.mjs`: the one Express app, used locally (`server/index.mjs`), on Netlify (`netlify/functions/api.mjs`) and on Vercel (`api/[...path].mjs`). `outfitRules.mjs` validates outfit suggestions; `productPages.mjs` keeps only real product links; `accounts.mjs` is the inactive-account job.
-- `supabase/`: SQL, run in the SQL editor in this order: `schema.sql`, `friends.sql`, `wardrobe_photos.sql`, `profile_photo.sql`, `vision_analysis_fields.sql`, `inactive_accounts.sql`, `security_hardening.sql`. All safe to re-run.
+- `supabase/`: SQL, run in the SQL editor in this order: `schema.sql`, `friends.sql`, `wardrobe_photos.sql`, `profile_photo.sql`, `vision_analysis_fields.sql`, `inactive_accounts.sql`, `security_hardening.sql`, `recommendation_feedback.sql`. All safe to re-run.
 - `public/`: static files, plus `robots.txt` and `sitemap.xml` (domain `https://trykloset.com`; add new public pages to the sitemap, and new signed-in pages to `robots.txt`).
 - `docs/exa-web-shopping-search.md`: spec for the shop search.
 
@@ -58,7 +58,7 @@ Start everything with `npm run dev:all` (site on :5173, API on :3001). `npm run 
 `src/lib/catalogData.ts` holds hand-written items in `RAW_CATALOG_ITEMS`, enriched at load (price, rent price, links).
 
 - `PRODUCT_PICKS` maps item id → real retailer `image`, product `url` and `brand`. Items without a pick fall back to generic Unsplash photos.
-- Items have `gender: 'women' | 'men'` (default women). `ALL_CATALOG_ITEMS` is everything; `CATALOG_ITEMS` is **women's only** and feeds outfit builders, chat and "Complete the look"; `MEN_CATALOG_ITEMS` is men's.
+- Items have `gender: 'women' | 'men'` (default women). `ALL_CATALOG_ITEMS` is everything. Anything that suggests items goes through `catalogForPreference` / `matchesStylePreference`, which follow the profile's `genderStylePreference`: feminine → women's, masculine → men's, androgynous / no preference → both. Clothes, shoes and bags follow it; other accessories always come from both. `CATALOG_ITEMS` (women's) and `MEN_CATALOG_ITEMS` are fixed lists; onboarding uses the men's one.
 - Photos are hotlinked and can break; `ShopItemCard` shows a "Photo unavailable" placeholder on error or for logo-like images.
 - To add items: add the raw entry, find a real product via Exa (`includeDomains` for the retailers), check the image URL returns an image over ~15KB (a 200 alone isn't enough; one "image" was a store logo), then add it to `PRODUCT_PICKS`.
 

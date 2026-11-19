@@ -4,6 +4,8 @@ import { useUserStore } from '@/store/userStore'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { fetchProfile, markAccountActive, upsertProfile } from '@/lib/profileService'
 import { fetchWardrobe, backfillPhotos, updateItem } from '@/lib/wardrobeService'
+import { fetchFeedback } from '@/lib/feedbackService'
+import { useRecommendationStore } from '@/store/recommendationStore'
 import { isPendingDelete } from '@/store/undoStore'
 import { SAMPLE_PHOTOS } from '@/lib/sampleData'
 import type { ClothingItem } from '@/types'
@@ -45,7 +47,9 @@ export function useDataSync() {
 
     async function sync() {
       const userId = user!.id
-      const [remote, items] = await Promise.all([fetchProfile(userId), fetchWardrobe(userId)])
+      const [remote, items, feedback] = await Promise.all([fetchProfile(userId), fetchWardrobe(userId), fetchFeedback(userId)])
+      // Thumbs up / down from other devices; null means the table isn't set up yet.
+      if (feedback) useRecommendationStore.getState().mergeRemoteFeedback(userId, feedback)
       const local = useUserStore.getState().profile
 
       if (remote?.onboardingComplete) {

@@ -464,35 +464,33 @@ function FriendsTab({
       </aside>
 
       <div className="space-y-8">
-        <section className="w-full max-w-xl border border-text-primary/10 bg-surface p-4">
-        <h2 className="font-display text-xl text-text-primary">Add a friend</h2>
-        <p className="mt-1 text-sm text-text-muted">Enter the email they use for Kloset.</p>
-        <form onSubmit={handleAdd} className="mt-3 flex items-end gap-2">
-          <label className="flex-1">
-            <span className="sr-only">Friend’s email</span>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="friend@email.com"
-              className="w-full bg-transparent border-b border-text-primary/25 focus:border-text-primary py-2 text-sm text-text-primary placeholder:text-text-muted/60 focus:outline-none transition-colors"
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={sending}
-            className="h-10 px-4 flex items-center gap-2 bg-text-primary text-warm-cream text-xs font-medium uppercase tracking-widest hover:bg-text-primary/90 disabled:opacity-50 transition-colors"
-          >
-            <UserPlus size={14} strokeWidth={1.5} />
-            {sending ? 'Sending…' : 'Add'}
-          </button>
-        </form>
-        {note && (
-          <p className={clsx('text-sm mt-3', note.tone === 'ok' ? 'text-butter-yellow' : 'text-red-700 dark:text-red-400')} role="status">
-            {note.text}
-          </p>
-        )}
+        <section className="w-full max-w-md" aria-label="Add a friend">
+          <form onSubmit={handleAdd} className="flex items-center gap-2 rounded-full border border-text-primary/15 bg-surface py-1 pl-4 pr-1 transition-colors focus-within:border-text-primary/40">
+            <UserPlus size={15} strokeWidth={1.5} className="shrink-0 text-text-muted" aria-hidden="true" />
+            <label className="min-w-0 flex-1">
+              <span className="sr-only">Friend’s Kloset email</span>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Add a friend by their Kloset email"
+                className="w-full bg-transparent py-1.5 text-sm text-text-primary placeholder:text-text-muted/70 focus:outline-none"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={sending}
+              className="h-8 shrink-0 rounded-full bg-text-primary px-4 text-xs font-medium text-warm-cream transition-colors hover:bg-text-primary/90 disabled:opacity-50"
+            >
+              {sending ? 'Sending…' : 'Add'}
+            </button>
+          </form>
+          {note && (
+            <p className={clsx('mt-2 pl-4 text-xs', note.tone === 'ok' ? 'text-butter-yellow' : 'text-red-700 dark:text-red-400')} role="status">
+              {note.text}
+            </p>
+          )}
         </section>
 
         {incoming.length > 0 && (

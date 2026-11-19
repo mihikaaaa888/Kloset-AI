@@ -11,7 +11,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useRecommendationStore } from '@/store/recommendationStore'
 import { deleteItem as dbDeleteItem, insertItem } from '@/lib/wardrobeService'
 import { deleteWithUndo, notify, offerUndo } from '@/store/undoStore'
-import { ALL_CATALOG_ITEMS } from '@/lib/catalogData'
+import { ALL_CATALOG_ITEMS, matchesStylePreference } from '@/lib/catalogData'
 import { catalogToItem } from '@/lib/outfitPieces'
 import {
   BUDGET_BANDS,
@@ -110,14 +110,8 @@ export function DiscoverPage() {
   const coloursAvailable = useMemo(() => [...new Set(ALL_CATALOG_ITEMS.flatMap((item) => item.colours))].sort(), [])
 
   const pieces = useMemo(() => {
-    const preference = String(profile?.genderStylePreference ?? '').toLowerCase()
-    const genders = ['feminine', 'female', 'women'].includes(preference)
-      ? ['women']
-      : ['masculine', 'male', 'men'].includes(preference)
-        ? ['men']
-        : ['women', 'men']
     const pool = ALL_CATALOG_ITEMS
-      .filter((item) => genders.includes(item.gender ?? 'women'))
+      .filter((item) => matchesStylePreference(item, profile?.genderStylePreference))
       .filter((item) => mode === 'rent' ? isRentable(item) && fitsRentBudget(item, budget, customBudgetAmount) : fitsBuyBudget(item, budget, customBudgetAmount))
       .filter((item) => category === 'all' || item.category === category)
       .filter((item) => {

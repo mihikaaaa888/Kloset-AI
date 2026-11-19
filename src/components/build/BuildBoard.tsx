@@ -10,7 +10,7 @@ import { useRecommendationStore } from '@/store/recommendationStore'
 import { useOutfitStore } from '@/store/outfitStore'
 import { useBoardStore, type BoardPiece } from '@/store/boardStore'
 import { deleteWithUndo } from '@/store/undoStore'
-import { CATALOG_ITEMS } from '@/lib/catalogData'
+import { catalogForPreference } from '@/lib/catalogData'
 import { formatINR, rankForUser } from '@/lib/shopping'
 import { ROLE_FOR_CATEGORY } from '@/lib/outfitPieces'
 import { colourNameToHex, isLightColour } from '@/lib/colourUtils'
@@ -507,7 +507,7 @@ function PieceDrawer({ wardrobe, onPick, onAddPiece }: { wardrobe: ClothingItem[
         }))
     }
     if (source === 'shop') {
-      return rankForUser(CATALOG_ITEMS, profile, wardrobe, recommendationFeedback)
+      return rankForUser(catalogForPreference(profile?.genderStylePreference), profile, wardrobe, recommendationFeedback)
         .map((c) => ({
           key: c.id,
           itemId: c.id,

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { ArrowUpRight } from 'lucide-react'
 import { searchWebShop, cleanProductTitle } from '@/lib/webShopService'
-import { CATALOG_ITEMS } from '@/lib/catalogData'
+import { catalogForPreference, suggestedGenders } from '@/lib/catalogData'
+import { useUserStore } from '@/store/userStore'
 import { formatINR } from '@/lib/shopping'
 import type { OutfitSuggestion } from '@/lib/stylist'
 import type { ClothingCategory } from '@/types'
@@ -39,15 +40,19 @@ interface Suggestion {
 
 function MissingPiece({ role, suggestion }: { role: MissingRole; suggestion: OutfitSuggestion }) {
   const [results, setResults] = useState<Suggestion[] | null>(null)
+  const preference = useUserStore((s) => s.profile?.genderStylePreference)
 
   useEffect(() => {
     let cancelled = false
     const colour = suggestion.items[0]?.item.colour[0]?.toLowerCase() ?? ''
-    const query = `${colour} ${OCCASION_WORD[suggestion.occasion] ?? ''} ${ROLE_NOUN[role]}`.replace(/\s+/g, ' ').trim()
+    // Only one gender suggested → say so in the search ("women's black work shoes").
+    const genders = suggestedGenders(preference)
+    const audience = genders.length === 1 ? (genders[0] === 'men' ? "men's" : "women's") : ''
+    const query = `${audience} ${colour} ${OCCASION_WORD[suggestion.occasion] ?? ''} ${ROLE_NOUN[role]}`.replace(/\s+/g, ' ').trim()
 
     // Fallback: the best-matching piece from Kloset's own catalog.
     const catalogFallback = (): Suggestion[] => {
-      const inCategory = CATALOG_ITEMS.filter((c) => c.category === ROLE_CATEGORY[role])
+      const inCategory = catalogForPreference(preference).filter((c) => c.category === ROLE_CATEGORY[role])
       const match = inCategory.find((c) => c.occasions.includes(suggestion.occasion)) ?? inCategory[0]
       return match ? [{ id: match.id, title: match.name, url: match.shopUrl, imageUrl: match.imageUrl, price: match.estimatedPrice }] : []
     }
@@ -68,7 +73,7 @@ function MissingPiece({ role, suggestion }: { role: MissingRole; suggestion: Out
         if (!cancelled) setResults(catalogFallback())
       })
     return () => { cancelled = true }
-  }, [role, suggestion])
+  }, [role, suggestion, preference])
 
   return (
     <div>

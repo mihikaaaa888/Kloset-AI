@@ -5,7 +5,7 @@ import { useItemImage } from '@/hooks/useItemImage'
 import { compressImage } from '@/lib/imageStorage'
 import { analyzeImage } from '@/lib/analyzeImage'
 import { fitsBuyBudget, fitsRentBudget, isRentable, recommendForPiece, type BudgetId, type PieceAnchor } from '@/lib/shopping'
-import { ALL_CATALOG_ITEMS } from '@/lib/catalogData'
+import { catalogForPreference } from '@/lib/catalogData'
 import { formatINR } from '@/lib/shopping'
 import { BudgetDropdown } from '@/components/shop/BudgetDropdown'
 import type { CatalogItem, ClothingCategory, ClothingItem, UserProfile } from '@/types'
@@ -65,7 +65,7 @@ export function CompleteAPiece({ budget, onBudgetChange, customBudgetAmount, onC
       let shopMatches = shopGroups.find((group) => group.category === category)?.items ?? []
       shopMatches = shopMatches.filter((item) => mode === 'rent' ? isRentable(item) : true)
       if (budget !== 'any') shopMatches = shopMatches.filter((item) => mode === 'rent' ? fitsRentBudget(item, budget, customBudgetAmount) : fitsBuyBudget(item, budget, customBudgetAmount))
-      shopMatches = shopMatches.filter((item) => !isInWardrobe(item.id)).slice(0, 3)
+      shopMatches = shopMatches.filter((item) => !isInWardrobe(item.id)).slice(0, 8)
       return { category, shopMatches }
     }).filter((group) => group.shopMatches.length > 0)
   }, [anchor, profile, budget, customBudgetAmount, isInWardrobe, mode])
@@ -95,28 +95,33 @@ export function CompleteAPiece({ budget, onBudgetChange, customBudgetAmount, onC
         </div>
       </section>}
 
-      {picked && anchor && <section aria-label="Outfit suggestions" className="min-h-[70vh] w-full py-3">
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="h-16 w-12 shrink-0 overflow-hidden bg-tile">{picked.kind === 'kloset' ? <KlosetItemImage item={picked.item} /> : <SelectedImage picked={picked} anchor={anchor} />}</div>
-            <div className="min-w-0"><p className="text-2xs uppercase tracking-widest text-text-muted">Completing</p><h2 className="truncate font-display text-xl text-text-primary">{anchor.name}</h2></div>
+      {picked && anchor && <section aria-label="Outfit suggestions" className="grid w-full gap-8 py-3 lg:grid-cols-[minmax(260px,340px)_1fr] lg:gap-12">
+        {/* The piece being completed: large, and kept in view while the suggestions scroll. */}
+        <aside className="lg:sticky lg:top-6 lg:self-start">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <p className="text-2xs uppercase tracking-widest text-text-muted">Completing</p>
+            <button onClick={closePanel} className="-mr-2 flex items-center gap-1.5 rounded-full px-2 py-1.5 text-xs text-text-muted hover:bg-text-primary/5 hover:text-text-primary"><ArrowLeft size={14} strokeWidth={1.5} />Choose another</button>
           </div>
-          <button onClick={closePanel} aria-label="Choose a different piece" title="Choose a different piece" className="shrink-0 rounded-full p-2 text-text-muted hover:bg-text-primary/5 hover:text-text-primary"><ArrowLeft size={18} strokeWidth={1.5} /></button>
-        </div>
+          <div className="mx-auto aspect-[3/4] max-h-[55vh] w-full max-w-sm overflow-hidden bg-tile lg:max-h-none lg:max-w-none">
+            {picked.kind === 'kloset' ? <KlosetItemImage item={picked.item} /> : <SelectedImage picked={picked} anchor={anchor} />}
+          </div>
+          <h2 className="mt-4 font-display text-2xl leading-tight text-text-primary lg:text-3xl">{anchor.name}</h2>
+          <p className="mt-1 text-xs text-text-muted">{CATEGORY_LABELS[anchor.category]}</p>
+          <div className="mt-5 border-t border-text-primary/10 pt-4" aria-label="Suggestion filters">
+            <BudgetDropdown value={budget} onChange={onBudgetChange} customAmount={customBudgetAmount} onCustomAmountChange={onCustomBudgetAmountChange} mode={mode} />
+          </div>
+        </aside>
 
-        <div className="mb-4 flex flex-wrap items-center gap-3" aria-label="Suggestion filters">
-          <BudgetDropdown value={budget} onChange={onBudgetChange} customAmount={customBudgetAmount} onCustomAmountChange={onCustomBudgetAmountChange} mode={mode} />
-        </div>
-
-        {mode === 'rent' && <div role="status" className="mb-4 border border-text-primary/10 bg-text-primary/[0.03] px-4 py-3 text-center font-display text-lg text-text-primary">Rentals are coming soon</div>}
-
-        <div className="space-y-5">
-          {groups.length === 0 ? <p className="py-6 text-center text-sm text-text-muted">No matches with these options. Try turning off a filter.</p> : groups.map((group) => <section key={group.category}>
-            <h3 className="mb-2 text-xs font-medium text-text-primary">{SLOT_HEADINGS[group.category]}</h3>
-            <div className="flex gap-3 overflow-x-auto pb-1 no-scrollbar">
-              {group.shopMatches.map((item) => <OutfitSuggestionCard key={`shop-${item.id}`} name={item.name} category={CATEGORY_LABELS[item.category]} image={<img src={item.imageUrl} alt="" className="h-full w-full object-cover" />} href={mode === 'rent' ? item.rentUrl : item.shopUrl} price={mode === 'rent' ? `${formatINR(item.rentPricePerWeek)} / wk` : formatINR(item.estimatedPrice)} added={addedToOutfit.includes(`shop:${item.id}`)} onAdd={() => addKey(`shop:${item.id}`)} />)}
-            </div>
-          </section>)}
+        <div className="min-w-0">
+          {mode === 'rent' && <div role="status" className="mb-6 border border-text-primary/10 bg-text-primary/[0.03] px-4 py-3 text-center font-display text-lg text-text-primary">Rentals are coming soon</div>}
+          <div className="space-y-10">
+            {groups.length === 0 ? <p className="py-6 text-center text-sm text-text-muted">No matches with these options. Try turning off a filter.</p> : groups.map((group) => <section key={group.category}>
+              <h3 className="mb-3 font-display text-xl text-text-primary">{SLOT_HEADINGS[group.category]}</h3>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 xl:grid-cols-4">
+                {group.shopMatches.map((item) => <OutfitSuggestionCard key={`shop-${item.id}`} name={item.name} category={CATEGORY_LABELS[item.category]} image={<img src={item.imageUrl} alt="" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />} href={mode === 'rent' ? item.rentUrl : item.shopUrl} price={mode === 'rent' ? `${formatINR(item.rentPricePerWeek)} / wk` : formatINR(item.estimatedPrice)} added={addedToOutfit.includes(`shop:${item.id}`)} onAdd={() => addKey(`shop:${item.id}`)} />)}
+              </div>
+            </section>)}
+          </div>
         </div>
       </section>}
     </div>
@@ -124,10 +129,7 @@ export function CompleteAPiece({ budget, onBudgetChange, customBudgetAmount, onC
 }
 
 function availableShopItems(profile: UserProfile | null) {
-  const preference = profile?.genderStylePreference
-  if (preference === 'feminine') return ALL_CATALOG_ITEMS.filter((item) => item.gender === 'women')
-  if (preference === 'masculine') return ALL_CATALOG_ITEMS.filter((item) => item.gender === 'men')
-  return ALL_CATALOG_ITEMS
+  return catalogForPreference(profile?.genderStylePreference)
 }
 
 function ClosetPickCard({ item, selected, onClick }: { item: ClothingItem; selected: boolean; onClick: () => void }) {
@@ -146,8 +148,8 @@ function ShopPickCard({ item, selected, onClick }: { item: CatalogItem; selected
 }
 
 function OutfitSuggestionCard({ name, category, image, href, price, added, onAdd }: { name: string; category: string; image: React.ReactNode; href: string; price?: string; added: boolean; onAdd: () => void }) {
-  return <article className="group relative w-36 shrink-0 sm:w-40">
-    <div className="relative mb-2 aspect-[4/3] overflow-hidden bg-tile">
+  return <article className="group relative min-w-0">
+    <div className="relative mb-2 aspect-[3/4] overflow-hidden bg-tile">
       <a href={href} target="_blank" rel="noreferrer" aria-label={`View ${name} on seller website`} className="absolute inset-0">{image}</a>
       <button onClick={onAdd} disabled={added} className="absolute bottom-2 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-warm-cream px-3 py-1.5 text-2xs text-text-primary opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 disabled:opacity-80">{added ? 'Added to outfit' : 'Add to outfit'}</button>
     </div>

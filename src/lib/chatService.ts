@@ -1,7 +1,7 @@
 import { apiFetch, apiUrl } from '@/lib/apiUrl'
 import type { CatalogItem, ClothingCategory, ClothingItem, UserProfile } from '@/types'
 import { CATALOGUE_ITEMS } from '@/pages/onboarding/catalogueData'
-import { ALL_CATALOG_ITEMS } from '@/lib/catalogData'
+import { catalogForPreference } from '@/lib/catalogData'
 import { rankWardrobeColourPairings } from '@/lib/colourHarmony'
 import { getColourHarmonyConfig } from '@/lib/colourHarmonyService'
 import type { OutfitPhotoStyleSignal } from '@/lib/recommendationFeedback'
@@ -21,14 +21,8 @@ export interface KaiaChatResponse { reply: string; styleSignals?: OutfitPhotoSty
 // items — keeps the prompt small) so Kaia can name real pieces with real
 // prices instead of vaguely gesturing at "you could buy something".
 function buildShopSummary(profile: UserProfile | null): string {
-  const preference = String(profile?.genderStylePreference ?? '').toLowerCase()
-  const genders = ['feminine', 'female', 'women'].includes(preference)
-    ? ['women']
-    : ['masculine', 'male', 'men'].includes(preference)
-      ? ['men']
-      : ['women', 'men']
   const perCategory = new Map<string, CatalogItem[]>()
-  for (const item of ALL_CATALOG_ITEMS.filter((candidate) => genders.includes(candidate.gender ?? 'women'))) {
+  for (const item of catalogForPreference(profile?.genderStylePreference)) {
     const list = perCategory.get(item.category) ?? []
     list.push(item)
     perCategory.set(item.category, list)

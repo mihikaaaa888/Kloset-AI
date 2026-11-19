@@ -41,6 +41,7 @@ In the Supabase SQL editor, run these in order (all are safe to re-run):
 4. `supabase/profile_photo.sql`, `supabase/vision_analysis_fields.sql`
 5. `supabase/inactive_accounts.sql` (only for the inactive-account job)
 6. `supabase/security_hardening.sql` — tighter update policies and storage size/type limits
+7. `supabase/recommendation_feedback.sql` — thumbs up / down and views, synced per account
 
 Put your project URL and anon key in `.env`. In Supabase → Authentication → URL Configuration, set the Site URL to your production address and add `/reset-password` for production and `http://localhost:5173` to the Redirect URLs, or password-reset links won't land on the reset page.
 

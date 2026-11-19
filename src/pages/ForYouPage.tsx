@@ -1,6 +1,6 @@
 import { useMemo, useState, type PointerEvent } from 'react'
 import { Heart, RotateCcw, Shirt, ThumbsDown } from 'lucide-react'
-import { ALL_CATALOG_ITEMS } from '@/lib/catalogData'
+import { ALL_CATALOG_ITEMS, matchesStylePreference } from '@/lib/catalogData'
 import { rankForUser } from '@/lib/shopping'
 import { scoreRecommendationFeedback, traitsFromCatalog, traitsFromWardrobe, type RecommendationFeedback, type RecommendationTraits } from '@/lib/recommendationFeedback'
 import { useRecommendationStore } from '@/store/recommendationStore'
@@ -118,9 +118,7 @@ export function ForYouPage() {
     const unseenIds = new Set(feedback.filter((event) => event.action !== 'dwell').map((event) => event.itemId))
     const pool = ALL_CATALOG_ITEMS.filter((item) => {
       if (ownedIds.has(item.id) || unseenIds.has(item.id)) return false
-      if (preference === 'feminine') return item.gender !== 'men'
-      if (preference === 'masculine') return item.gender === 'men'
-      return true
+      return matchesStylePreference(item, preference)
     })
     const rankedShop = rankForUser(pool, profile, wardrobe, feedback)
     const diverseShop = diverseShopCards(rankedShop)
