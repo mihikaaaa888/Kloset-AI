@@ -436,13 +436,9 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
     setLowConfidenceFields([])
     try {
       const analysis = await analyzeImage(blob)
-      if (!analysis) {
-        setImageError('Auto-tagging did not return item details. Check your connection, then review the name and type before saving.')
-        return
-      }
       applyAnalysis(analysis, detectedCategory, detectedName)
-    } catch {
-      setImageError('Auto-tagging could not analyze this crop. Check your connection, then review the name and type before saving.')
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : 'Photo tagging failed. Review the name and type before saving.')
     } finally {
       setAiAnalyzing(false)
     }
@@ -459,8 +455,8 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
       if (analysis) {
         applyAnalysis(analysis)
       }
-    } catch {
-      // silent — user fills manually
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : 'Photo tagging failed. Review the name and type before saving.')
     } finally {
       setAiAnalyzing(false)
     }

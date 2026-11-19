@@ -300,9 +300,7 @@ function sanitizeVisionResult(value) {
 // of the base64 bytes differs.
 async function runVisionAnalysis(imageData, mediaType) {
   const apiKey = process.env.GROQ_API_KEY
-  if (!apiKey) {
-    return { analysis: null, source: 'stub', message: 'Add GROQ_API_KEY to your .env file to enable photo analysis.' }
-  }
+  if (!apiKey) throw Object.assign(new Error('Vision provider is not configured'), { code: 'VISION_NOT_CONFIGURED' })
 
   const model = process.env.GROQ_VISION_MODEL || VISION_MODEL_DEFAULT
   let validationIssues = []
@@ -336,8 +334,12 @@ async function runVisionAnalysis(imageData, mediaType) {
     })
 
     if (!response.ok) {
-      const err = await response.text()
-      throw new Error(`Groq ${response.status}: ${err}`)
+      // Keep provider response bodies in server logs only; they can contain
+      // implementation details and aren't useful to the person uploading.
+      const err = new Error(`Groq vision request failed (${response.status})`)
+      err.code = response.status === 429 ? 'VISION_RATE_LIMITED' : 'VISION_PROVIDER_ERROR'
+      err.status = response.status
+      throw err
     }
 
     const data = await response.json()
@@ -372,11 +374,30 @@ app.post('/api/analyze-image', async (req, res) => {
 
   try {
     const result = await runVisionAnalysis(imageData, mediaType)
+    if (!result?.analysis) {
+      return res.status(502).json({
+        code: 'VISION_EMPTY_RESULT',
+        error: 'Kloset could not read this photo. Try a clearer, closer photo or enter the item details manually.',
+      })
+    }
     return res.json(result)
   } catch (e) {
     console.error('[analyze-image] Groq error:', e?.message ?? e)
-    return res.status(500).json({
-      error: 'Photo analysis failed. You can still add the item manually.',
+    if (e?.code === 'VISION_NOT_CONFIGURED') {
+      return res.status(503).json({
+        code: e.code,
+        error: 'Photo tagging is temporarily unavailable. You can still add the item manually.',
+      })
+    }
+    if (e?.code === 'VISION_RATE_LIMITED') {
+      return res.status(429).json({
+        code: e.code,
+        error: 'Photo tagging is busy right now. Wait a moment and try again, or add the item manually.',
+      })
+    }
+    return res.status(502).json({
+      code: e?.code || 'VISION_PROVIDER_ERROR',
+      error: 'Photo tagging could not reach the analysis service. Please try again or add the item manually.',
     })
   }
 })
@@ -507,11 +528,30 @@ app.post('/api/analyze-image-url', async (req, res) => {
     const imageData = buf.toString('base64')
 
     const result = await runVisionAnalysis(imageData, mediaType)
+    if (!result?.analysis) {
+      return res.status(502).json({
+        code: 'VISION_EMPTY_RESULT',
+        error: 'Kloset could not read this photo. Try a clearer, closer photo or enter the item details manually.',
+      })
+    }
     return res.json(result)
   } catch (e) {
     console.error('[analyze-image-url] error:', e?.message ?? e)
-    return res.status(500).json({
-      error: 'Photo analysis failed. You can still add the item manually.',
+    if (e?.code === 'VISION_NOT_CONFIGURED') {
+      return res.status(503).json({
+        code: e.code,
+        error: 'Photo tagging is temporarily unavailable. You can still add the item manually.',
+      })
+    }
+    if (e?.code === 'VISION_RATE_LIMITED') {
+      return res.status(429).json({
+        code: e.code,
+        error: 'Photo tagging is busy right now. Wait a moment and try again, or add the item manually.',
+      })
+    }
+    return res.status(502).json({
+      code: e?.code || 'VISION_PROVIDER_ERROR',
+      error: 'Photo tagging could not reach the analysis service. Please try again or add the item manually.',
     })
   }
 })

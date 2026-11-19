@@ -32,8 +32,34 @@ function blobToBase64(blob: Blob): Promise<string> {
 
 const MAX_ANALYSIS_EDGE = 1280
 
-// Phone camera photos run 3–6 MB, and base64 adds a third on top — past Netlify's 6 MB
-// request limit. The model doesn't need more than ~1280px to read a garment, so re-encode
+async function readAnalysisResponse(res: Response): Promise<ClothingAnalysis> {
+  let data: { analysis?: ClothingAnalysis | null; error?: string } = {}
+  try {
+    data = await res.json()
+  } catch {
+    // Keep the user-facing message below useful even if an upstream proxy
+    // returns a non-JSON error page.
+  }
+
+  if (!res.ok) {
+    const fallback = res.status === 401
+      ? 'Your session expired. Sign in again to tag this item.'
+      : res.status === 429
+        ? 'Photo tagging is busy right now. Wait a moment and try again, or add the item manually.'
+        : res.status === 503
+          ? 'Photo tagging is temporarily unavailable. You can still add the item manually.'
+          : 'Photo tagging could not read this image. Try again or add the item manually.'
+    throw new Error(data.error || fallback)
+  }
+
+  if (!data.analysis) {
+    throw new Error('Kloset could not read this photo. Try a clearer, closer photo or enter the item details manually.')
+  }
+  return data.analysis
+}
+
+// Phone camera photos run 3–6 MB, and base64 adds a third on top. The model
+// doesn't need more than ~1280px to read a garment, so re-encode
 // as a JPEG that size. Also turns formats the model rejects (HEIC) into JPEG.
 async function shrinkForAnalysis(blob: Blob): Promise<Blob> {
   const url = URL.createObjectURL(blob)
@@ -61,26 +87,28 @@ async function shrinkForAnalysis(blob: Blob): Promise<Blob> {
   }
 }
 
-export async function analyzeImage(original: Blob): Promise<ClothingAnalysis | null> {
+export async function analyzeImage(original: Blob): Promise<ClothingAnalysis> {
   const blob = await shrinkForAnalysis(original)
   const supportedTypes = ['image/jpeg', 'image/png', 'image/webp']
   const mediaType = supportedTypes.includes(blob.type) ? blob.type : 'image/jpeg'
 
   const imageData = await blobToBase64(blob)
 
-  const res = await apiFetch(apiUrl('/api/analyze-image'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ imageData, mediaType }),
-  })
-
-  if (!res.ok) {
-    console.error('[analyzeImage] request failed', res.status)
-    return null
+  let res: Response
+  try {
+    res = await apiFetch(apiUrl('/api/analyze-image'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageData, mediaType }),
+    })
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error('Could not reach Kloset’s photo tagging service. Check your connection and try again.')
+    }
+    throw error
   }
 
-  const data = await res.json()
-  return (data.analysis as ClothingAnalysis) ?? null
+  return readAnalysisResponse(res)
 }
 
 export interface DetectedOutfitPiece {
@@ -115,15 +143,12 @@ export async function detectOutfitPieces(original: Blob): Promise<DetectedOutfit
  * result. The server fetches it directly, sidestepping the CORS
  * restriction that blocks a client-side fetch() of most third-party images.
  */
-export async function analyzeImageFromUrl(url: string): Promise<ClothingAnalysis | null> {
+export async function analyzeImageFromUrl(url: string): Promise<ClothingAnalysis> {
   const res = await apiFetch(apiUrl('/api/analyze-image-url'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url }),
   })
 
-  if (!res.ok) return null
-
-  const data = await res.json()
-  return (data.analysis as ClothingAnalysis) ?? null
+  return readAnalysisResponse(res)
 }
