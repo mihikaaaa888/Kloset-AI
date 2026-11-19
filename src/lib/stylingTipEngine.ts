@@ -28,15 +28,64 @@ function writeLog(userId: string, log: TipLogEntry[]) {
   try { localStorage.setItem(logKey(userId), JSON.stringify(log.slice(-1500))) } catch { /* use the bundled rotation when storage is unavailable */ }
 }
 function normalize(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() }
+// Plural-insensitive word stems: "shoes" → "shoe", "dresses" → "dress".
+function stem(word: string) {
+  if (word.endsWith('sses')) return word.slice(0, -2)
+  if (word.endsWith('s') && !word.endsWith('ss') && word.length > 3) return word.slice(0, -1)
+  return word
+}
+function wordsOf(value: string) { return normalize(value).split(' ').filter(Boolean).map(stem) }
+
+// Tip vocabulary → words a garment may be called instead.
+const TAG_SYNONYMS: Record<string, string[]> = {
+  footwear: ['shoe', 'sneaker', 'trainer', 'heel', 'boot', 'sandal', 'loafer', 'flat', 'mule', 'pump', 'slide'],
+  jewellery: ['jewelry', 'earring', 'necklace', 'bracelet', 'ring', 'bangle', 'pendant'],
+  bag: ['tote', 'clutch', 'backpack', 'crossbody', 'handbag', 'satchel'],
+  bottom: ['jean', 'trouser', 'pant', 'skirt', 'short', 'legging'],
+}
+
+/**
+ * Whether a tip's target ("kurta / kurta set", "footwear") matches any of the
+ * given names. Whole words only: the old substring test matched an empty
+ * subcategory against every tip, so a tee and jeans got kurta advice.
+ */
 function matchingTags(value: string, tags: string[]) {
   if (!value || normalize(value) === 'any') return true
-  return value.split(/[\/,&]/).map(normalize).filter(Boolean).some((tag) => tags.some((candidate) => normalize(candidate).includes(tag) || tag.includes(normalize(candidate))))
+  const candidateWords = new Set(tags.filter((tag) => normalize(tag)).flatMap(wordsOf))
+  if (!candidateWords.size) return false
+  return value.split(/[\/,&]/).map(normalize).filter(Boolean).some((tag) => {
+    const tagWords = wordsOf(tag)
+    if (tagWords.every((word) => candidateWords.has(word))) return true
+    return tagWords.length === 1 && (TAG_SYNONYMS[tagWords[0]] ?? []).some((word) => candidateWords.has(word))
+  })
 }
 function tipItemsMatch(tip: StylingTip, outfit: ClothingItem[]) {
+  if (!namedGarmentsFit(tip, outfit)) return false
   if (normalize(tip.appliesTo) === 'any') return true
   const tags = outfit.flatMap((item) => [item.name, item.category, item.subcategory ?? ''])
   return matchingTags(tip.appliesTo, tags)
 }
+// Garments specific enough that a tip naming them only makes sense when the
+// outfit has one. Some workbook tips are filed broadly ("footwear", "bottom")
+// but are about one thing: "Block heels and wedges…", "Palazzo suits any kurti…".
+// Checked per group: a tip naming Indian wear needs one of those pieces, a tip
+// naming specific Western pieces needs one of those.
+const SPECIFIC_GARMENT_GROUPS = [
+  ['kurta', 'kurti', 'saree', 'sari', 'lehenga', 'dupatta', 'anarkali', 'sharara', 'salwar', 'palazzo', 'churidar', 'dhoti'],
+  ['heel', 'stiletto', 'wedge', 'sneaker', 'loafer', 'boot', 'sandal', 'mule', 'blazer', 'jumpsuit', 'co ord', 'skirt', 'dress'],
+]
+const GARMENT_ALIASES: Record<string, string[]> = { saree: ['sari'], sari: ['saree'], 'co ord': ['coord'] }
+function namedGarmentsFit(tip: StylingTip, outfit: ClothingItem[]) {
+  const padded = (words: string[]) => ` ${words.join(' ')} `
+  const tipText = padded(wordsOf(tip.text))
+  const outfitText = padded(outfit.flatMap((item) => [item.name, item.subcategory ?? '']).flatMap(wordsOf))
+  const has = (text: string, garment: string) => text.includes(padded(wordsOf(garment)))
+  return SPECIFIC_GARMENT_GROUPS.every((group) => {
+    const named = group.filter((garment) => has(tipText, garment))
+    return !named.length || named.some((garment) => [garment, ...(GARMENT_ALIASES[garment] ?? [])].some((name) => has(outfitText, name)))
+  })
+}
+
 function isOutfitSpecificTip(tip: StylingTip) {
   if (tip.trigger.startsWith('T_OUTFIT_')) return true
   return tip.trigger === 'T_GARMENT' && normalize(tip.appliesTo) !== 'any'
@@ -89,7 +138,9 @@ export function getDailyStylingTip(userId: string, outfit: ClothingItem[], wardr
   const dayKey = date.toISOString().slice(0, 10)
   const todaysShown = [...log].reverse().find((entry) => entry.action === 'shown' && entry.contextKey === contextKey && entry.createdAt.slice(0, 10) === dayKey)
   const todaysTip = todaysShown ? tips.find((tip) => tip.id === todaysShown.tipId) : null
-  if (todaysTip && isOutfitSpecificTip(todaysTip)) return todaysTip
+  // Reuse today's tip only if it still fits this outfit (tips picked by the
+  // old matching could be for garments the outfit doesn't have).
+  if (todaysTip && isOutfitSpecificTip(todaysTip) && tipItemsMatch(todaysTip, outfit)) return todaysTip
 
   const occasions = [...new Set([...contextOccasions, 'casual', ...(profile?.typicalOccasions ?? []), ...outfit.flatMap((item) => item.occasions)])]
   // The daily outfit card is for styling the current look. Keep wardrobe
