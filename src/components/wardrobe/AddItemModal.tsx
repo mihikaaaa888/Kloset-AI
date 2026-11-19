@@ -503,25 +503,53 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
     const url = urlInput.trim()
     if (!url) return
     try { new URL(url) } catch {
-      setUrlError('Please enter a valid URL.')
+      setUrlError('Please enter a valid link.')
       return
     }
     setUrlError(null)
     setUrlLoading(true)
+
+    const useImage = (imageUrl: string) => {
+      setUrlLoading(false)
+      setPreviewUrl(imageUrl)
+      setLegacyImageUrl(imageUrl)
+      setActiveImageId(null)
+      if (!editItem) runAiAnalysisFromUrl(imageUrl)
+    }
+
+    // Not an image itself, so treat it as a product page (e.g. the adidas
+    // Samba page) and let the server find the product photo on it.
+    const readProductPage = async () => {
+      try {
+        const res = await apiFetch(apiUrl('/api/product-image'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        })
+        const data = await res.json()
+        if (!res.ok || !data.imageUrl) throw new Error(data.error)
+        if (data.brand) setDraft((d) => (d.brand.trim() ? d : { ...d, brand: data.brand }))
+        // Confirm the browser can actually show it before using it.
+        const check = new Image()
+        check.referrerPolicy = 'no-referrer'
+        check.onload = () => useImage(data.imageUrl)
+        check.onerror = () => {
+          setUrlLoading(false)
+          setUrlError("Found the product but couldn't load its photo. Try right-clicking the photo → Copy image address.")
+        }
+        check.src = data.imageUrl
+      } catch (e) {
+        setUrlLoading(false)
+        setUrlError(e instanceof Error && e.message ? e.message : "Couldn't get a photo from that link. Try right-clicking the photo → Copy image address.")
+      }
+    }
+
+    // A direct image link loads as-is.
     const img = new Image()
     // No crossOrigin here — we only need to display the image, not read pixels.
     // Setting crossOrigin would block most fashion/retail sites that don't send CORS headers.
-    img.onload = () => {
-      setUrlLoading(false)
-      setPreviewUrl(url)
-      setLegacyImageUrl(url)
-      setActiveImageId(null)
-      if (!editItem) runAiAnalysisFromUrl(url)
-    }
-    img.onerror = () => {
-      setUrlLoading(false)
-      setUrlError("Couldn't load that image. Make sure the URL points directly to an image file (right-click a photo → Copy image address).")
-    }
+    img.onload = () => useImage(url)
+    img.onerror = () => { void readProductPage() }
     img.src = url
   }, [urlInput, editItem, runAiAnalysisFromUrl])
 
@@ -852,7 +880,7 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
                   value={urlInput}
                   onChange={(e) => { setUrlInput(e.target.value); setUrlError(null) }}
                   onKeyDown={(e) => e.key === 'Enter' && handleUrlSubmit()}
-                  placeholder="Paste an image URL from the web…"
+                  placeholder="Paste a product page or image link…"
                   className="flex-1 px-4 py-3 rounded-xl border border-text-primary/20 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-primary/50 bg-surface"
                 />
                 <button
@@ -870,7 +898,7 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
                 <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-xl">{urlError}</p>
               )}
               <p className="text-xs text-text-muted">
-                Paste a direct image link — right-click any clothing photo online and choose "Copy image address".
+                Paste a link to the item on any fashion site (e.g. a pair of Sambas on adidas.com) and we'll pull in its photo. Direct image links work too.
               </p>
             </div>
           ) : (
@@ -1242,7 +1270,6 @@ function ImageSearchBrowser({
   return (
     <div className="space-y-3">
       <div>
-        <p className="mb-2 text-xs text-text-muted">Search any item or brand, like you would on Google Images.</p>
         <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Browse item categories">
           {BROWSE_ITEM_QUERIES.map(([label, itemQuery]) => (
             <button key={label} type="button" onClick={() => { setQuery(itemQuery); search(itemQuery, 1) }} className="shrink-0 rounded-full border border-text-primary/15 px-3 py-1.5 text-xs text-text-muted transition-colors hover:border-text-primary/35 hover:text-text-primary">{label}</button>

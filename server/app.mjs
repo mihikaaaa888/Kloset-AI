@@ -105,7 +105,7 @@ async function requireUser(req, res, next) {
   next()
 }
 app.use(
-  ['/api/search-images', '/api/analyze-image', '/api/detect-outfit-pieces', '/api/analyze-image-url', '/api/refine-garment-image', '/api/remove-background', '/api/web-shop-search', '/api/chat'],
+  ['/api/search-images', '/api/product-image', '/api/analyze-image', '/api/detect-outfit-pieces', '/api/analyze-image-url', '/api/refine-garment-image', '/api/remove-background', '/api/web-shop-search', '/api/chat'],
   requireUser,
 )
 
@@ -183,7 +183,7 @@ app.get('/api/cron/inactive-accounts', async (req, res) => {
 // app icons, avatars, social-share cards, hero banners, lazy-load
 // placeholders, tiny thumbnails. The browser also drops tiny or very wide
 // images once it knows their real size (see ImageSearchBrowser).
-const JUNK_IMAGE_RE = /logo|wordmark|avatar|gravatar|favicon|apple-touch|android-icon|\/icons?\/|[-_]icons?[-_.]|sprite|seal|certif|award|wysiwyg|bazaarvoice|reviews?\/|placeholder|transparent|spinner|loader|1x1|pixel\.|lazyload|fallback|no-img|blank|spacer|badge|banner|hero|masthead|open-graph|og[_-]?image|social|1200x630|1920x1080|150x150|w_1920|fit=128|\/w_(16|90)[,%]|\.svg(\?|$)|\.gif(\?|$)/i
+const JUNK_IMAGE_RE = /logo|wordmark|avatar|gravatar|favicon|apple-touch|android-icon|\/icons?\/|[-_]icons?[-_.]|sprite|seal|certif|award|wysiwyg|bazaarvoice|reviews?\/|placeholder|transparent|spinner|loader|1x1|pixel\.|lazyload|fallback|no-img|blank|spacer|badge|banner|hero|masthead|open-graph|og[_-]?image|social|1200x630|1920x1080|16x9|16:9|150x150|w_1920|fit=128|\/w_(16|90)[,%]|\.svg(\?|$)|\.gif(\?|$)/i
 
 // Words that make a search about a specific kind of item. A search without one
 // ("nike", "dior") is a brand name on its own, so it's widened to the brand's
@@ -206,6 +206,11 @@ function upsizeImageUrl(url) {
     .replace(/([?&])wid=\d+/i, '$1wid=800')
     .replace(/([?&])hei=\d+/i, '$1hei=800')
     .replace(/([?&])imwidth=\d+/i, '$1imwidth=800')
+    .replace(/([?&])sw=\d+/i, '$1sw=800')
+    .replace(/([?&])sh=\d+/i, '$1sh=800')
+    // Cloudinary-style "w_500" in the path. Skipped when a height is set too
+    // ("h_573,w_458"): a cropping fill would turn a wider w_ into a wide strip.
+    .replace(/([/,])w_(\d{2,3})(?=[,/])/, (m, sep, w) => (Number(w) < 600 && !/[/,]h_\d/.test(url) ? `${sep}w_1000` : m))
     .replace(/_(\d{2,3})x(\d{2,3})?(\.(jpe?g|png|webp))/i, (m, w, h, ext) => (Number(w) < 600 ? `_800x${ext}` : m))
 }
 
@@ -300,6 +305,73 @@ async function searchWebImages(q, apiKey) {
 }
 
 const WEB_IMAGES_PER_PAGE = 18
+
+// ─── Product page → item photo ────────────────────────────────────────────────
+
+// Pasting a product page link (e.g. adidas.com/us/samba-og-shoes/B75806.html)
+// in Add Item → URL. Exa reads the page for us: retailers like adidas block
+// requests from servers, and it means this server never fetches a
+// user-supplied URL itself.
+app.post('/api/product-image', async (req, res) => {
+  const pageUrl = String(req.body?.url ?? '').trim()
+  let parsed
+  try { parsed = new URL(pageUrl) } catch { return res.status(400).json({ error: 'Please enter a valid link.' }) }
+  if (!/^https?:$/.test(parsed.protocol)) return res.status(400).json({ error: 'Please enter a valid link.' })
+
+  const apiKey = process.env.EXA_API_KEY
+  if (!apiKey) return res.status(503).json({ error: 'Reading product links is not set up yet.' })
+
+  try {
+    const response = await fetch('https://api.exa.ai/contents', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        urls: [parsed.href],
+        text: { maxCharacters: 1 },
+        extras: { imageLinks: 12 },
+        livecrawl: 'fallback',
+      }),
+    })
+    if (!response.ok) throw new Error(`Exa ${response.status}: ${await response.text()}`)
+    const data = await response.json()
+    const page = data.results?.[0]
+    if (!page) return res.status(404).json({ error: "Couldn't open that page. Try copying the image address instead." })
+
+    // Zara serves crawlers a placeholder title; titleFor falls back to the URL.
+    // Also drop a trailing product code ("... - White | B75806").
+    const title = titleFor(page).replace(/\s+/g, ' ').replace(/\s*[|–-]\s*[A-Z0-9]{5,}\s*$/, '').trim()
+    const candidates = [...(page.extras?.imageLinks ?? []), page.image]
+      .filter((u) => typeof u === 'string' && /^https?:\/\//i.test(u) && !JUNK_IMAGE_RE.test(u))
+      .filter((u) => u !== page.url && !/\/(\?|#|$)/.test(u.replace(/^https?:\/\/[^/]+/i, '')))
+      .map((u) => upsizeImageUrl(u.replace(/^http:\/\//i, 'https://').replace(/&amp;/g, '&')))
+    if (!candidates.length) return res.status(404).json({ error: "Couldn't find a product photo on that page. Try copying the image address instead." })
+
+    // The main product photo usually comes first, but pages also carry logos
+    // and "you may also like" items: prefer the first image whose file name
+    // shares words with the product title ("Samba_OG_Shoes_White_..." for
+    // "Samba OG Sneakers - White").
+    const keywords = queryKeywords(title)
+    const named = candidates.find((u) => keywordScore(u.replace(/^https?:\/\/[^/]+/i, '').split('?')[0], keywords) >= 2)
+    const imageUrl = named ?? candidates[0]
+
+    // On a brand's own site the site name is the brand, at the start or end of
+    // the title: "adidas Samba OG...", "... – Steve Madden", "... Nike.com".
+    // On stores selling many brands it isn't, so leave it blank there.
+    const siteName = domainOf(page.url ?? parsed.href).split('.').slice(-2, -1)[0] ?? ''
+    const squash = (t) => t.replace(/\.com$/i, '').replace(/[^a-z0-9]/gi, '').toLowerCase()
+    const segments = title.split(/\s+[|–—-]\s+|\.\s+/)
+    const brandSegment = [segments[0], segments[segments.length - 1]].find((seg) => siteName.length >= 3 && squash(seg) === siteName)
+    const brand = brandSegment
+      ? brandSegment.replace(/\.com$/i, '').trim()
+      : siteName.length >= 3 && title.toLowerCase().startsWith(`${siteName} `) ? title.slice(0, siteName.length) : null
+
+    console.log(`[product-image] ${domainOf(parsed.href)} → ${imageUrl.slice(0, 80)}`)
+    return res.json({ imageUrl, title, brand })
+  } catch (e) {
+    console.error('[product-image] Exa error:', e?.message ?? e)
+    return res.status(500).json({ error: "Couldn't read that page right now. Please try again." })
+  }
+})
 
 app.get('/api/search-images', async (req, res) => {
   const q = String(req.query.q || 'fashion clothing').trim().slice(0, 100)

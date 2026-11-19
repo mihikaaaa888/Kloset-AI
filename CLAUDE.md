@@ -64,7 +64,7 @@ Start everything with `npm run dev:all` (site on :5173, API on :3001). `npm run 
 
 ## Environment
 
-Copy `.env.example` to `.env` (gitignored). `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are required or the app is blank. Server-only keys: `GROQ_API_KEY` (photo analysis, chat), `CLAUDE_API_KEY` (chat fallback), `EXA_API_KEY` (shop search, and web image search in Add Item → Browse), `PEXELS_API_KEY` (image search), `PHOTOROOM_API_KEY` (cutouts), `SUPABASE_SERVICE_ROLE_KEY` (account deletion, cron), `CRON_SECRET` / `RESEND_API_KEY` / `EMAIL_FROM` (inactive-account job). A new key goes into `.env.example` with an empty value, in the same change that first reads it.
+Copy `.env.example` to `.env` (gitignored). `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are required or the app is blank. Server-only keys: `GROQ_API_KEY` (photo analysis, chat), `CLAUDE_API_KEY` (chat fallback), `EXA_API_KEY` (shop search; Add Item → Browse image search and reading product links in Add Item → URL), `PEXELS_API_KEY` (image search), `PHOTOROOM_API_KEY` (cutouts), `SUPABASE_SERVICE_ROLE_KEY` (account deletion, cron), `CRON_SECRET` / `RESEND_API_KEY` / `EMAIL_FROM` (inactive-account job). A new key goes into `.env.example` with an empty value, in the same change that first reads it.
 
 ## Working well
 
