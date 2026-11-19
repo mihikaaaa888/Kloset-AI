@@ -12,10 +12,12 @@ interface ShopItemCardProps {
   onAdd: () => void
   onRemove: () => void
   onCompletePiece?: () => void
+  /** Why it's suggested, e.g. "Goes with your Black Wide-Leg Trousers". */
+  reason?: string | null
 }
 
 /** Product tile with its closet and styling actions grouped in one menu. */
-export function ShopItemCard({ item, mode, inWardrobe, onAdd, onRemove, onCompletePiece }: ShopItemCardProps) {
+export function ShopItemCard({ item, mode, inWardrobe, onAdd, onRemove, onCompletePiece, reason }: ShopItemCardProps) {
   const [imageStage, setImageStage] = useState<0 | 1 | 2>(0)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -101,6 +103,7 @@ export function ShopItemCard({ item, mode, inWardrobe, onAdd, onRemove, onComple
             <>{formatINR(item.estimatedPrice)}</>
           )}
         </p>
+        {reason && <p className="truncate text-2xs italic text-butter-yellow" title={reason}>{reason}</p>}
       </div>
     </div>
   )

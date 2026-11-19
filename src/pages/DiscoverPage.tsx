@@ -13,6 +13,7 @@ import { deleteItem as dbDeleteItem, insertItem } from '@/lib/wardrobeService'
 import { deleteWithUndo, notify, offerUndo } from '@/store/undoStore'
 import { ALL_CATALOG_ITEMS, matchesStylePreference } from '@/lib/catalogData'
 import { WebDiscoverFeed } from '@/components/shop/WebDiscoverFeed'
+import { BUNDLED_COLOUR_CONFIG, getColourHarmonyConfig } from '@/lib/colourHarmonyService'
 import { catalogToItem } from '@/lib/outfitPieces'
 import {
   BUDGET_BANDS,
@@ -20,10 +21,15 @@ import {
   fitsRentBudget,
   isRentable,
   rankForUser,
+  suggestFromKloset,
   type BudgetId,
   type PieceAnchor,
 } from '@/lib/shopping'
 import type { CatalogItem, ClothingCategory, ClothingItem } from '@/types'
+
+// Brands shoppable on Shop; their sites are searched live (see /api/discover-feed).
+const SHOP_BRANDS = ['H&M', 'Zara', 'Mango', 'Diesel', 'Coach', 'Zudio', 'Westside'] as const
+type ShopBrand = (typeof SHOP_BRANDS)[number]
 
 type ShopMode = 'buy' | 'rent'
 type SortMode = 'recommended' | 'price-low' | 'price-high' | 'name'
@@ -67,6 +73,10 @@ export function DiscoverPage() {
   const [budget, setBudget] = useState<BudgetId>('any')
   const [customBudgetAmount, setCustomBudgetAmount] = useState(6500)
   const [category, setCategory] = useState<ClothingCategory | 'all'>('all')
+  // Shop one brand: its curated pieces plus live picks from its own site.
+  const [brand, setBrand] = useState<ShopBrand | null>(null)
+  const [colourConfig, setColourConfig] = useState(BUNDLED_COLOUR_CONFIG)
+  useEffect(() => { void getColourHarmonyConfig().then(setColourConfig) }, [])
   const [searchQuery, setSearchQuery] = useState('')
   const [retailers, setRetailers] = useState<string[]>([])
   const [colours, setColours] = useState<string[]>([])
@@ -121,13 +131,14 @@ export function DiscoverPage() {
           .some((value) => value?.toLowerCase().includes(query))
       })
       .filter((item) => retailers.length === 0 || retailers.includes(item.brand ?? ''))
+      .filter((item) => !brand || item.brand === brand)
       .filter((item) => colours.length === 0 || item.colours.some((colour) => colours.includes(colour)))
     const ranked = rankForUser(pool, profile, wardrobeItems, feedback)
     if (sort === 'price-low') return [...ranked].sort((a, b) => (mode === 'rent' ? a.rentPricePerWeek - b.rentPricePerWeek : a.estimatedPrice - b.estimatedPrice))
     if (sort === 'price-high') return [...ranked].sort((a, b) => (mode === 'rent' ? b.rentPricePerWeek - a.rentPricePerWeek : b.estimatedPrice - a.estimatedPrice))
     if (sort === 'name') return [...ranked].sort((a, b) => a.name.localeCompare(b.name))
     return ranked
-  }, [mode, budget, customBudgetAmount, category, profile, wardrobeItems, feedback, retailers, colours, sort, searchQuery])
+  }, [mode, budget, customBudgetAmount, category, profile, wardrobeItems, feedback, retailers, colours, sort, searchQuery, brand])
 
   const handleAdd = useCallback((catalogItem: CatalogItem) => {
     if (isInWardrobe(catalogItem.id)) return
@@ -208,8 +219,16 @@ export function DiscoverPage() {
   }
 
   const isEmpty = pieces.length === 0
-  const suggested = mode === 'buy' ? pieces.slice(0, 10) : []
-  const rest = mode === 'buy' ? pieces.slice(10) : pieces
+  // Suggested = what works with the user's Kloset (pairs with pieces they own,
+  // fills a short category, isn't a near-copy), when the default sort is on.
+  const klosetSuggestions = useMemo(
+    () => (mode === 'buy' && sort === 'recommended' ? suggestFromKloset(pieces, profile, wardrobeItems, feedback, colourConfig).slice(0, 10) : []),
+    [mode, sort, pieces, profile, wardrobeItems, feedback, colourConfig],
+  )
+  const reasons = new Map(klosetSuggestions.map(({ item, reason }) => [item.id, reason]))
+  const suggested = mode === 'buy' ? (sort === 'recommended' ? klosetSuggestions.map(({ item }) => item) : pieces.slice(0, 10)) : []
+  const suggestedIds = new Set(suggested.map((item) => item.id))
+  const rest = mode === 'buy' ? pieces.filter((item) => !suggestedIds.has(item.id)) : pieces
   const renderGrid = (list: CatalogItem[]) => (
     <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
       {list.map((item) => (
@@ -221,6 +240,7 @@ export function DiscoverPage() {
           onAdd={() => handleAdd(item)}
           onRemove={() => handleRemove(item)}
           onCompletePiece={() => openComplete(anchorFromCatalogItem(item))}
+          reason={reasons.get(item.id)}
         />
       ))}
     </div>
@@ -302,11 +322,21 @@ export function DiscoverPage() {
           </div>
         </div>
 
+        <div className="flex items-center gap-2 overflow-x-auto border-b border-text-primary/10 py-2.5 no-scrollbar" aria-label="Shop by brand">
+          <span className="shrink-0 pr-1 text-2xs uppercase tracking-widest text-text-muted">Brands</span>
+          {SHOP_BRANDS.map((name) => (
+            <button key={name} onClick={() => setBrand((current) => (current === name ? null : name))} aria-pressed={brand === name} className={clsx('shrink-0 rounded-full border px-3 py-1 text-xs transition-colors', brand === name ? 'border-text-primary bg-text-primary text-warm-cream' : 'border-text-primary/15 text-text-muted hover:border-text-primary/40 hover:text-text-primary')}>
+              {name}
+            </button>
+          ))}
+        </div>
+
         {activeFilters.length > 0 && <div className="flex flex-wrap gap-2 pt-3">{activeFilters.map((filter) => <button key={filter.key} onClick={filter.remove} className="inline-flex items-center gap-1.5 rounded-full border border-text-primary/15 px-2.5 py-1 text-xs text-text-muted hover:border-text-primary/35 hover:text-text-primary">{filter.label}<X size={12} /></button>)}</div>}
 
         <div className="flex items-center justify-between gap-3 pt-4 pb-3">
           <div>
-            <h2 className="text-sm font-medium text-text-muted">Suggested for you</h2>
+            <h2 className="text-sm font-medium text-text-muted">{brand ? `${brand}, picked for you` : 'Suggested for you'}</h2>
+            {!brand && wardrobeItems.length > 0 && sort === 'recommended' && <p className="mt-0.5 text-2xs text-text-muted">Based on what’s in your Kloset</p>}
           </div>
           <div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-3">
             <button onClick={() => openComplete()} className="inline-flex h-8 shrink-0 items-center gap-1.5 border border-text-primary/25 px-3 text-xs text-text-primary transition-colors hover:border-text-primary/50 hover:bg-text-primary/5">
@@ -315,7 +345,7 @@ export function DiscoverPage() {
           </div>
         </div>
 
-        {isEmpty ? (
+        {isEmpty && brand ? null : isEmpty ? (
           <div className="py-20 text-center"><p className="mb-2 font-display text-2xl text-text-primary">No pieces found</p><button onClick={() => { setBudget('any'); setCategory('all'); setRetailers([]); setColours([]) }} className="text-sm text-text-primary underline underline-offset-4">Show everything</button></div>
         ) : (
           <>
@@ -324,7 +354,7 @@ export function DiscoverPage() {
           </>
         )}
         {/* Endless live picks beyond the curated catalog, searched with the user's taste. */}
-        <WebDiscoverFeed key={category} profile={profile} category={category} feedback={feedback} />
+        <WebDiscoverFeed key={`${category}:${brand ?? ''}`} profile={profile} category={category} feedback={feedback} brand={brand} />
         </>}
       </div>
     </div>

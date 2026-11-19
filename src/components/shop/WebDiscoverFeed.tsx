@@ -14,10 +14,12 @@ type FeedItem = WebProduct & { search: DiscoverQuery }
  * user's taste. Shop's own catalog is only a few dozen pieces; this never
  * runs out (Show more searches again with a different mix).
  */
-export function WebDiscoverFeed({ profile, category, feedback }: {
+export function WebDiscoverFeed({ profile, category, feedback, brand = null }: {
   profile: UserProfile | null
   category: ClothingCategory | 'all'
   feedback: RecommendationFeedback[]
+  /** Search only this brand's own site (one of Shop's brand chips). */
+  brand?: string | null
 }) {
   const userId = profile?.id ?? 'guest'
   const recordFeedback = useRecommendationStore((s) => s.recordFeedback)
@@ -40,7 +42,7 @@ export function WebDiscoverFeed({ profile, category, feedback }: {
       const res = await apiFetch(apiUrl('/api/discover-feed'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ queries: queries.map((q) => q.text) }),
+        body: JSON.stringify({ queries: queries.map((q) => q.text), ...(brand ? { brand } : {}) }),
       })
       const data = await res.json() as { items?: WebProduct[]; noKey?: boolean; error?: string }
       if (id !== requestId.current) return
@@ -62,7 +64,7 @@ export function WebDiscoverFeed({ profile, category, feedback }: {
     } finally {
       if (id === requestId.current) setLoading(false)
     }
-  }, [profile, category])
+  }, [profile, category, brand])
 
   useEffect(() => {
     setItems([])
@@ -97,9 +99,9 @@ export function WebDiscoverFeed({ profile, category, feedback }: {
     <section aria-label="From around the web" className="mt-12 border-t border-text-primary/10 pt-6">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h2 className="font-display text-2xl text-text-primary">From around the web</h2>
+          <h2 className="font-display text-2xl text-text-primary">{brand ? `From ${brand}` : 'From around the web'}</h2>
           <p className="mt-1 text-xs text-text-muted">
-            Live picks from stores everywhere{basedOn.length ? <>, chosen using <span className="text-text-primary">{basedOn.map((b) => b.charAt(0).toUpperCase() + b.slice(1)).join(' · ')}</span></> : ', tuned to your taste as you heart and skip'}.
+            {brand ? `Live from ${brand}’s site` : 'Live picks from stores everywhere'}{basedOn.length ? <>, chosen using <span className="text-text-primary">{basedOn.map((b) => b.charAt(0).toUpperCase() + b.slice(1)).join(' · ')}</span></> : ', tuned to your taste as you heart and skip'}.
           </p>
         </div>
       </div>

@@ -357,11 +357,24 @@ function siteNameOf(domain) {
   return name.length <= 3 ? name.toUpperCase() : name.charAt(0).toUpperCase() + name.slice(1)
 }
 
+// Shop's brand chips → the brand's own sites (subdomains included: www2.hm.com,
+// shop.mango.com, checkout.westside.com). Only these can be searched by brand.
+const BRAND_DOMAINS = {
+  'H&M': ['hm.com'],
+  Zara: ['zara.com'],
+  Mango: ['mango.com'],
+  Diesel: ['diesel.com'],
+  Coach: ['coach.com'],
+  Zudio: ['zudio.com'],
+  Westside: ['westside.com'],
+}
+
 const discoverCache = new Map()
 const DISCOVER_CACHE_TTL_MS = 6 * 60 * 60 * 1000
 
-async function discoverForQuery(query, apiKey) {
-  const cacheKey = query.toLowerCase()
+async function discoverForQuery(query, apiKey, brand = null) {
+  const includeDomains = brand ? BRAND_DOMAINS[brand] : null
+  const cacheKey = `${query.toLowerCase()}|${brand ?? ''}`
   const cached = discoverCache.get(cacheKey)
   if (cached && cached.expiresAt > Date.now()) return cached.items
 
@@ -372,6 +385,7 @@ async function discoverForQuery(query, apiKey) {
       query: `${query} product page buy online`,
       type: 'auto',
       numResults: 12,
+      ...(includeDomains ? { includeDomains } : {}),
       // A little page text is enough to find the price.
       contents: { text: { maxCharacters: 800 }, extras: { imageLinks: 8 } },
     }),
@@ -389,6 +403,10 @@ async function discoverForQuery(query, apiKey) {
       site && tail.replace(/\.(com|in|co\.in)$/i, '').replace(/[^a-z0-9]/gi, '').toLowerCase().includes(site) ? '' : m).trim()
     // Shop phrasing: "Buy Black Linen Shirt Online", "... - Buy PUMA ... Online at Best Prices".
     title = title.replace(/^(buy|shop)\s+/i, '').replace(/\s+-\s+buy\b.*$/i, '').replace(/\s+online(\s+(in|at)\b.*)?$/i, '').trim()
+    // "LOV Black Linen Shirt from Westside" → drop the store's sign-off.
+    title = title.replace(/\s+from\s+([\w&' ]{2,30})$/i, (m, tail) => (tail.replace(/[^a-z0-9]/gi, '').toLowerCase().includes(site) ? '' : m)).trim()
+    // ALL-CAPS names (Zara) read better in normal case: "LINEN OVERSHIRT" → "Linen overshirt".
+    if (title.length > 6 && title === title.toUpperCase() && /[A-Z]/.test(title)) title = title.charAt(0) + title.slice(1).toLowerCase()
     // A button label ("close", "menu") instead of a name: use the link's slug.
     if (title.length < 6) title = titleFor({ url: page.url, title: '' })
     title = title.charAt(0).toUpperCase() + title.slice(1)
@@ -412,10 +430,11 @@ app.post('/api/discover-feed', async (req, res) => {
     .map((q) => q.trim().replace(/[^\p{L}\p{N}' -]/gu, ' ').replace(/\s+/g, ' ').slice(0, 80))
     .slice(0, 6)
   if (!queries.length) return res.status(400).json({ error: 'queries are required' })
+  const brand = typeof req.body?.brand === 'string' && BRAND_DOMAINS[req.body.brand] ? req.body.brand : null
   const apiKey = process.env.EXA_API_KEY
   if (!apiKey) return res.json({ items: [], noKey: true })
 
-  const settled = await Promise.allSettled(queries.map((q) => discoverForQuery(q, apiKey)))
+  const settled = await Promise.allSettled(queries.map((q) => discoverForQuery(q, apiKey, brand)))
   for (const result of settled) if (result.status === 'rejected') console.error('[discover-feed] Exa error:', result.reason?.message ?? result.reason)
   const lists = settled.map((result) => (result.status === 'fulfilled' ? result.value : []))
 
@@ -427,13 +446,14 @@ app.post('/api/discover-feed', async (req, res) => {
   for (let i = 0; lists.some((list) => list.length > i); i++) {
     for (const list of lists) {
       const item = list[i]
-      if (!item || seen.has(item.url) || (perStore.get(item.domain) ?? 0) >= 3) continue
+      // The per-store cap keeps the general feed varied; a brand feed is one store by design.
+      if (!item || seen.has(item.url) || (!brand && (perStore.get(item.domain) ?? 0) >= 3)) continue
       seen.add(item.url)
       perStore.set(item.domain, (perStore.get(item.domain) ?? 0) + 1)
       items.push(item)
     }
   }
-  console.log(`[discover-feed] ${queries.length} searches → ${items.length} products`)
+  console.log(`[discover-feed] ${queries.length} searches${brand ? ` on ${brand}` : ''} → ${items.length} products`)
   return res.json({ items })
 })
 

@@ -3,6 +3,8 @@ import type { ColourHarmonyConfig } from '@/lib/colourHarmony'
 import spec from '../../colour-harmony-spec.json'
 
 const FALLBACK_CONFIG = spec.engineConfig as ColourHarmonyConfig
+/** The checked-in config, for scoring synchronously before Supabase answers. */
+export const BUNDLED_COLOUR_CONFIG = FALLBACK_CONFIG
 let cachedConfig: Promise<ColourHarmonyConfig> | null = null
 
 /** Read the active colour-harmony config from Supabase, falling back to the
