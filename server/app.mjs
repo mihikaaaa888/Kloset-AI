@@ -443,8 +443,10 @@ async function discoverForQuery(query, apiKey, includeDomains = null) {
   const data = await response.json()
 
   const items = []
+  // Pages dropped and why, so an empty brand feed can be explained from the logs.
+  const rejected = []
   for (const page of data.results ?? []) {
-    if (!looksLikeProductPage(page.url)) continue
+    if (!looksLikeProductPage(page.url)) { rejected.push(`not a product page: ${page.url}`); continue }
     const domain = domainOf(page.url)
     const site = siteKeyOf(domain)
     // Drop a trailing " | Store" / " – Store" / " - Store.com" only when it is the store's name.
@@ -464,11 +466,14 @@ async function discoverForQuery(query, apiKey, includeDomains = null) {
       .filter((u) => typeof u === 'string' && /^https?:\/\//i.test(u) && !JUNK_IMAGE_RE.test(u))
       .filter((u) => u !== page.url && !/\/(\?|#|$)/.test(u.replace(/^https?:\/\/[^/]+/i, '')))
       .map((u) => upsizeImageUrl(u.replace(/^http:\/\//i, 'https://').replace(/&amp;/g, '&')))
-    if (!candidates.length) continue
+    if (!candidates.length) { rejected.push(`no usable photo: ${page.url}`); continue }
     const imageUrl = candidates.find((u) => keywordScore(u.replace(/^https?:\/\/[^/]+/i, '').split('?')[0], keywords) >= 2) ?? candidates[0]
     items.push({ id: page.url, url: page.url, title, retailer: siteNameOf(domain), domain, imageUrl, price: priceFrom(page.text), query })
   }
 
+  if (includeDomains && !items.length) {
+    console.warn(`[discover-feed] "${query}" on ${includeDomains.join(',')}: ${data.results?.length ?? 0} pages, 0 products${rejected.length ? `; dropped ${rejected.slice(0, 3).join(' | ')}` : ''}`)
+  }
   discoverCache.set(cacheKey, { items, expiresAt: Date.now() + DISCOVER_CACHE_TTL_MS })
   return items
 }
