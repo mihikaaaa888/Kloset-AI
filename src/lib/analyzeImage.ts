@@ -30,7 +30,34 @@ function blobToBase64(blob: Blob): Promise<string> {
   })
 }
 
-const MAX_ANALYSIS_EDGE = 1280
+// Smaller photos cost Groq fewer tokens, and the per-minute token limit is
+// what makes tagging "busy". 1024px still reads fabric and detail; finding
+// piece boxes needs even less.
+const MAX_ANALYSIS_EDGE = 1024
+const MAX_DETECTION_EDGE = 768
+
+/** Called when tagging is rate limited and will retry after `seconds`. */
+export type TaggingWaitHandler = (seconds: number) => void
+const MAX_RETRY_WAIT_SECONDS = 30
+
+// POST to a vision route. On 429, wait as long as the server says (from
+// Groq's Retry-After) and try once more, instead of failing straight away.
+async function postVision(path: string, body: unknown, onWait?: TaggingWaitHandler): Promise<Response> {
+  const send = () => apiFetch(apiUrl(path), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const first = await send()
+  if (first.status !== 429) return first
+  const header = Number(first.headers.get('Retry-After'))
+  const seconds = Number.isFinite(header) && header > 0 ? Math.ceil(header) : 10
+  if (seconds > MAX_RETRY_WAIT_SECONDS) return first
+  console.warn('[analyzeImage] rate limited, retrying', { path, seconds })
+  onWait?.(seconds)
+  await new Promise((resolve) => setTimeout(resolve, seconds * 1000))
+  return send()
+}
 
 async function readAnalysisResponse(res: Response): Promise<ClothingAnalysis> {
   let data: { analysis?: ClothingAnalysis | null; error?: string } = {}
@@ -87,7 +114,7 @@ async function shrinkForAnalysis(blob: Blob): Promise<Blob> {
   }
 }
 
-export async function analyzeImage(original: Blob): Promise<ClothingAnalysis> {
+export async function analyzeImage(original: Blob, onWait?: TaggingWaitHandler): Promise<ClothingAnalysis> {
   const blob = await shrinkForAnalysis(original)
   const supportedTypes = ['image/jpeg', 'image/png', 'image/webp']
   const mediaType = supportedTypes.includes(blob.type) ? blob.type : 'image/jpeg'
@@ -96,11 +123,7 @@ export async function analyzeImage(original: Blob): Promise<ClothingAnalysis> {
 
   let res: Response
   try {
-    res = await apiFetch(apiUrl('/api/analyze-image'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageData, mediaType }),
-    })
+    res = await postVision('/api/analyze-image', { imageData, mediaType }, onWait)
   } catch (error) {
     if (error instanceof TypeError) {
       throw new Error('Could not reach Kloset’s photo tagging service. Check your connection and try again.')
@@ -117,23 +140,68 @@ export interface DetectedOutfitPiece {
   box: [number, number, number, number]
 }
 
+// Maps a 0–1000 box on the padded square back to 0–1000 per axis of the photo.
+type BoxMapper = (box: [number, number, number, number]) => [number, number, number, number]
+const identityBox: BoxMapper = (box) => box
+
+// The vision model measures box coordinates against the image's longest side,
+// not each side separately, so boxes on tall or wide photos came back squashed
+// and crops landed in the wrong place. Padding the photo into a white square
+// makes both readings agree; the boxes are mapped back to the photo after.
+async function squareForDetection(blob: Blob): Promise<{ blob: Blob; mapBox: BoxMapper }> {
+  const url = URL.createObjectURL(blob)
+  try {
+    const img = new Image()
+    img.src = url
+    await img.decode()
+    const { naturalWidth: width, naturalHeight: height } = img
+    const scale = Math.min(1, MAX_DETECTION_EDGE / Math.max(width, height))
+    const drawnWidth = Math.round(width * scale)
+    const drawnHeight = Math.round(height * scale)
+    const side = Math.max(drawnWidth, drawnHeight)
+    const offsetX = Math.floor((side - drawnWidth) / 2)
+    const offsetY = Math.floor((side - drawnHeight) / 2)
+    const canvas = document.createElement('canvas')
+    canvas.width = side
+    canvas.height = side
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('No 2D canvas context')
+    context.fillStyle = '#FFFFFF'
+    context.fillRect(0, 0, side, side)
+    context.drawImage(img, offsetX, offsetY, drawnWidth, drawnHeight)
+    const out = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85))
+    if (!out) throw new Error('canvas.toBlob returned null')
+    const toPhoto = (value: number, offset: number, drawn: number) =>
+      Math.round(Math.max(0, Math.min(1000, ((value / 1000) * side - offset) / drawn * 1000)))
+    const mapBox: BoxMapper = ([left, top, right, bottom]) => [
+      toPhoto(left, offsetX, drawnWidth), toPhoto(top, offsetY, drawnHeight),
+      toPhoto(right, offsetX, drawnWidth), toPhoto(bottom, offsetY, drawnHeight),
+    ]
+    return { blob: out, mapBox }
+  } catch (e) {
+    console.warn('[analyzeImage] square padding failed, sending photo as is', e)
+    return { blob: await shrinkForAnalysis(blob), mapBox: identityBox }
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
 /** Cloud fallback for multi-piece outfit photos when local segmentation cannot load. */
-export async function detectOutfitPieces(original: Blob): Promise<DetectedOutfitPiece[]> {
-  const blob = await shrinkForAnalysis(original)
+export async function detectOutfitPieces(original: Blob, onWait?: TaggingWaitHandler): Promise<DetectedOutfitPiece[]> {
+  const { blob, mapBox } = await squareForDetection(original)
   const imageData = await blobToBase64(blob)
-  const res = await apiFetch(apiUrl('/api/detect-outfit-pieces'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ imageData, mediaType: blob.type || 'image/jpeg' }),
-  })
+  const res = await postVision('/api/detect-outfit-pieces', { imageData, mediaType: blob.type || 'image/jpeg' }, onWait)
   if (!res.ok) throw new Error('Could not detect separate clothing pieces.')
   const data = await res.json() as { pieces?: unknown[] }
   return (data.pieces ?? []).flatMap((piece) => {
     const candidate = piece as Partial<DetectedOutfitPiece>
     if (typeof candidate.name !== 'string' || typeof candidate.category !== 'string' || !Array.isArray(candidate.box) || candidate.box.length !== 4) return []
-    const box = candidate.box.map(Number)
-    if (box.some((n) => !Number.isFinite(n) || n < 0 || n > 1000) || box[2] <= box[0] || box[3] <= box[1]) return []
-    return [{ name: candidate.name.slice(0, 100), category: candidate.category, box: box as [number, number, number, number] }]
+    const raw = candidate.box.map(Number)
+    if (raw.some((n) => !Number.isFinite(n) || n < 0 || n > 1000)) return []
+    const box = mapBox(raw as [number, number, number, number])
+    // Boxes that fall in the padding map to a zero-size area; drop those.
+    if (box[2] - box[0] < 10 || box[3] - box[1] < 10) return []
+    return [{ name: candidate.name.slice(0, 100), category: candidate.category, box }]
   }).slice(0, 8)
 }
 
@@ -143,12 +211,8 @@ export async function detectOutfitPieces(original: Blob): Promise<DetectedOutfit
  * result. The server fetches it directly, sidestepping the CORS
  * restriction that blocks a client-side fetch() of most third-party images.
  */
-export async function analyzeImageFromUrl(url: string): Promise<ClothingAnalysis> {
-  const res = await apiFetch(apiUrl('/api/analyze-image-url'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url }),
-  })
+export async function analyzeImageFromUrl(url: string, onWait?: TaggingWaitHandler): Promise<ClothingAnalysis> {
+  const res = await postVision('/api/analyze-image-url', { url }, onWait)
 
   return readAnalysisResponse(res)
 }

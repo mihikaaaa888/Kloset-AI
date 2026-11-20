@@ -191,6 +191,8 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
 
   // AI analysis state
   const [aiAnalyzing, setAiAnalyzing] = useState(false)
+  // Set while tagging waits out Groq's rate limit before its one retry.
+  const [aiWaitSeconds, setAiWaitSeconds] = useState<number | null>(null)
   const [lowConfidenceFields, setLowConfidenceFields] = useState<string[]>([])
 
   // Photo tab state
@@ -282,7 +284,9 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
         if (parsed.garments.length < 2) {
           setImageProcessingStep('Finding separate clothing pieces…')
           try {
-            const detected = await detectOutfitPieces(compressed)
+            const detected = await detectOutfitPieces(compressed, (seconds) => {
+              setImageProcessingStep(`Photo scanning is busy. Trying again in ${seconds}s…`)
+            })
             if (detected.length > parsed.garments.length) {
               const crops = await Promise.all(detected.map(async (piece) => ({
                 blob: await cropPhotoToBounds(compressed, piece.box),
@@ -435,12 +439,13 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
     setAiAnalyzing(true)
     setLowConfidenceFields([])
     try {
-      const analysis = await analyzeImage(blob)
+      const analysis = await analyzeImage(blob, setAiWaitSeconds)
       applyAnalysis(analysis, detectedCategory, detectedName)
     } catch (error) {
       setImageError(error instanceof Error ? error.message : 'Photo tagging failed. Review the name and type before saving.')
     } finally {
       setAiAnalyzing(false)
+      setAiWaitSeconds(null)
     }
   }, [applyAnalysis])
 
@@ -451,7 +456,7 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
     setAiAnalyzing(true)
     setLowConfidenceFields([])
     try {
-      const analysis = await analyzeImageFromUrl(url)
+      const analysis = await analyzeImageFromUrl(url, setAiWaitSeconds)
       if (analysis) {
         applyAnalysis(analysis)
       }
@@ -459,6 +464,7 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
       setImageError(error instanceof Error ? error.message : 'Photo tagging failed. Review the name and type before saving.')
     } finally {
       setAiAnalyzing(false)
+      setAiWaitSeconds(null)
     }
   }, [applyAnalysis])
 
@@ -840,7 +846,9 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
                 <div className="absolute inset-0 bg-scrim/30 backdrop-blur-sm flex items-center justify-center">
                   <div className="bg-surface/95 rounded-2xl px-4 py-3 flex items-center gap-2.5 shadow-soft">
                     <div className="w-4 h-4 rounded-full border-2 border-butter-yellow/20 border-t-butter-yellow animate-spin" />
-                    <span className="text-xs font-medium text-text-primary">Analysing…</span>
+                    <span className="text-xs font-medium text-text-primary">
+                      {aiWaitSeconds ? `Tagging is busy. Trying again in ${aiWaitSeconds}s…` : 'Analysing…'}
+                    </span>
                   </div>
                 </div>
               )}

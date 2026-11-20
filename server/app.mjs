@@ -582,6 +582,17 @@ app.get('/api/search-images', async (req, res) => {
 
 // ─── Analyze clothing image ───────────────────────────────────────────────────
 
+// Groq's 429 says how long to wait. Pass it on (capped) so the app can retry
+// once on its own instead of failing straight away.
+function groqRetryAfterSeconds(response) {
+  const seconds = Number(response.headers.get('retry-after'))
+  return Number.isFinite(seconds) && seconds > 0 ? Math.min(60, Math.ceil(seconds)) : 10
+}
+function sendVisionBusy(res, e, message) {
+  res.set('Retry-After', String(e?.retryAfter ?? 10))
+  return res.status(429).json({ code: 'VISION_RATE_LIMITED', error: message })
+}
+
 const VISION_ENUMS = {
   category: CATEGORY_VALUES,
   primaryColor: PRIMARY_COLOR_VALUES,
@@ -699,6 +710,7 @@ async function runVisionAnalysis(imageData, mediaType) {
       const err = new Error(`Groq vision request failed (${response.status})`)
       err.code = response.status === 429 ? 'VISION_RATE_LIMITED' : 'VISION_PROVIDER_ERROR'
       err.status = response.status
+      if (response.status === 429) err.retryAfter = groqRetryAfterSeconds(response)
       throw err
     }
 
@@ -750,10 +762,7 @@ app.post('/api/analyze-image', async (req, res) => {
       })
     }
     if (e?.code === 'VISION_RATE_LIMITED') {
-      return res.status(429).json({
-        code: e.code,
-        error: 'Photo tagging is busy right now. Wait a moment and try again, or add the item manually.',
-      })
+      return sendVisionBusy(res, e, 'Photo tagging is busy right now. Wait a moment and try again, or add the item manually.')
     }
     return res.status(502).json({
       code: e?.code || 'VISION_PROVIDER_ERROR',
@@ -801,6 +810,10 @@ app.post('/api/detect-outfit-pieces', async (req, res) => {
       }),
       signal: AbortSignal.timeout(20_000),
     })
+    if (response.status === 429) {
+      console.warn('[detect-outfit-pieces] Groq rate limited')
+      return sendVisionBusy(res, { retryAfter: groqRetryAfterSeconds(response) }, 'Photo scanning is busy right now.')
+    }
     if (!response.ok) throw new Error(`Groq ${response.status}`)
     const result = await response.json()
     const text = result.choices?.[0]?.message?.content ?? '{}'
@@ -904,10 +917,7 @@ app.post('/api/analyze-image-url', async (req, res) => {
       })
     }
     if (e?.code === 'VISION_RATE_LIMITED') {
-      return res.status(429).json({
-        code: e.code,
-        error: 'Photo tagging is busy right now. Wait a moment and try again, or add the item manually.',
-      })
+      return sendVisionBusy(res, e, 'Photo tagging is busy right now. Wait a moment and try again, or add the item manually.')
     }
     return res.status(502).json({
       code: e?.code || 'VISION_PROVIDER_ERROR',
