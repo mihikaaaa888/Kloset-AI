@@ -353,6 +353,13 @@ function siteKeyOf(domain) {
   return (parts[parts.length - (secondLevel ? 3 : 2)] ?? domain).toLowerCase()
 }
 
+// "int.toteme.com" → "toteme.com", "shop.brand.co.in" → "brand.co.in".
+function registrableDomain(domain) {
+  const parts = domain.split('.')
+  const secondLevel = parts.length > 2 && ['co', 'com', 'net', 'org', 'gov', 'ac'].includes(parts[parts.length - 2])
+  return parts.slice(-(secondLevel ? 3 : 2)).join('.')
+}
+
 function siteNameOf(domain) {
   const name = siteKeyOf(domain)
   return name.length <= 3 ? name.toUpperCase() : name.charAt(0).toUpperCase() + name.slice(1)
@@ -396,7 +403,9 @@ async function brandDomainsFor(brand, apiKey) {
       if (!domain || NOT_BRAND_SITES.test(domain)) continue
       const site = brandKey(siteKeyOf(domain))
       if (site === key || (key.length >= 4 && site.includes(key)) || (site.length >= 4 && key.startsWith(site))) {
-        domains = [domain]
+        // Search the whole site, not the one subdomain that ranked: Toteme's
+        // lookup lands on int.toteme.com, whose pages alone held no products.
+        domains = [registrableDomain(domain)]
         break
       }
     }

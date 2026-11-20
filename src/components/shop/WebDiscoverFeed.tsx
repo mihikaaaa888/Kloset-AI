@@ -113,7 +113,9 @@ export function WebDiscoverFeed({ profile, category, feedback, brand = null }: {
         </div>
       </div>
 
-      {status === 'no-brand-site' ? (
+      {status === 'ok' && brand && !loading && !visible.length ? (
+        <p className="py-10 text-center text-sm text-text-muted">Nothing from {brand}’s site matched this time. Try Show more, another category, or another brand.</p>
+      ) : status === 'no-brand-site' ? (
         <p className="py-10 text-center text-sm text-text-muted">Couldn’t find {brand}’s own website to search. Check the spelling, or try another brand.</p>
       ) : status === 'error' && !visible.length ? (
         <p className="py-10 text-center text-sm text-text-muted">Couldn’t load live picks right now. <button onClick={() => void load(page, items.length === 0)} className="underline underline-offset-4 hover:text-text-primary">Try again</button></p>
