@@ -53,7 +53,7 @@ export function ClosetDoorsCTA({ onCTA }: { onCTA: () => void }) {
         onFocus={() => setOpen(true)}
         className="relative mx-auto max-w-5xl [perspective:1800px]"
       >
-        <Stamp ring="YOUR CLOSET · STYLED · YOUR CLOSET · STYLED · " fill={INKS.mustard} className="absolute -left-6 -top-10 z-20" size={120}>
+        <Stamp ring="YOUR KLOSET · STYLED · YOUR KLOSET · STYLED · " fill={INKS.mustard} className="absolute -left-6 -top-10 z-20" size={120}>
           Open<br />me
         </Stamp>
         {/* Inside the closet */}

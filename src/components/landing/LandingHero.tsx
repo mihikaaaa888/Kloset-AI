@@ -173,7 +173,7 @@ export function LandingHero() {
         {/* Masthead, kept clear so it always reads cleanly. */}
         {/* Masthead in the house serif. Each line rises out of its own mask once, on load. */}
         <div className="relative font-display text-[clamp(3.3rem,9vw,7rem)] leading-[0.95] tracking-[-0.02em] text-text-primary">
-          <ArcText className="reveal !mx-0 mb-2 !h-9 !w-60 text-butter-yellow">your closet, styled</ArcText>
+          <ArcText className="reveal !mx-0 mb-2 !h-9 !w-60 text-butter-yellow">your kloset, styled</ArcText>
           <h1 className="font-medium">
             <span className="block overflow-hidden pb-[0.08em]">
               <span className="line-rise block">Your wardrobe,</span>
