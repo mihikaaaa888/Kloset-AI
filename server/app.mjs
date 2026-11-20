@@ -35,6 +35,7 @@ import {
 
 const require = createRequire(import.meta.url)
 const indianWearGuide = require('../indian-wear-guide.json')
+const brandDirectory = require('../brand-directory.json')
 const recommendationWorkbookGuide = require('../recommendation-workbook-guidance.json')
 
 // ─── App ──────────────────────────────────────────────────────────────────────
@@ -357,24 +358,63 @@ function siteNameOf(domain) {
   return name.length <= 3 ? name.toUpperCase() : name.charAt(0).toUpperCase() + name.slice(1)
 }
 
-// Shop's brand chips → the brand's own sites (subdomains included: www2.hm.com,
-// shop.mango.com, checkout.westside.com). Only these can be searched by brand.
-const BRAND_DOMAINS = {
-  'H&M': ['hm.com'],
-  Zara: ['zara.com'],
-  Mango: ['mango.com'],
-  Diesel: ['diesel.com'],
-  Coach: ['coach.com'],
-  Zudio: ['zudio.com'],
-  Westside: ['westside.com'],
+// Shop's brands → each brand's own sites (subdomains included: www2.hm.com,
+// shop.mango.com). A brand search only ever looks on its own site.
+const brandKey = (name) => String(name).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/&/g, 'and').replace(/[^a-z0-9]/g, '')
+const BRAND_DOMAINS = new Map()
+for (const entry of brandDirectory.brands) {
+  for (const name of [entry.name, ...(entry.aliases ?? [])]) BRAND_DOMAINS.set(brandKey(name), entry.domains)
+}
+
+// Stores and sites that are never a brand's own site, even when they rank
+// first for "<brand> official website".
+const NOT_BRAND_SITES = /(^|\.)(myntra|ajio|amazon|flipkart|nykaa|nykaafashion|tatacliq|meesho|snapdeal|shoppersstop|lifestylestores|farfetch|ssense|net-a-porter|mytheresa|lyst|zalando|nordstrom|macys|wikipedia|instagram|facebook|linkedin|twitter|x|youtube|pinterest|reddit|glassdoor|crunchbase|trustpilot)\./i
+const brandSiteCache = new Map()
+const BRAND_SITE_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+
+// Brands outside the directory: find the brand's own website once (cached),
+// accepting only a domain named after the brand, so a search for one brand
+// can't wander onto marketplaces or other brands' sites.
+async function brandDomainsFor(brand, apiKey) {
+  const key = brandKey(brand)
+  if (key.length < 2) return null
+  if (BRAND_DOMAINS.has(key)) return BRAND_DOMAINS.get(key)
+  const cached = brandSiteCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.domains
+
+  let domains = null
+  try {
+    const response = await fetch('https://api.exa.ai/search', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: `${brand} official clothing brand website online store`, type: 'auto', numResults: 8 }),
+    })
+    if (!response.ok) throw Object.assign(new Error(`Exa ${response.status}`), { status: response.status })
+    const data = await response.json()
+    for (const page of data.results ?? []) {
+      const domain = domainOf(page.url)
+      if (!domain || NOT_BRAND_SITES.test(domain)) continue
+      const site = brandKey(siteKeyOf(domain))
+      if (site === key || (key.length >= 4 && site.includes(key)) || (site.length >= 4 && key.startsWith(site))) {
+        domains = [domain]
+        break
+      }
+    }
+  } catch (error) {
+    // Not cached, and not "no website": the search itself failed (e.g. out of credits).
+    console.warn('[discover-feed] brand site lookup failed:', error?.message ?? error)
+    throw error
+  }
+  console.log(`[discover-feed] brand site for "${brand}": ${domains?.[0] ?? 'not found'}`)
+  brandSiteCache.set(key, { domains, expiresAt: Date.now() + BRAND_SITE_CACHE_TTL_MS })
+  return domains
 }
 
 const discoverCache = new Map()
 const DISCOVER_CACHE_TTL_MS = 6 * 60 * 60 * 1000
 
-async function discoverForQuery(query, apiKey, brand = null) {
-  const includeDomains = brand ? BRAND_DOMAINS[brand] : null
-  const cacheKey = `${query.toLowerCase()}|${brand ?? ''}`
+async function discoverForQuery(query, apiKey, includeDomains = null) {
+  const cacheKey = `${query.toLowerCase()}|${includeDomains?.join(',') ?? ''}`
   const cached = discoverCache.get(cacheKey)
   if (cached && cached.expiresAt > Date.now()) return cached.items
 
@@ -390,7 +430,7 @@ async function discoverForQuery(query, apiKey, brand = null) {
       contents: { text: { maxCharacters: 800 }, extras: { imageLinks: 8 } },
     }),
   })
-  if (!response.ok) throw new Error(`Exa ${response.status}: ${await response.text()}`)
+  if (!response.ok) throw Object.assign(new Error(`Exa ${response.status}: ${await response.text()}`), { status: response.status })
   const data = await response.json()
 
   const items = []
@@ -430,12 +470,33 @@ app.post('/api/discover-feed', async (req, res) => {
     .map((q) => q.trim().replace(/[^\p{L}\p{N}' -]/gu, ' ').replace(/\s+/g, ' ').slice(0, 80))
     .slice(0, 6)
   if (!queries.length) return res.status(400).json({ error: 'queries are required' })
-  const brand = typeof req.body?.brand === 'string' && BRAND_DOMAINS[req.body.brand] ? req.body.brand : null
+  const brand = typeof req.body?.brand === 'string'
+    ? req.body.brand.replace(/[^\p{L}\p{N}&'. -]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 40) || null
+    : null
   const apiKey = process.env.EXA_API_KEY
   if (!apiKey) return res.json({ items: [], noKey: true })
 
-  const settled = await Promise.allSettled(queries.map((q) => discoverForQuery(q, apiKey, brand)))
+  // Every search failing (Exa out of credits, down) is an error the app should
+  // show, not an empty feed. 402 = the Exa account needs topping up.
+  const searchFailed = (error) => {
+    const outOfCredits = error?.status === 402
+    if (outOfCredits) console.error('[discover-feed] Exa is out of credits — top up at dashboard.exa.ai')
+    return res.status(503).json({ items: [], error: 'Live search is unavailable right now.', ...(outOfCredits ? { outOfCredits: true } : {}) })
+  }
+
+  let brandDomains = null
+  if (brand) {
+    try {
+      brandDomains = await brandDomainsFor(brand, apiKey)
+    } catch (error) {
+      return searchFailed(error)
+    }
+    if (!brandDomains) return res.json({ items: [], brandNotFound: true })
+  }
+
+  const settled = await Promise.allSettled(queries.map((q) => discoverForQuery(q, apiKey, brandDomains)))
   for (const result of settled) if (result.status === 'rejected') console.error('[discover-feed] Exa error:', result.reason?.message ?? result.reason)
+  if (settled.every((result) => result.status === 'rejected')) return searchFailed(settled[0]?.reason)
   const lists = settled.map((result) => (result.status === 'fulfilled' ? result.value : []))
 
   // One per query per round, so every search is represented near the top;

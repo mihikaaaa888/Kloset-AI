@@ -18,7 +18,7 @@ export function WebDiscoverFeed({ profile, category, feedback, brand = null }: {
   profile: UserProfile | null
   category: ClothingCategory | 'all'
   feedback: RecommendationFeedback[]
-  /** Search only this brand's own site (one of Shop's brand chips). */
+  /** Search only this brand's own website (any brand; the server finds its site). */
   brand?: string | null
 }) {
   const userId = profile?.id ?? 'guest'
@@ -28,7 +28,7 @@ export function WebDiscoverFeed({ profile, category, feedback, brand = null }: {
   const [items, setItems] = useState<FeedItem[]>([])
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(false)
-  const [status, setStatus] = useState<'ok' | 'error' | 'no-key'>('ok')
+  const [status, setStatus] = useState<'ok' | 'error' | 'no-key' | 'no-brand-site'>('ok')
   const [votes, setVotes] = useState<Record<string, 'like' | 'dislike'>>({})
   const requestId = useRef(0)
 
@@ -44,9 +44,10 @@ export function WebDiscoverFeed({ profile, category, feedback, brand = null }: {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ queries: queries.map((q) => q.text), ...(brand ? { brand } : {}) }),
       })
-      const data = await res.json() as { items?: WebProduct[]; noKey?: boolean; error?: string }
+      const data = await res.json() as { items?: WebProduct[]; noKey?: boolean; brandNotFound?: boolean; error?: string }
       if (id !== requestId.current) return
       if (data.noKey) { setStatus('no-key'); return }
+      if (data.brandNotFound) { setStatus('no-brand-site'); return }
       if (!res.ok) throw new Error(data.error)
       const byText = new Map(queries.map((q) => [q.text, q]))
       const fresh = (data.items ?? []).map((item) => {
@@ -93,7 +94,13 @@ export function WebDiscoverFeed({ profile, category, feedback, brand = null }: {
     ])].slice(0, 5)
   }, [profile])
 
-  if (status === 'no-key') return null
+  // Without the search key there's no live feed; for a brand that's all there
+  // is to show, so say so instead of leaving the page blank.
+  if (status === 'no-key') {
+    return brand
+      ? <p className="mt-6 border-t border-text-primary/10 py-10 text-center text-sm text-text-muted">Live search isn’t available right now, so {brand}’s site can’t be searched. Try again later.</p>
+      : null
+  }
 
   return (
     <section aria-label="From around the web" className="mt-12 border-t border-text-primary/10 pt-6">
@@ -106,7 +113,9 @@ export function WebDiscoverFeed({ profile, category, feedback, brand = null }: {
         </div>
       </div>
 
-      {status === 'error' && !visible.length ? (
+      {status === 'no-brand-site' ? (
+        <p className="py-10 text-center text-sm text-text-muted">Couldn’t find {brand}’s own website to search. Check the spelling, or try another brand.</p>
+      ) : status === 'error' && !visible.length ? (
         <p className="py-10 text-center text-sm text-text-muted">Couldn’t load live picks right now. <button onClick={() => void load(page, items.length === 0)} className="underline underline-offset-4 hover:text-text-primary">Try again</button></p>
       ) : (
         <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -117,7 +126,7 @@ export function WebDiscoverFeed({ profile, category, feedback, brand = null }: {
         </div>
       )}
 
-      {!loading && status !== 'error' && (
+      {!loading && status !== 'error' && status !== 'no-brand-site' && (
         <div className="mt-8 flex justify-center">
           <button onClick={() => void load(page + 1, false)} className="h-10 rounded-full border border-text-primary/25 px-6 text-xs text-text-primary transition-colors hover:border-text-primary/50 hover:bg-text-primary/5">
             {visible.length ? 'Show more' : 'Find picks'}

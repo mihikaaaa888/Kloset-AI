@@ -39,6 +39,8 @@ export interface UserProfile {
   recommendationFrequency: RecommendationFrequency
   onboardingComplete: boolean
   styleItemSelections?: string[]
+  /** Brands hearted on Shop (profiles.favourite_brands; supabase/favourite_brands.sql). */
+  favouriteBrands?: string[]
   createdAt: string
   updatedAt: string
 }

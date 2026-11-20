@@ -15,6 +15,7 @@ type DbProfile = {
   recommendation_frequency: string | null
   onboarding_complete: boolean
   style_item_selections?: string[] | null
+  favourite_brands?: string[] | null
   created_at: string
   updated_at: string
 }
@@ -34,6 +35,7 @@ function toProfile(row: DbProfile): UserProfile {
     recommendationFrequency: (row.recommendation_frequency ?? 'weekly') as UserProfile['recommendationFrequency'],
     onboardingComplete: row.onboarding_complete,
     styleItemSelections: row.style_item_selections ?? [],
+    favouriteBrands: row.favourite_brands ?? [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -92,6 +94,18 @@ export async function upsertProfile(userId: string, profile: UserProfile): Promi
     return false
   }
   console.log('[profile] saved', { onboardingComplete: profile.onboardingComplete })
+  return true
+}
+
+// Favourite brands are saved on their own, like the profile photo, so a database
+// without the column (supabase/favourite_brands.sql not run yet) still saves
+// everything else in upsertProfile.
+export async function saveFavouriteBrands(userId: string, brands: string[]): Promise<boolean> {
+  const { error } = await supabase.from('profiles').update({ favourite_brands: brands.slice(0, 50) }).eq('id', userId)
+  if (error) {
+    console.warn('[profile] could not save favourite brands — run supabase/favourite_brands.sql', error.message)
+    return false
+  }
   return true
 }
 

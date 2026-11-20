@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ChevronDown, Search, SlidersHorizontal, X } from 'lucide-react'
+import { ChevronDown, Heart, Search, SlidersHorizontal, X } from 'lucide-react'
 import { clsx } from 'clsx'
 
 import { ShopItemCard } from '@/components/shop/ShopItemCard'
@@ -10,8 +10,10 @@ import { useUserStore } from '@/store/userStore'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRecommendationStore } from '@/store/recommendationStore'
 import { deleteItem as dbDeleteItem, insertItem } from '@/lib/wardrobeService'
+import { saveFavouriteBrands } from '@/lib/profileService'
+import { ALL_BRANDS, brandKey, canonicalBrand, likedBrands, searchBrands } from '@/lib/brands'
 import { deleteWithUndo, notify, offerUndo } from '@/store/undoStore'
-import { ALL_CATALOG_ITEMS, matchesStylePreference } from '@/lib/catalogData'
+import { ALL_CATALOG_ITEMS, CATALOG_STYLE_LABELS, matchesStylePreference } from '@/lib/catalogData'
 import { WebDiscoverFeed } from '@/components/shop/WebDiscoverFeed'
 import { BUNDLED_COLOUR_CONFIG, getColourHarmonyConfig } from '@/lib/colourHarmonyService'
 import { catalogToItem } from '@/lib/outfitPieces'
@@ -21,15 +23,12 @@ import {
   fitsRentBudget,
   isRentable,
   rankForUser,
+  suggestForStyle,
   suggestFromKloset,
   type BudgetId,
   type PieceAnchor,
 } from '@/lib/shopping'
-import type { CatalogItem, ClothingCategory, ClothingItem } from '@/types'
-
-// Brands shoppable on Shop; their sites are searched live (see /api/discover-feed).
-const SHOP_BRANDS = ['H&M', 'Zara', 'Mango', 'Diesel', 'Coach', 'Zudio', 'Westside'] as const
-type ShopBrand = (typeof SHOP_BRANDS)[number]
+import type { CatalogItem, ClothingCategory, ClothingItem, StylePreference } from '@/types'
 
 type ShopMode = 'buy' | 'rent'
 type SortMode = 'recommended' | 'price-low' | 'price-high' | 'name'
@@ -63,6 +62,7 @@ export function DiscoverPage() {
   const { user } = useAuth()
   const { items: wardrobeItems, addItem, removeItem } = useWardrobeStore()
   const profile = useUserStore((s) => s.profile)
+  const updateProfile = useUserStore((s) => s.updateProfile)
   const feedback = useRecommendationStore((state) => profile?.id ? state.feedbackByUser[profile.id] ?? [] : [])
   const location = useLocation()
   const navigate = useNavigate()
@@ -74,12 +74,15 @@ export function DiscoverPage() {
   const [customBudgetAmount, setCustomBudgetAmount] = useState(6500)
   const [category, setCategory] = useState<ClothingCategory | 'all'>('all')
   // Shop one brand: its curated pieces plus live picks from its own site.
-  const [brand, setBrand] = useState<ShopBrand | null>(null)
+  const [brand, setBrand] = useState<string | null>(null)
+  const [brandPickerOpen, setBrandPickerOpen] = useState(false)
+  const [brandQuery, setBrandQuery] = useState('')
   const [colourConfig, setColourConfig] = useState(BUNDLED_COLOUR_CONFIG)
   useEffect(() => { void getColourHarmonyConfig().then(setColourConfig) }, [])
   const [searchQuery, setSearchQuery] = useState('')
   const [retailers, setRetailers] = useState<string[]>([])
   const [colours, setColours] = useState<string[]>([])
+  const [styles, setStyles] = useState<StylePreference[]>([])
   const [sort, setSort] = useState<SortMode>('recommended')
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [completeOpen, setCompleteOpen] = useState(false)
@@ -119,6 +122,12 @@ export function DiscoverPage() {
     return query ? retailersAvailable.filter((brand) => brand.toLowerCase().includes(query)).slice(0, 5) : []
   }, [retailersAvailable, searchQuery])
   const coloursAvailable = useMemo(() => [...new Set(ALL_CATALOG_ITEMS.flatMap((item) => item.colours))].sort(), [])
+  // Styles that have pieces, the person's own first.
+  const myStyles = profile?.stylePreferences ?? []
+  const stylesAvailable = useMemo(() => {
+    const tagged = new Set(ALL_CATALOG_ITEMS.flatMap((item) => item.styleAesthetics))
+    return [...tagged].sort((a, b) => Number(myStyles.includes(b)) - Number(myStyles.includes(a)) || a.localeCompare(b))
+  }, [myStyles])
 
   const pieces = useMemo(() => {
     const pool = ALL_CATALOG_ITEMS
@@ -131,14 +140,15 @@ export function DiscoverPage() {
           .some((value) => value?.toLowerCase().includes(query))
       })
       .filter((item) => retailers.length === 0 || retailers.includes(item.brand ?? ''))
-      .filter((item) => !brand || item.brand === brand)
+      .filter((item) => !brand || brandKey(item.brand ?? '') === brandKey(brand))
       .filter((item) => colours.length === 0 || item.colours.some((colour) => colours.includes(colour)))
+      .filter((item) => styles.length === 0 || item.styleAesthetics.some((style) => styles.includes(style)))
     const ranked = rankForUser(pool, profile, wardrobeItems, feedback)
     if (sort === 'price-low') return [...ranked].sort((a, b) => (mode === 'rent' ? a.rentPricePerWeek - b.rentPricePerWeek : a.estimatedPrice - b.estimatedPrice))
     if (sort === 'price-high') return [...ranked].sort((a, b) => (mode === 'rent' ? b.rentPricePerWeek - a.rentPricePerWeek : b.estimatedPrice - a.estimatedPrice))
     if (sort === 'name') return [...ranked].sort((a, b) => a.name.localeCompare(b.name))
     return ranked
-  }, [mode, budget, customBudgetAmount, category, profile, wardrobeItems, feedback, retailers, colours, sort, searchQuery, brand])
+  }, [mode, budget, customBudgetAmount, category, profile, wardrobeItems, feedback, retailers, colours, styles, sort, searchQuery, brand])
 
   const handleAdd = useCallback((catalogItem: CatalogItem) => {
     if (isInWardrobe(catalogItem.id)) return
@@ -218,11 +228,38 @@ export function DiscoverPage() {
     setValues(values.includes(value) ? values.filter((entry) => entry !== value) : [...values, value])
   }
 
+  // Brand bubbles: hearted brands, brands they own, then popular ones.
+  const favouriteBrands = profile?.favouriteBrands ?? []
+  const isFavouriteBrand = (name: string) => favouriteBrands.some((fav) => brandKey(fav) === brandKey(name))
+  const brandBubbles = useMemo(() => {
+    const liked = likedBrands(profile, wardrobeItems)
+    return brand && !liked.some((entry) => brandKey(entry.name) === brandKey(brand)) ? [{ name: brand, favourite: false }, ...liked] : liked
+  }, [profile, wardrobeItems, brand])
+  const brandResults = useMemo(() => searchBrands(brandQuery), [brandQuery])
+  const typedBrand = brandQuery.trim()
+  const typedIsNew = typedBrand.length >= 2 && !ALL_BRANDS.some((name) => brandKey(name) === brandKey(canonicalBrand(typedBrand)))
+
+  const toggleFavouriteBrand = (name: string) => {
+    const canonical = canonicalBrand(name)
+    const next = isFavouriteBrand(canonical)
+      ? favouriteBrands.filter((fav) => brandKey(fav) !== brandKey(canonical))
+      : [...favouriteBrands, canonical].slice(-50)
+    updateProfile({ favouriteBrands: next })
+    console.log('[shop] favourite brands', { count: next.length })
+    if (user) void saveFavouriteBrands(user.id, next).then((saved) => { if (!saved) notify('Couldn’t save your favourite brands right now. They’re kept on this device.') })
+  }
+  const pickBrand = (name: string) => {
+    setBrand(canonicalBrand(name))
+    setBrandPickerOpen(false)
+    setBrandQuery('')
+  }
+
   const isEmpty = pieces.length === 0
   // Suggested = what works with the user's Kloset (pairs with pieces they own,
   // fills a short category, isn't a near-copy), when the default sort is on.
   const klosetSuggestions = useMemo(
-    () => (mode === 'buy' && sort === 'recommended' ? suggestFromKloset(pieces, profile, wardrobeItems, feedback, colourConfig).slice(0, 10) : []),
+    // Narrowed to the person's chosen styles (topped up when few pieces match).
+    () => (mode === 'buy' && sort === 'recommended' ? suggestForStyle(suggestFromKloset(pieces, profile, wardrobeItems, feedback, colourConfig), profile) : []),
     [mode, sort, pieces, profile, wardrobeItems, feedback, colourConfig],
   )
   const reasons = new Map(klosetSuggestions.map(({ item, reason }) => [item.id, reason]))
@@ -250,6 +287,7 @@ export function DiscoverPage() {
     ...(budget !== 'any' ? [{ key: 'budget', label: budgetLabel(budget, mode), remove: () => setBudget('any') }] : []),
     ...retailers.map((retailer) => ({ key: `retailer-${retailer}`, label: retailer, remove: () => setRetailers(retailers.filter((entry) => entry !== retailer)) })),
     ...colours.map((colour) => ({ key: `colour-${colour}`, label: colour, remove: () => setColours(colours.filter((entry) => entry !== colour)) })),
+    ...styles.map((style) => ({ key: `style-${style}`, label: CATALOG_STYLE_LABELS[style] ?? style, remove: () => setStyles(styles.filter((entry) => entry !== style)) })),
   ]
 
   return (
@@ -299,10 +337,14 @@ export function DiscoverPage() {
                 {activeFilters.length > 0 && <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-text-primary px-1 text-[9px] text-warm-cream">{activeFilters.length}</span>}
               </button>
               {filtersOpen && <div className="absolute right-0 top-full z-30 mt-2 w-[min(20rem,calc(100vw-2rem))] border border-text-primary/10 bg-surface p-4 shadow-lifted">
-                <div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-medium text-text-primary">Filters</h3><button onClick={() => { setBudget('any'); setRetailers([]); setColours([]) }} className="text-xs text-text-muted hover:text-text-primary">Clear all</button></div>
+                <div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-medium text-text-primary">Filters</h3><button onClick={() => { setBudget('any'); setRetailers([]); setColours([]); setStyles([]) }} className="text-xs text-text-muted hover:text-text-primary">Clear all</button></div>
                 <FilterGroup label="Budget">
                   {BUDGET_BANDS.map((band) => <label key={band.id} className="flex cursor-pointer items-center gap-2 py-1.5 text-sm text-text-muted"><input type="radio" name="shop-budget" checked={budget === band.id} onChange={() => setBudget(band.id)} />{band.buyLabel}</label>)}
                   {budget === 'custom' && <label className="mt-2 flex items-center gap-2 text-xs text-text-muted">Maximum ₹<input type="number" min="1" value={customBudgetAmount} onChange={(event) => setCustomBudgetAmount(Number(event.target.value))} className="w-24 border-b border-text-primary/20 bg-transparent px-1 py-1 text-text-primary focus:outline-none" /></label>}
+                </FilterGroup>
+                <FilterGroup label="Style">
+                  {myStyles.length > 0 && <button type="button" onClick={() => setStyles(myStyles.filter((style) => stylesAvailable.includes(style)))} className="mb-1.5 text-xs text-text-primary underline underline-offset-4">Just my style</button>}
+                  <div className="grid grid-cols-2 gap-x-2">{stylesAvailable.map((style) => <label key={style} className="flex cursor-pointer items-center gap-2 py-1 text-xs text-text-muted"><input type="checkbox" checked={styles.includes(style)} onChange={() => setStyles(styles.includes(style) ? styles.filter((entry) => entry !== style) : [...styles, style])} />{CATALOG_STYLE_LABELS[style] ?? style}{myStyles.includes(style) && <span className="text-2xs text-[#355E3B]">· yours</span>}</label>)}</div>
                 </FilterGroup>
                 <FilterGroup label="Retailer">
                   <div className="grid max-h-28 grid-cols-2 gap-x-2 overflow-y-auto">{retailersAvailable.map((retailer) => <label key={retailer} className="flex cursor-pointer items-center gap-2 py-1 text-xs text-text-muted"><input type="checkbox" checked={retailers.includes(retailer)} onChange={() => toggleValue(retailers, retailer, setRetailers)} />{retailer}</label>)}</div>
@@ -324,19 +366,43 @@ export function DiscoverPage() {
 
         <div className="flex items-center gap-2 overflow-x-auto border-b border-text-primary/10 py-2.5 no-scrollbar" aria-label="Shop by brand">
           <span className="shrink-0 pr-1 text-2xs uppercase tracking-widest text-text-muted">Brands</span>
-          {SHOP_BRANDS.map((name) => (
-            <button key={name} onClick={() => setBrand((current) => (current === name ? null : name))} aria-pressed={brand === name} className={clsx('shrink-0 rounded-full border px-3 py-1 text-xs transition-colors', brand === name ? 'border-text-primary bg-text-primary text-warm-cream' : 'border-text-primary/15 text-text-muted hover:border-text-primary/40 hover:text-text-primary')}>
-              {name}
-            </button>
-          ))}
+          {brandBubbles.map(({ name, favourite }) => {
+            const active = brand !== null && brandKey(brand) === brandKey(name)
+            return (
+              <button key={name} onClick={() => setBrand(active ? null : name)} aria-pressed={active} className={clsx('inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1 text-xs transition-colors', active ? 'border-text-primary bg-text-primary text-warm-cream' : 'border-text-primary/15 text-text-muted hover:border-text-primary/40 hover:text-text-primary')}>
+                {favourite && <Heart size={10} fill="currentColor" aria-label="Favourite" />}
+                {name}
+              </button>
+            )
+          })}
+          <button onClick={() => setBrandPickerOpen((open) => !open)} aria-expanded={brandPickerOpen} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-dashed border-text-primary/30 px-3 py-1 text-xs text-text-primary hover:border-text-primary/60">
+            <Search size={11} /> All brands
+          </button>
         </div>
+
+        {brandPickerOpen && (
+          <section aria-label="All brands" className="border-b border-text-primary/10 py-3">
+            <label className="flex items-center gap-2 border-b border-text-primary/15 px-1 py-2 text-text-muted focus-within:border-text-primary/50">
+              <Search size={14} strokeWidth={1.5} />
+              <input autoFocus value={brandQuery} onChange={(event) => setBrandQuery(event.target.value)} type="search" placeholder="Search any brand" aria-label="Search brands" className="min-w-0 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none" />
+              <button type="button" onClick={() => { setBrandPickerOpen(false); setBrandQuery('') }} aria-label="Close brands" className="p-1 hover:text-text-primary"><X size={14} /></button>
+            </label>
+            <p className="mt-2 text-2xs text-text-muted">Tap a brand to shop it. Tap the heart to keep it in your bubbles.</p>
+            <div className="mt-2 flex max-h-64 flex-wrap gap-2 overflow-y-auto pb-1">
+              {brandResults.map((name) => <BrandBubble key={name} name={name} favourite={isFavouriteBrand(name)} onPick={() => pickBrand(name)} onToggleFavourite={() => toggleFavouriteBrand(name)} />)}
+              {/* Any other brand, after the directory's matches. */}
+              {typedIsNew && <BrandBubble name={typedBrand} label={`Shop “${typedBrand}”`} favourite={isFavouriteBrand(typedBrand)} onPick={() => pickBrand(typedBrand)} onToggleFavourite={() => toggleFavouriteBrand(typedBrand)} />}
+              {!typedIsNew && brandResults.length === 0 && <p className="text-xs text-text-muted">No brands match. Keep typing to search any brand.</p>}
+            </div>
+          </section>
+        )}
 
         {activeFilters.length > 0 && <div className="flex flex-wrap gap-2 pt-3">{activeFilters.map((filter) => <button key={filter.key} onClick={filter.remove} className="inline-flex items-center gap-1.5 rounded-full border border-text-primary/15 px-2.5 py-1 text-xs text-text-muted hover:border-text-primary/35 hover:text-text-primary">{filter.label}<X size={12} /></button>)}</div>}
 
         <div className="flex items-center justify-between gap-3 pt-4 pb-3">
           <div>
             <h2 className="text-sm font-medium text-text-muted">{brand ? `${brand}, picked for you` : 'Suggested for you'}</h2>
-            {!brand && wardrobeItems.length > 0 && sort === 'recommended' && <p className="mt-0.5 text-2xs text-text-muted">Based on what’s in your Kloset</p>}
+            {!brand && sort === 'recommended' && (myStyles.length > 0 || wardrobeItems.length > 0) && <p className="mt-0.5 text-2xs text-text-muted">{[myStyles.length > 0 && `Your style: ${myStyles.map((style) => CATALOG_STYLE_LABELS[style] ?? style).join(', ')}`, wardrobeItems.length > 0 && 'Goes with your Kloset'].filter(Boolean).join(' · ')}</p>}
           </div>
           <div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-3">
             <button onClick={() => openComplete()} className="inline-flex h-8 shrink-0 items-center gap-1.5 border border-text-primary/25 px-3 text-xs text-text-primary transition-colors hover:border-text-primary/50 hover:bg-text-primary/5">
@@ -345,8 +411,11 @@ export function DiscoverPage() {
           </div>
         </div>
 
-        {isEmpty && brand ? null : isEmpty ? (
-          <div className="py-20 text-center"><p className="mb-2 font-display text-2xl text-text-primary">No pieces found</p><button onClick={() => { setBudget('any'); setCategory('all'); setRetailers([]); setColours([]) }} className="text-sm text-text-primary underline underline-offset-4">Show everything</button></div>
+        {isEmpty && brand ? (
+          // Shop's own catalog has few brands; the live feed below searches the brand's site.
+          <p className="pb-2 text-sm text-text-muted">None of Shop’s own pieces are from {brand} yet. Live picks from {brand}’s site are below.</p>
+        ) : isEmpty ? (
+          <div className="py-20 text-center"><p className="mb-2 font-display text-2xl text-text-primary">No pieces found</p><button onClick={() => { setBudget('any'); setCategory('all'); setRetailers([]); setColours([]); setStyles([]) }} className="text-sm text-text-primary underline underline-offset-4">Show everything</button></div>
         ) : (
           <>
             {suggested.length > 0 && <section aria-label="Suggested for you">{renderGrid(suggested)}</section>}
@@ -358,6 +427,17 @@ export function DiscoverPage() {
         </>}
       </div>
     </div>
+  )
+}
+
+function BrandBubble({ name, label, favourite, onPick, onToggleFavourite }: { name: string; label?: string; favourite: boolean; onPick: () => void; onToggleFavourite: () => void }) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-text-primary/15 text-xs text-text-primary">
+      <button type="button" onClick={onPick} className="py-1 pl-3 pr-1.5 hover:underline">{label ?? name}</button>
+      <button type="button" onClick={onToggleFavourite} aria-pressed={favourite} aria-label={favourite ? `Remove ${name} from favourite brands` : `Add ${name} to favourite brands`} className={clsx('py-1 pl-1 pr-2.5', favourite ? 'text-[#355E3B]' : 'text-text-muted hover:text-text-primary')}>
+        <Heart size={12} fill={favourite ? 'currentColor' : 'none'} />
+      </button>
+    </span>
   )
 }
 

@@ -33,7 +33,7 @@ Start everything with `npm run dev:all` (site on :5173, API on :3001). `npm run 
 - `src/lib/`: services. `*Service.ts` talk to Supabase; `chatService.ts` talks to "Kaia" the stylist chat; `stylist.ts` is the mock outfit engine; `imageStorage.ts` keeps photos in IndexedDB and mirrors them to the private `wardrobe-images` bucket.
 - `src/contexts/AuthContext.tsx` + `src/hooks/useDataSync.ts`: load data on login, clear on logout.
 - `server/app.mjs`: the one Express app, used locally (`server/index.mjs`), on Netlify (`netlify/functions/api.mjs`) and on Vercel (`api/[...path].mjs`). `outfitRules.mjs` validates outfit suggestions; `productPages.mjs` keeps only real product links; `accounts.mjs` is the inactive-account job.
-- `supabase/`: SQL, run in the SQL editor in this order: `schema.sql`, `friends.sql`, `wardrobe_photos.sql`, `profile_photo.sql`, `vision_analysis_fields.sql`, `inactive_accounts.sql`, `security_hardening.sql`, `recommendation_feedback.sql`. All safe to re-run.
+- `supabase/`: SQL, run in the SQL editor in this order: `schema.sql`, `friends.sql`, `wardrobe_photos.sql`, `profile_photo.sql`, `vision_analysis_fields.sql`, `inactive_accounts.sql`, `security_hardening.sql`, `recommendation_feedback.sql`, `favourite_brands.sql`. All safe to re-run.
 - `public/`: static files, plus `robots.txt` and `sitemap.xml` (domain `https://trykloset.com`; add new public pages to the sitemap, and new signed-in pages to `robots.txt`).
 - `docs/exa-web-shopping-search.md`: spec for the shop search.
 

@@ -1,5 +1,5 @@
 import { scoreColourSets, type ColourHarmonyConfig } from '@/lib/colourHarmony'
-import { ALL_CATALOG_ITEMS, matchesStylePreference } from '@/lib/catalogData'
+import { ALL_CATALOG_ITEMS, CATALOG_STYLE_LABELS, matchesStylePreference } from '@/lib/catalogData'
 import type { CatalogItem, ClothingCategory, ClothingItem, StylePreference, UserProfile } from '@/types'
 import { affinityForLearnedTraits } from '@/lib/styleLearning'
 import { learnStyleFromWardrobe } from '@/lib/styleLearning'
@@ -265,3 +265,34 @@ export function suggestFromKloset(
   }
   return [...lead, ...tail].map(({ item, reason }) => ({ item, reason }))
 }
+
+/** How many of the person's chosen styles an item is tagged with. */
+export function styleOverlap(item: CatalogItem, styles: readonly StylePreference[]): number {
+  return item.styleAesthetics.filter((style) => styles.includes(style)).length
+}
+
+// Some styles have few tagged pieces (athleisure has none yet), so Suggested
+// tops up with the best other picks rather than showing a near-empty row.
+const MIN_STYLE_SUGGESTIONS = 6
+
+/**
+ * Suggested, narrowed to the person's style: only pieces tagged with one of
+ * their chosen styles, in the Kloset ranking's order (which already favours
+ * pieces that pair with what they own), topped up to a few with the next best
+ * picks when too few match. Without chosen styles the ranking is used as is.
+ */
+export function suggestForStyle(suggestions: KlosetSuggestion[], profile: UserProfile | null, limit = 10): KlosetSuggestion[] {
+  const styles = profile?.stylePreferences ?? []
+  if (!styles.length) return suggestions.slice(0, limit)
+  const matching = suggestions
+    .filter((suggestion) => styleOverlap(suggestion.item, styles) > 0)
+    .map((suggestion) => {
+      if (suggestion.reason) return suggestion
+      const style = suggestion.item.styleAesthetics.find((entry) => styles.includes(entry))
+      return { ...suggestion, reason: style ? `Fits your ${CATALOG_STYLE_LABELS[style]?.toLowerCase() ?? style} style` : null }
+    })
+  const others = suggestions.filter((suggestion) => styleOverlap(suggestion.item, styles) === 0)
+  const topUp = Math.max(0, MIN_STYLE_SUGGESTIONS - matching.length)
+  return [...matching, ...others.slice(0, topUp)].slice(0, limit)
+}
+

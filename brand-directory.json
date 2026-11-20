@@ -1,0 +1,795 @@
+{
+ "note": "Shop's brand directory: each brand's own website(s). Live brand search only looks on these sites (see /api/discover-feed). Brands not listed are looked up by the server.",
+ "brands": [
+  {
+   "name": "H&M",
+   "domains": [
+    "hm.com"
+   ],
+   "aliases": [
+    "hm",
+    "h and m"
+   ]
+  },
+  {
+   "name": "Zara",
+   "domains": [
+    "zara.com"
+   ]
+  },
+  {
+   "name": "Mango",
+   "domains": [
+    "mango.com"
+   ]
+  },
+  {
+   "name": "Diesel",
+   "domains": [
+    "diesel.com"
+   ]
+  },
+  {
+   "name": "Coach",
+   "domains": [
+    "coach.com"
+   ]
+  },
+  {
+   "name": "Zudio",
+   "domains": [
+    "zudio.com"
+   ]
+  },
+  {
+   "name": "Westside",
+   "domains": [
+    "westside.com"
+   ]
+  },
+  {
+   "name": "Uniqlo",
+   "domains": [
+    "uniqlo.com"
+   ]
+  },
+  {
+   "name": "Gap",
+   "domains": [
+    "gap.com"
+   ]
+  },
+  {
+   "name": "Levi's",
+   "domains": [
+    "levi.com",
+    "levi.in"
+   ],
+   "aliases": [
+    "levis"
+   ]
+  },
+  {
+   "name": "Nike",
+   "domains": [
+    "nike.com"
+   ]
+  },
+  {
+   "name": "Adidas",
+   "domains": [
+    "adidas.com",
+    "adidas.co.in"
+   ]
+  },
+  {
+   "name": "Puma",
+   "domains": [
+    "puma.com"
+   ]
+  },
+  {
+   "name": "Reebok",
+   "domains": [
+    "reebok.com"
+   ]
+  },
+  {
+   "name": "New Balance",
+   "domains": [
+    "newbalance.com"
+   ]
+  },
+  {
+   "name": "Converse",
+   "domains": [
+    "converse.com"
+   ]
+  },
+  {
+   "name": "Vans",
+   "domains": [
+    "vans.com"
+   ]
+  },
+  {
+   "name": "Skechers",
+   "domains": [
+    "skechers.com",
+    "skechers.in"
+   ]
+  },
+  {
+   "name": "ASOS",
+   "domains": [
+    "asos.com"
+   ]
+  },
+  {
+   "name": "Forever 21",
+   "domains": [
+    "forever21.com"
+   ],
+   "aliases": [
+    "forever21"
+   ]
+  },
+  {
+   "name": "Marks & Spencer",
+   "domains": [
+    "marksandspencer.com",
+    "marksandspencer.in"
+   ],
+   "aliases": [
+    "m&s",
+    "marks and spencer"
+   ]
+  },
+  {
+   "name": "Massimo Dutti",
+   "domains": [
+    "massimodutti.com"
+   ]
+  },
+  {
+   "name": "Pull&Bear",
+   "domains": [
+    "pullandbear.com"
+   ],
+   "aliases": [
+    "pull and bear"
+   ]
+  },
+  {
+   "name": "Bershka",
+   "domains": [
+    "bershka.com"
+   ]
+  },
+  {
+   "name": "Stradivarius",
+   "domains": [
+    "stradivarius.com"
+   ]
+  },
+  {
+   "name": "COS",
+   "domains": [
+    "cos.com"
+   ]
+  },
+  {
+   "name": "& Other Stories",
+   "domains": [
+    "stories.com"
+   ],
+   "aliases": [
+    "other stories"
+   ]
+  },
+  {
+   "name": "Arket",
+   "domains": [
+    "arket.com"
+   ]
+  },
+  {
+   "name": "Banana Republic",
+   "domains": [
+    "bananarepublic.com"
+   ]
+  },
+  {
+   "name": "Ralph Lauren",
+   "domains": [
+    "ralphlauren.com"
+   ],
+   "aliases": [
+    "polo ralph lauren"
+   ]
+  },
+  {
+   "name": "Tommy Hilfiger",
+   "domains": [
+    "tommy.com"
+   ],
+   "aliases": [
+    "tommy"
+   ]
+  },
+  {
+   "name": "Calvin Klein",
+   "domains": [
+    "calvinklein.com"
+   ],
+   "aliases": [
+    "ck"
+   ]
+  },
+  {
+   "name": "Guess",
+   "domains": [
+    "guess.com"
+   ]
+  },
+  {
+   "name": "Michael Kors",
+   "domains": [
+    "michaelkors.com"
+   ]
+  },
+  {
+   "name": "Kate Spade",
+   "domains": [
+    "katespade.com"
+   ]
+  },
+  {
+   "name": "Charles & Keith",
+   "domains": [
+    "charleskeith.com"
+   ],
+   "aliases": [
+    "charles and keith"
+   ]
+  },
+  {
+   "name": "Aldo",
+   "domains": [
+    "aldoshoes.com"
+   ]
+  },
+  {
+   "name": "Steve Madden",
+   "domains": [
+    "stevemadden.com"
+   ]
+  },
+  {
+   "name": "Lacoste",
+   "domains": [
+    "lacoste.com"
+   ]
+  },
+  {
+   "name": "Fossil",
+   "domains": [
+    "fossil.com"
+   ]
+  },
+  {
+   "name": "Gucci",
+   "domains": [
+    "gucci.com"
+   ]
+  },
+  {
+   "name": "Prada",
+   "domains": [
+    "prada.com"
+   ]
+  },
+  {
+   "name": "Louis Vuitton",
+   "domains": [
+    "louisvuitton.com"
+   ],
+   "aliases": [
+    "lv"
+   ]
+  },
+  {
+   "name": "Dior",
+   "domains": [
+    "dior.com"
+   ]
+  },
+  {
+   "name": "Chanel",
+   "domains": [
+    "chanel.com"
+   ]
+  },
+  {
+   "name": "Burberry",
+   "domains": [
+    "burberry.com"
+   ]
+  },
+  {
+   "name": "Balenciaga",
+   "domains": [
+    "balenciaga.com"
+   ]
+  },
+  {
+   "name": "Saint Laurent",
+   "domains": [
+    "ysl.com"
+   ],
+   "aliases": [
+    "ysl"
+   ]
+  },
+  {
+   "name": "Versace",
+   "domains": [
+    "versace.com"
+   ]
+  },
+  {
+   "name": "Fendi",
+   "domains": [
+    "fendi.com"
+   ]
+  },
+  {
+   "name": "Valentino",
+   "domains": [
+    "valentino.com"
+   ]
+  },
+  {
+   "name": "Bottega Veneta",
+   "domains": [
+    "bottegaveneta.com"
+   ]
+  },
+  {
+   "name": "Hermès",
+   "domains": [
+    "hermes.com"
+   ],
+   "aliases": [
+    "hermes"
+   ]
+  },
+  {
+   "name": "Jacquemus",
+   "domains": [
+    "jacquemus.com"
+   ]
+  },
+  {
+   "name": "Reformation",
+   "domains": [
+    "thereformation.com"
+   ]
+  },
+  {
+   "name": "Aritzia",
+   "domains": [
+    "aritzia.com"
+   ]
+  },
+  {
+   "name": "Abercrombie & Fitch",
+   "domains": [
+    "abercrombie.com"
+   ],
+   "aliases": [
+    "abercrombie"
+   ]
+  },
+  {
+   "name": "Hollister",
+   "domains": [
+    "hollisterco.com"
+   ]
+  },
+  {
+   "name": "American Eagle",
+   "domains": [
+    "ae.com"
+   ]
+  },
+  {
+   "name": "Urban Outfitters",
+   "domains": [
+    "urbanoutfitters.com"
+   ]
+  },
+  {
+   "name": "Free People",
+   "domains": [
+    "freepeople.com"
+   ]
+  },
+  {
+   "name": "Anthropologie",
+   "domains": [
+    "anthropologie.com"
+   ]
+  },
+  {
+   "name": "Lululemon",
+   "domains": [
+    "lululemon.com"
+   ]
+  },
+  {
+   "name": "Gymshark",
+   "domains": [
+    "gymshark.com"
+   ]
+  },
+  {
+   "name": "Alo Yoga",
+   "domains": [
+    "aloyoga.com"
+   ],
+   "aliases": [
+    "alo"
+   ]
+  },
+  {
+   "name": "Superdry",
+   "domains": [
+    "superdry.com"
+   ]
+  },
+  {
+   "name": "Jack & Jones",
+   "domains": [
+    "jackjones.com"
+   ],
+   "aliases": [
+    "jack and jones"
+   ]
+  },
+  {
+   "name": "Only",
+   "domains": [
+    "only.com"
+   ]
+  },
+  {
+   "name": "Vero Moda",
+   "domains": [
+    "veromoda.com"
+   ]
+  },
+  {
+   "name": "United Colors of Benetton",
+   "domains": [
+    "benetton.com"
+   ],
+   "aliases": [
+    "benetton",
+    "ucb"
+   ]
+  },
+  {
+   "name": "Crocs",
+   "domains": [
+    "crocs.com"
+   ]
+  },
+  {
+   "name": "Dr. Martens",
+   "domains": [
+    "drmartens.com"
+   ],
+   "aliases": [
+    "doc martens"
+   ]
+  },
+  {
+   "name": "Birkenstock",
+   "domains": [
+    "birkenstock.com"
+   ]
+  },
+  {
+   "name": "Clarks",
+   "domains": [
+    "clarks.com"
+   ]
+  },
+  {
+   "name": "Bata",
+   "domains": [
+    "bata.com"
+   ]
+  },
+  {
+   "name": "Fabindia",
+   "domains": [
+    "fabindia.com"
+   ]
+  },
+  {
+   "name": "W",
+   "domains": [
+    "wforwoman.com"
+   ],
+   "aliases": [
+    "w for woman"
+   ]
+  },
+  {
+   "name": "Biba",
+   "domains": [
+    "biba.in"
+   ]
+  },
+  {
+   "name": "Global Desi",
+   "domains": [
+    "globaldesi.in"
+   ]
+  },
+  {
+   "name": "AND",
+   "domains": [
+    "andindia.com"
+   ]
+  },
+  {
+   "name": "Aurelia",
+   "domains": [
+    "shopforaurelia.com"
+   ]
+  },
+  {
+   "name": "Libas",
+   "domains": [
+    "libas.in"
+   ]
+  },
+  {
+   "name": "Max Fashion",
+   "domains": [
+    "maxfashion.in"
+   ],
+   "aliases": [
+    "max"
+   ]
+  },
+  {
+   "name": "Pantaloons",
+   "domains": [
+    "pantaloons.com"
+   ]
+  },
+  {
+   "name": "Allen Solly",
+   "domains": [
+    "allensolly.abfrl.in"
+   ]
+  },
+  {
+   "name": "Van Heusen",
+   "domains": [
+    "vanheusenindia.abfrl.in"
+   ]
+  },
+  {
+   "name": "Peter England",
+   "domains": [
+    "peterengland.abfrl.in"
+   ]
+  },
+  {
+   "name": "Louis Philippe",
+   "domains": [
+    "louisphilippe.abfrl.in"
+   ]
+  },
+  {
+   "name": "Raymond",
+   "domains": [
+    "myraymond.com"
+   ]
+  },
+  {
+   "name": "Manyavar",
+   "domains": [
+    "manyavar.com"
+   ]
+  },
+  {
+   "name": "Sabyasachi",
+   "domains": [
+    "sabyasachi.com"
+   ]
+  },
+  {
+   "name": "Anita Dongre",
+   "domains": [
+    "anitadongre.com"
+   ]
+  },
+  {
+   "name": "Nicobar",
+   "domains": [
+    "nicobar.com"
+   ]
+  },
+  {
+   "name": "Good Earth",
+   "domains": [
+    "goodearth.in"
+   ]
+  },
+  {
+   "name": "Bewakoof",
+   "domains": [
+    "bewakoof.com"
+   ]
+  },
+  {
+   "name": "The Souled Store",
+   "domains": [
+    "thesouledstore.com"
+   ],
+   "aliases": [
+    "souled store"
+   ]
+  },
+  {
+   "name": "Snitch",
+   "domains": [
+    "snitch.co.in"
+   ]
+  },
+  {
+   "name": "Rare Rabbit",
+   "domains": [
+    "thehouseofrare.com"
+   ]
+  },
+  {
+   "name": "Bonkers Corner",
+   "domains": [
+    "bonkerscorner.com"
+   ]
+  },
+  {
+   "name": "NewMe",
+   "domains": [
+    "newme.asia"
+   ]
+  },
+  {
+   "name": "Urbanic",
+   "domains": [
+    "urbanic.com"
+   ]
+  },
+  {
+   "name": "Chumbak",
+   "domains": [
+    "chumbak.com"
+   ]
+  },
+  {
+   "name": "Mochi",
+   "domains": [
+    "mochishoes.com"
+   ]
+  },
+  {
+   "name": "Metro Shoes",
+   "domains": [
+    "metroshoes.com"
+   ],
+   "aliases": [
+    "metro"
+   ]
+  },
+  {
+   "name": "Hidesign",
+   "domains": [
+    "hidesign.com"
+   ]
+  },
+  {
+   "name": "Lavie",
+   "domains": [
+    "lavieworld.com"
+   ]
+  },
+  {
+   "name": "Caprese",
+   "domains": [
+    "capresebags.com"
+   ]
+  },
+  {
+   "name": "Baggit",
+   "domains": [
+    "baggit.com"
+   ]
+  },
+  {
+   "name": "Tanishq",
+   "domains": [
+    "tanishq.co.in"
+   ]
+  },
+  {
+   "name": "Mia by Tanishq",
+   "domains": [
+    "miabytanishq.com"
+   ],
+   "aliases": [
+    "mia"
+   ]
+  },
+  {
+   "name": "Giva",
+   "domains": [
+    "giva.co"
+   ]
+  },
+  {
+   "name": "Okhai",
+   "domains": [
+    "okhai.org"
+   ]
+  },
+  {
+   "name": "Jaypore",
+   "domains": [
+    "jaypore.com"
+   ]
+  },
+  {
+   "name": "House of Masaba",
+   "domains": [
+    "houseofmasaba.com"
+   ],
+   "aliases": [
+    "masaba"
+   ]
+  },
+  {
+   "name": "Suta",
+   "domains": [
+    "suta.in"
+   ]
+  },
+  {
+   "name": "Ritu Kumar",
+   "domains": [
+    "ritukumar.com"
+   ]
+  },
+  {
+   "name": "Kalki Fashion",
+   "domains": [
+    "kalkifashion.com"
+   ],
+   "aliases": [
+    "kalki"
+   ]
+  },
+  {
+   "name": "Rangriti",
+   "domains": [
+    "rangriti.com"
+   ]
+  }
+ ]
+}
