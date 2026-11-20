@@ -93,11 +93,12 @@ function SwingTag() {
               />
               <circle cx="44" cy="17" r="4.5" fill="rgb(var(--c-warm-cream))" stroke="rgb(var(--c-butter-yellow) / 0.65)" strokeWidth="1.2" />
             </svg>
-            <span aria-hidden="true" className="absolute inset-x-0 top-10 flex flex-col items-center text-butter-yellow">
+            <span aria-hidden="true" className="absolute inset-x-0 top-8 flex flex-col items-center text-butter-yellow sm:top-10">
               <HangerIcon size={24} />
               <span className="mt-1 font-brand text-lg leading-none">Kloset</span>
               <span className="mt-2.5 h-px w-10 bg-butter-yellow/30" />
-              <span className="mt-2 whitespace-nowrap text-[8px] font-semibold uppercase tracking-[0.1em] text-text-primary/70">How it works</span>
+              {/* Sized to sit inside the stitched border: 78px tag on phones, 88px from sm up. */}
+              <span className="mt-2 whitespace-nowrap text-[7px] font-semibold uppercase leading-none tracking-[0.04em] text-text-primary/70 sm:text-[8px] sm:tracking-[0.03em]">How it works</span>
               <ArrowDown size={13} strokeWidth={1.8} className="mt-1 transition-transform duration-300 group-hover:translate-y-0.5" />
             </span>
           </button>

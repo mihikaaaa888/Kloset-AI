@@ -23,7 +23,7 @@ function swing(e: ReactPointerEvent<HTMLElement>) {
 export function ClosetRail() {
   return (
     <div className="pan-section relative border-t border-text-primary/10 bg-surface">
-      <div className="pan-sticky flex flex-col justify-center py-20 pt-28 lg:py-0 lg:pt-24">
+      <div className="pan-sticky flex flex-col justify-center pb-6 pt-[calc(7rem-0.9in)] lg:py-0 lg:pt-24">
         {/* Giant category words drift behind at half speed. */}
         <div
           className="pan-words pointer-events-none absolute left-0 top-[46%] flex w-max gap-[6vw] whitespace-nowrap pl-[6vw] font-sans text-[30vw] font-extrabold lowercase leading-[0.8] tracking-[-0.06em] text-text-primary/[0.035] lg:text-[20vw]"
@@ -32,13 +32,13 @@ export function ClosetRail() {
           {WORDS.map((w) => <span key={w}>{w}</span>)}
         </div>
 
-        <div className="relative mx-auto w-full max-w-7xl mt-[0.6in] px-4 sm:px-6 lg:mt-0 lg:-translate-y-[calc(6rem-0.6in)] lg:px-8">
-          <h2 className="max-w-[18ch] font-display text-5xl font-medium uppercase leading-[0.95] tracking-tight text-text-primary sm:text-7xl">
-            Every piece you own, <em className="normal-case italic text-[#355E3B]">in one place.</em>
+        <div className="relative mx-auto w-full max-w-7xl px-4 sm:px-6 lg:-translate-x-8 lg:-translate-y-[calc(6rem-0.6in)] lg:px-8">
+          <h2 className="max-w-[18ch] font-display text-5xl font-medium leading-[0.95] tracking-tight text-text-primary sm:text-7xl">
+            Every piece you own, <em className="whitespace-nowrap italic text-[#355E3B]">in one place.</em>
           </h2>
         </div>
 
-        <div className="pan-track relative mt-20 w-max pl-4 pr-[12vw] sm:mt-24 sm:pl-6 lg:pl-[max(2rem,calc((100vw-80rem)/2+2rem))]">
+        <div className="pan-track relative mt-[calc(5rem-0.5in)] w-max pl-4 pr-[12vw] sm:mt-[calc(6rem-0.5in)] sm:pl-6 lg:-top-[0.5in] lg:mt-24 lg:pl-[max(2rem,calc((100vw-80rem)/2+2rem))]">
           <div className="absolute inset-x-0 top-1 h-2.5 rounded-full shadow-[0_6px_10px_-4px_rgba(36,27,41,0.4)]" style={{ background: GOLD }} aria-hidden="true" />
           <ul className="flex items-start">
             {GARMENTS.map((src, i) => (

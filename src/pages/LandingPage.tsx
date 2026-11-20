@@ -79,7 +79,7 @@ export function LandingPage() {
         <section id="rail" aria-label="Every piece you own in one place">
           <ClosetRail />
         </section>
-        <section id="stylist" aria-labelledby="kaia-onboarding-title" className="border-t border-text-primary/10 bg-warm-cream px-5 py-24 sm:px-8 sm:py-32 lg:py-40">
+        <section id="stylist" aria-labelledby="kaia-onboarding-title" className="border-t border-text-primary/10 bg-warm-cream px-5 pb-12 pt-[calc(6rem-0.2in)] sm:px-8 sm:py-32 lg:py-40">
           <div className="mx-auto flex max-w-5xl flex-col items-center gap-8 text-center">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#355E3B]">Your Kloset, thoughtfully styled</p>
             <h2 id="kaia-onboarding-title" className="max-w-3xl font-display text-4xl font-medium leading-tight text-text-primary sm:text-6xl">
