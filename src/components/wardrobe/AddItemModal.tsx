@@ -193,6 +193,16 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
   const [aiAnalyzing, setAiAnalyzing] = useState(false)
   // Set while tagging waits out Groq's rate limit before its one retry.
   const [aiWaitSeconds, setAiWaitSeconds] = useState<number | null>(null)
+  // Count the wait down once a second so it doesn't look frozen.
+  const waiting = aiWaitSeconds !== null && aiWaitSeconds > 0
+  useEffect(() => {
+    if (!waiting) return
+    const timer = window.setInterval(() => {
+      // At 0 the overlay goes back to "Analysing…" while the retry runs.
+      setAiWaitSeconds((seconds) => (seconds !== null && seconds > 0 ? seconds - 1 : seconds))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [waiting])
   const [lowConfidenceFields, setLowConfidenceFields] = useState<string[]>([])
 
   // Photo tab state
