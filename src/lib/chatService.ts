@@ -1,7 +1,5 @@
 import { apiFetch, apiUrl } from '@/lib/apiUrl'
-import type { CatalogItem, ClothingCategory, ClothingItem, UserProfile } from '@/types'
-import { CATALOGUE_ITEMS } from '@/pages/onboarding/catalogueData'
-import { catalogForPreference } from '@/lib/catalogData'
+import type { ClothingCategory, ClothingItem, UserProfile } from '@/types'
 import { rankWardrobeColourPairings } from '@/lib/colourHarmony'
 import { getColourHarmonyConfig } from '@/lib/colourHarmonyService'
 import type { OutfitPhotoStyleSignal } from '@/lib/recommendationFeedback'
@@ -16,27 +14,6 @@ export interface ChatMessage {
 }
 
 export interface KaiaChatResponse { reply: string; styleSignals?: OutfitPhotoStyleSignal }
-
-// A compact, representative slice of the shoppable catalog (not all 39+
-// items — keeps the prompt small) so Kaia can name real pieces with real
-// prices instead of vaguely gesturing at "you could buy something".
-function buildShopSummary(profile: UserProfile | null): string {
-  const perCategory = new Map<string, CatalogItem[]>()
-  for (const item of catalogForPreference(profile?.genderStylePreference)) {
-    const list = perCategory.get(item.category) ?? []
-    list.push(item)
-    perCategory.set(item.category, list)
-  }
-  return [...perCategory.entries()]
-    .flatMap(([category, items]) => {
-      // Accessories were repeatedly dominated by the first few catalog rows.
-      // Rotate the small prompt sample so Kaia has a wider set to choose from.
-      const start = category === 'accessories' ? Math.floor(Math.random() * items.length) : 0
-      return Array.from({ length: Math.min(3, items.length) }, (_, index) => items[(start + index) % items.length])
-    })
-    .map((i) => `- ${i.name} (${i.category}) — buy ~₹${i.estimatedPrice}`)
-    .join('\n')
-}
 
 
 // Grouped under the outfit slot each piece fills, so Kaia can see at a
@@ -130,20 +107,17 @@ function buildWardrobeGapsSummary(items: ClothingItem[]): string {
   return lines.join('\n')
 }
 
-function buildStylePreferencesSummary(selectionIds: string[]): string {
-  if (!selectionIds?.length) return ''
-  const items = CATALOGUE_ITEMS.filter((c) => selectionIds.includes(c.id))
-  if (!items.length) return ''
-
-  const byCategory = items.reduce<Record<string, string[]>>((acc, item) => {
-    if (!acc[item.category]) acc[item.category] = []
-    acc[item.category].push(`${item.label} (${item.colour})`)
-    return acc
-  }, {})
-
-  return Object.entries(byCategory)
-    .map(([cat, names]) => `${cat}: ${names.join(', ')}`)
-    .join('\n')
+// Onboarding's "Pick pieces you'd wear" saves live picks as readable text,
+// "tops: Linen shirt". Ids saved by the old fixed list carry no meaning now
+// and are skipped.
+function buildStylePreferencesSummary(selections: string[]): string {
+  const byCategory = new Map<string, string[]>()
+  for (const entry of selections ?? []) {
+    const match = entry.match(/^(tops|bottoms|dresses|outerwear|shoes|accessories):\s*(.{2,120})$/)
+    if (!match) continue
+    byCategory.set(match[1], [...(byCategory.get(match[1]) ?? []), match[2]])
+  }
+  return [...byCategory.entries()].map(([category, names]) => `${category}: ${names.slice(0, 6).join(', ')}`).join('\n')
 }
 
 function buildProfileSummary(profile: UserProfile | null): string {
@@ -174,7 +148,6 @@ export async function sendChatMessage(
   const stylePreferencesSummary = profile?.styleItemSelections
     ? buildStylePreferencesSummary(profile.styleItemSelections)
     : ''
-  const shopSummary = buildShopSummary(profile)
   const colourHarmonyConfig = await getColourHarmonyConfig()
   const colourHarmonySummary = rankWardrobeColourPairings(wardrobe, colourHarmonyConfig).join('\n')
 
@@ -190,7 +163,6 @@ export async function sendChatMessage(
     wardrobeGapsSummary,
     profileSummary,
     stylePreferencesSummary,
-    shopSummary,
     colourHarmonySummary,
     ...(recommendationPreferencesSummary ? { recommendationPreferencesSummary } : {}),
     ...(weatherSummary ? { weatherSummary } : {}),

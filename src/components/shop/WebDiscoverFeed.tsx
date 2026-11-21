@@ -1,78 +1,84 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Heart, X } from 'lucide-react'
 import { clsx } from 'clsx'
-import { apiFetch, apiUrl } from '@/lib/apiUrl'
-import { buildDiscoverQueries, filterForUser, type DiscoverQuery, type WebProduct } from '@/lib/discoverFeed'
+import { buildDiscoverQueries, buildKlosetQueries, buildSearchQueries, filterForUser } from '@/lib/discoverFeed'
+import { parsePrice, useLiveProducts, type LiveProduct } from '@/lib/liveShop'
 import { learnTasteProfile, type RecommendationFeedback } from '@/lib/recommendationFeedback'
 import { useRecommendationStore } from '@/store/recommendationStore'
-import type { ClothingCategory, UserProfile } from '@/types'
+import type { ClothingCategory, ClothingItem, UserProfile } from '@/types'
 
-type FeedItem = WebProduct & { search: DiscoverQuery }
+type FeedItem = LiveProduct
+
+// Suggested for you shows a short row first; Show more reveals more, then searches again.
+const SUGGESTED_STEP = 12
 
 /**
- * "From around the web": live products from any store, searched with the
- * user's taste. Shop's own catalog is only a few dozen pieces; this never
- * runs out (Show more searches again with a different mix).
+ * Shop's live products. Every product on Shop comes from here:
+ * - 'suggested': picks for the person's Kloset (what they own and need), first under All;
+ * - 'browse': the endless feed for All or a category, tuned to their taste;
+ * - 'search': what they typed. Colour and style filters become search words.
  */
-export function WebDiscoverFeed({ profile, category, feedback, brand = null }: {
+export function WebDiscoverFeed({
+  profile, category, feedback, brand = null, variant = 'browse', wardrobe = [],
+  search = '', colours = [], styles = [], budgetRange = null, sort = 'recommended',
+}: {
   profile: UserProfile | null
   category: ClothingCategory | 'all'
   feedback: RecommendationFeedback[]
   /** Search only this brand's own website (any brand; the server finds its site). */
   brand?: string | null
+  variant?: 'browse' | 'suggested' | 'search'
+  wardrobe?: ClothingItem[]
+  search?: string
+  colours?: string[]
+  styles?: string[]
+  /** Only products whose shown ₹ price is in [min, max]; products without a price are hidden while set. */
+  budgetRange?: [number, number] | null
+  sort?: 'recommended' | 'price-low' | 'price-high'
 }) {
+  const suggested = variant === 'suggested'
+  const searching = variant === 'search' || colours.length > 0 || styles.length > 0
   const userId = profile?.id ?? 'guest'
   const recordFeedback = useRecommendationStore((s) => s.recordFeedback)
   // Taste as of when this feed opened, so hearting a card doesn't reshuffle what's already shown.
   const tasteAtOpen = useRef(learnTasteProfile(feedback))
-  const [items, setItems] = useState<FeedItem[]>([])
-  const [page, setPage] = useState(0)
-  const [loading, setLoading] = useState(false)
-  const [status, setStatus] = useState<'ok' | 'error' | 'no-key' | 'no-brand-site'>('ok')
   const [votes, setVotes] = useState<Record<string, 'like' | 'dislike'>>({})
-  const requestId = useRef(0)
+  const [shown, setShown] = useState(SUGGESTED_STEP)
+  // The general feed searches once it scrolls near view, not on page open:
+  // fewer searches at once (Exa allows 10 a second) and none for people who never scroll.
+  const sectionRef = useRef<HTMLElement>(null)
+  const [inView, setInView] = useState(variant !== 'browse')
+  useEffect(() => {
+    if (inView || !sectionRef.current) return
+    const observer = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) setInView(true) }, { rootMargin: '600px' })
+    observer.observe(sectionRef.current)
+    return () => observer.disconnect()
+  }, [inView])
+
+  const queriesFor = useCallback((page: number) => {
+    if (suggested) return buildKlosetQueries(profile, wardrobe, tasteAtOpen.current, page)
+    if (searching) return buildSearchQueries(profile, search, { category, colours, styles, avoid: tasteAtOpen.current.avoids.colours }, page)
+    return buildDiscoverQueries(profile, tasteAtOpen.current, category, page)
+  }, [suggested, searching, profile, wardrobe, search, category, colours, styles])
+  const { items, loading, status, loadMore, retry } = useLiveProducts(queriesFor, { enabled: inView, brand })
+  useEffect(() => { setShown(SUGGESTED_STEP) }, [items.length === 0])
 
   const ratedIds = useMemo(() => new Set(feedback.filter((e) => e.action === 'dislike').map((e) => e.itemId)), [feedback])
-
-  const load = useCallback(async (nextPage: number, replace: boolean) => {
-    const id = ++requestId.current
-    const queries = buildDiscoverQueries(profile, tasteAtOpen.current, category, nextPage)
-    setLoading(true)
-    try {
-      const res = await apiFetch(apiUrl('/api/discover-feed'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ queries: queries.map((q) => q.text), ...(brand ? { brand } : {}) }),
-      })
-      const data = await res.json() as { items?: WebProduct[]; noKey?: boolean; brandNotFound?: boolean; error?: string }
-      if (id !== requestId.current) return
-      if (data.noKey) { setStatus('no-key'); return }
-      if (data.brandNotFound) { setStatus('no-brand-site'); return }
-      if (!res.ok) throw new Error(data.error)
-      const byText = new Map(queries.map((q) => [q.text, q]))
-      const fresh = (data.items ?? []).map((item) => {
-        const search = byText.get(item.query) ?? queries[0]
-        return { ...item, category: search.category, search }
-      })
-      setItems((current) => {
-        const seen = new Set(replace ? [] : current.map((i) => i.id))
-        return [...(replace ? [] : current), ...fresh.filter((i) => !seen.has(i.id))]
-      })
-      setPage(nextPage)
-      setStatus('ok')
-    } catch {
-      if (id === requestId.current) setStatus('error')
-    } finally {
-      if (id === requestId.current) setLoading(false)
+  const allVisible = useMemo(() => {
+    let list = filterForUser(items, profile, tasteAtOpen.current, new Set([...ratedIds].map((id) => id.replace(/^web:/, ''))))
+    if (budgetRange) list = list.filter((item) => { const price = parsePrice(item.price); return !!price && price.currency === '₹' && price.amount >= budgetRange[0] && price.amount <= budgetRange[1] })
+    if (sort !== 'recommended') {
+      const amount = (item: FeedItem) => parsePrice(item.price)?.amount ?? (sort === 'price-low' ? Infinity : -Infinity)
+      list = [...list].sort((a, b) => (sort === 'price-low' ? amount(a) - amount(b) : amount(b) - amount(a)))
     }
-  }, [profile, category, brand])
-
-  useEffect(() => {
-    setItems([])
-    void load(0, true)
-  }, [load])
-
-  const visible = useMemo(() => filterForUser(items, profile, tasteAtOpen.current, new Set([...ratedIds].map((id) => id.replace(/^web:/, '')))), [items, profile, ratedIds])
+    return list
+  }, [items, profile, ratedIds, budgetRange, sort])
+  const visible = suggested ? allVisible.slice(0, shown) : allVisible
+  const showMore = () => {
+    if (suggested && shown < allVisible.length) { setShown((count) => count + SUGGESTED_STEP); return }
+    if (suggested) setShown((count) => count + SUGGESTED_STEP)
+    void loadMore()
+  }
 
   const vote = (item: FeedItem, action: 'like' | 'dislike') => {
     setVotes((current) => ({ ...current, [item.id]: action }))
@@ -96,6 +102,7 @@ export function WebDiscoverFeed({ profile, category, feedback, brand = null }: {
 
   // Without the search key there's no live feed; for a brand that's all there
   // is to show, so say so instead of leaving the page blank.
+  if (status === 'no-key' && suggested) return null
   if (status === 'no-key') {
     return brand
       ? <p className="mt-6 border-t border-text-primary/10 py-10 text-center text-sm text-text-muted">Live search isn’t available right now, so {brand}’s site can’t be searched. Try again later.</p>
@@ -103,26 +110,35 @@ export function WebDiscoverFeed({ profile, category, feedback, brand = null }: {
   }
 
   return (
-    <section aria-label="From around the web" className="mt-12 border-t border-text-primary/10 pt-6">
+    <section ref={sectionRef} aria-label={suggested ? 'Suggested for you' : 'From around the web'} className={suggested ? 'pt-4' : 'mt-12 border-t border-text-primary/10 pt-6'}>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h2 className="font-display text-2xl text-text-primary">{brand ? `From ${brand}` : 'From around the web'}</h2>
-          <p className="mt-1 text-xs text-text-muted">
-            {brand ? `Live from ${brand}’s site` : 'Live picks from stores everywhere'}{basedOn.length ? <>, chosen using <span className="text-text-primary">{basedOn.map((b) => b.charAt(0).toUpperCase() + b.slice(1)).join(' · ')}</span></> : ', tuned to your taste as you heart and skip'}.
-          </p>
-        </div>
+        {suggested ? (
+          <div>
+            <h2 className="font-display text-2xl text-text-primary">Suggested for you</h2>
+            <p className="mt-1 text-xs text-text-muted">Live picks that go with your Kloset and what you dress for.</p>
+          </div>
+        ) : (
+          <div>
+            <h2 className="font-display text-2xl text-text-primary">{brand ? `From ${brand}` : search.trim() ? `Results for “${search.trim()}”` : searching ? 'Your filtered picks' : 'From around the web'}</h2>
+            <p className="mt-1 text-xs text-text-muted">
+              {brand ? `Live from ${brand}’s site` : searching ? 'Searched live across stores' : 'Live picks from stores everywhere'}{basedOn.length ? <>, chosen using <span className="text-text-primary">{basedOn.map((b) => b.charAt(0).toUpperCase() + b.slice(1)).join(' · ')}</span></> : ', tuned to your taste as you heart and skip'}.
+            </p>
+          </div>
+        )}
       </div>
 
-      {status === 'ok' && brand && !loading && !visible.length ? (
+      {status === 'ok' && !loading && items.length > 0 && !visible.length && budgetRange ? (
+        <p className="py-10 text-center text-sm text-text-muted">Nothing here shows a price in your budget. Try Show more or another budget.</p>
+      ) : status === 'ok' && brand && !loading && !visible.length ? (
         <p className="py-10 text-center text-sm text-text-muted">Nothing from {brand}’s site matched this time. Try Show more, another category, or another brand.</p>
       ) : status === 'no-brand-site' ? (
         <p className="py-10 text-center text-sm text-text-muted">Couldn’t find {brand}’s own website to search. Check the spelling, or try another brand.</p>
       ) : status === 'error' && !visible.length ? (
-        <p className="py-10 text-center text-sm text-text-muted">Couldn’t load live picks right now. <button onClick={() => void load(page, items.length === 0)} className="underline underline-offset-4 hover:text-text-primary">Try again</button></p>
+        <p className="py-10 text-center text-sm text-text-muted">Couldn’t load live picks right now. <button onClick={() => void retry()} className="underline underline-offset-4 hover:text-text-primary">Try again</button></p>
       ) : (
         <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {visible.map((item) => <WebProductCard key={item.id} item={item} vote={votes[item.id]} onVote={(action) => vote(item, action)} />)}
-          {loading && Array.from({ length: visible.length ? 5 : 10 }).map((_, i) => (
+          {visible.map((item) => <WebProductCard key={item.id} item={item} vote={votes[item.id]} onVote={(action) => vote(item, action)} reason={suggested ? item.search.reason : undefined} />)}
+          {loading && Array.from({ length: visible.length ? 5 : (suggested ? 6 : 10) }).map((_, i) => (
             <div key={`skeleton-${i}`} className="animate-pulse"><div className="aspect-[3/4] bg-text-primary/8" /><div className="mt-2 h-3 w-3/4 bg-text-primary/8" /><div className="mt-1.5 h-3 w-1/3 bg-text-primary/8" /></div>
           ))}
         </div>
@@ -130,17 +146,17 @@ export function WebDiscoverFeed({ profile, category, feedback, brand = null }: {
 
       {!loading && status !== 'error' && status !== 'no-brand-site' && (
         <div className="mt-8 flex justify-center">
-          <button onClick={() => void load(page + 1, false)} className="h-10 rounded-full border border-text-primary/25 px-6 text-xs text-text-primary transition-colors hover:border-text-primary/50 hover:bg-text-primary/5">
+          <button onClick={showMore} className="h-10 rounded-full border border-text-primary/25 px-6 text-xs text-text-primary transition-colors hover:border-text-primary/50 hover:bg-text-primary/5">
             {visible.length ? 'Show more' : 'Find picks'}
           </button>
         </div>
       )}
-      <p className="mt-4 text-center text-[10px] text-text-muted">Prices and stock are set by each store and may change.</p>
+      {!suggested && <p className="mt-4 text-center text-[10px] text-text-muted">Prices and stock are set by each store and may change.</p>}
     </section>
   )
 }
 
-function WebProductCard({ item, vote, onVote }: { item: FeedItem; vote?: 'like' | 'dislike'; onVote: (action: 'like' | 'dislike') => void }) {
+function WebProductCard({ item, vote, onVote, reason }: { item: FeedItem; vote?: 'like' | 'dislike'; onVote: (action: 'like' | 'dislike') => void; reason?: string }) {
   const [hidden, setHidden] = useState(false)
   if (hidden || vote === 'dislike') return null
   return (
@@ -170,6 +186,7 @@ function WebProductCard({ item, vote, onVote }: { item: FeedItem; vote?: 'like' 
       <a href={item.url} target="_blank" rel="noopener noreferrer" className="mt-2 block">
         <p className="line-clamp-2 text-xs leading-snug text-text-primary" title={item.title}>{item.title}</p>
         <p className="mt-1 truncate text-2xs text-text-muted">{item.retailer}{item.price ? ` · ${item.price}` : ''}</p>
+        {reason && <p className="mt-0.5 truncate text-2xs text-[#355E3B]" title={reason}>{reason}</p>}
       </a>
     </article>
   )

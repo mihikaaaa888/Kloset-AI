@@ -95,44 +95,10 @@ export interface ClothingItem {
   lastWorn?: string
   createdAt: string
   updatedAt: string
-  // Set when the item was added from the catalog
+  // Legacy: set on items added from the old fixed catalog (Kloset's shopping is live now)
   catalogId?: string
 }
 
-// ─── Catalog ──────────────────────────────────────────────────────────────────
-
-export interface CatalogItem {
-  id: string
-  name: string
-  /** Which section of the shop the piece belongs to. Defaults to women's. */
-  gender?: 'women' | 'men'
-  /** Retailer the reference photo and product link come from, e.g. "Zara". */
-  brand?: string
-  category: ClothingCategory
-  subcategory?: string
-  colours: string[]
-  material: string
-  pattern: Pattern
-  seasons: Season[]
-  occasions: Occasion[]
-  styleAesthetics: StylePreference[]
-  description: string
-  priceRange: 'budget' | 'mid' | 'premium' | 'luxury'
-  fit?: string
-  formality?: string
-  /** Reference photo — for browsing/inspiration, not the user's own item photo. */
-  imageUrl: string
-  /** Colour-matched catalogue photo used if the retailer image is unavailable. */
-  imageFallbackUrl?: string
-  /** Approximate buy price in INR (rupees), derived from priceRange. */
-  estimatedPrice: number
-  /** Approximate weekly rental price in INR (rupees). */
-  rentPricePerWeek: number
-  /** Opens a live shopping search for this piece (not a specific listing we can't verify). */
-  shopUrl: string
-  /** Opens a live rental-marketplace search for this piece. */
-  rentUrl: string
-}
 
 // ─── Web shopping search (Exa) ─────────────────────────────────────────────────
 
@@ -162,7 +128,7 @@ export interface PieceSnapshot {
 export interface OutfitItem {
   itemId: string
   role: 'top' | 'bottom' | 'dress' | 'outerwear' | 'shoes' | 'accessory'
-  /** Set for pieces not in the wardrobe; itemId is then the catalog id or a board piece id. */
+  /** Set for pieces not in the wardrobe; itemId is then a shop or board piece id (older outfits may hold a catalog id). */
   snapshot?: PieceSnapshot
 }
 

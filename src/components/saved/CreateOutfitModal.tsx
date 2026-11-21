@@ -5,12 +5,13 @@ import { clsx } from 'clsx'
 import { useItemImage } from '@/hooks/useItemImage'
 import { colourNameToHex, isLightColour } from '@/lib/colourUtils'
 import { CATEGORY_LABEL, CategoryGlyph } from '@/components/wardrobe/categoryVisuals'
-import { ALL_CATALOG_ITEMS, catalogForPreference } from '@/lib/catalogData'
-import { formatINR, rankForUser } from '@/lib/shopping'
-import { ROLE_FOR_CATEGORY, catalogSnapshot, catalogToItem } from '@/lib/outfitPieces'
+import { buildDiscoverQueries, filterForUser } from '@/lib/discoverFeed'
+import { liveToItem, liveToSnapshot, useLiveProducts, type LiveProduct } from '@/lib/liveShop'
+import { learnTasteProfile } from '@/lib/recommendationFeedback'
+import { ROLE_FOR_CATEGORY } from '@/lib/outfitPieces'
 import { useUserStore } from '@/store/userStore'
 import { useRecommendationStore } from '@/store/recommendationStore'
-import type { CatalogItem, ClothingItem, Occasion, Outfit, OutfitItem } from '@/types'
+import type { ClothingItem, Occasion, Outfit, OutfitItem } from '@/types'
 
 const OCCASIONS: { value: Occasion; label: string }[] = [
   { value: 'casual', label: 'Casual' },
@@ -64,13 +65,20 @@ export function CreateOutfitModal({ open, items, onClose, onSave }: CreateOutfit
     }
   }, [open, onClose])
 
-  // Shop pieces, most on-style first. Keyed by catalog id, which never collides with wardrobe UUIDs.
-  const shopPieces = useMemo(() => rankForUser(catalogForPreference(profile?.genderStylePreference), profile, items, recommendationFeedback), [profile, items, recommendationFeedback])
-  const catalogById = useMemo(() => new Map(ALL_CATALOG_ITEMS.map((c) => [c.id, c])), [])
-  const shopItems = useMemo(() => shopPieces.map((c) => catalogToItem(c)), [shopPieces])
-  const byId = useMemo(() => new Map([...items, ...shopItems].map((i) => [i.id, i])), [items, shopItems])
+  // Shop pieces are live finds, tuned to taste; loaded when the Shop tab opens.
+  // Keyed by product URL, which never collides with wardrobe UUIDs.
+  const taste = useMemo(() => learnTasteProfile(recommendationFeedback), [recommendationFeedback])
+  const live = useLiveProducts((page) => buildDiscoverQueries(profile, taste, 'all', page), { enabled: open && source === 'shop' })
+  // Live pieces picked earlier stay findable after Show more or a reload of the list.
+  const [pickedLive, setPickedLive] = useState<Map<string, LiveProduct>>(new Map())
+  const shopProducts = useMemo(() => filterForUser(live.items, profile, taste, new Set()), [live.items, profile, taste])
+  const liveById = useMemo(() => new Map([...pickedLive, ...shopProducts.map((p) => [p.id, p] as const)]), [pickedLive, shopProducts])
+  const shopItems = useMemo(() => shopProducts.map(liveToItem), [shopProducts])
+  const byId = useMemo(() => new Map([...items, ...shopItems, ...[...pickedLive.values()].map(liveToItem)].map((i) => [i.id, i])), [items, shopItems, pickedLive])
 
   const toggle = (item: ClothingItem) => {
+    const product = liveById.get(item.id)
+    if (product) setPickedLive((current) => new Map(current).set(product.id, product))
     setSelected((prev) => {
       if (prev.includes(item.id)) return prev.filter((id) => id !== item.id)
       const role = ROLE_FOR_CATEGORY[item.category]
@@ -94,11 +102,11 @@ export function CreateOutfitModal({ open, items, onClose, onSave }: CreateOutfit
 
   const handleSave = () => {
     const outfitItems: OutfitItem[] = selected.map((id) => {
-      const catalogItem = catalogById.get(id)
+      const product = liveById.get(id)
       return {
         itemId: id,
         role: ROLE_FOR_CATEGORY[byId.get(id)!.category],
-        ...(catalogItem && { snapshot: catalogSnapshot(catalogItem) }),
+        ...(product && { snapshot: liveToSnapshot(product) }),
       }
     })
     const now = new Date().toISOString()
@@ -192,7 +200,7 @@ export function CreateOutfitModal({ open, items, onClose, onSave }: CreateOutfit
                       <li key={id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
                         <span className="truncate text-text-primary">{item.name}</span>
                         <span className="text-2xs uppercase tracking-widest text-text-muted flex-shrink-0">
-                          {catalogById.has(id) && <span className="text-butter-yellow">Shop · </span>}
+                          {liveById.has(id) && <span className="text-butter-yellow">Shop · </span>}
                           {ROLE_FOR_CATEGORY[item.category]}
                         </span>
                       </li>
@@ -228,7 +236,11 @@ export function CreateOutfitModal({ open, items, onClose, onSave }: CreateOutfit
               </div>
             </div>
 
-            {source === 'kloset' && items.length === 0 ? (
+            {source === 'shop' && live.status !== 'ok' && !shopItems.length ? (
+              <p className="text-sm text-text-muted">Couldn’t load shop pieces right now. <button onClick={() => void live.retry()} className="underline underline-offset-4">Try again</button></p>
+            ) : source === 'shop' && live.loading && !shopItems.length ? (
+              <p className="text-sm text-text-muted">Finding pieces for you…</p>
+            ) : source === 'kloset' && items.length === 0 ? (
               <p className="text-sm text-text-muted">
                 Your Kloset is empty. Add pieces, or tap Shop to build this outfit from new finds.
               </p>
@@ -238,7 +250,7 @@ export function CreateOutfitModal({ open, items, onClose, onSave }: CreateOutfit
                   <PickTile
                     key={item.id}
                     item={item}
-                    shop={catalogById.get(item.id)}
+                    price={liveById.get(item.id)?.price ?? null}
                     selected={selected.includes(item.id)}
                     onClick={() => toggle(item)}
                   />
@@ -268,12 +280,12 @@ export function CreateOutfitModal({ open, items, onClose, onSave }: CreateOutfit
 
 function PickTile({
   item,
-  shop,
+  price,
   selected,
   onClick,
 }: {
   item: ClothingItem
-  shop?: CatalogItem
+  price?: string | null
   selected: boolean
   onClick: () => void
 }) {
@@ -305,7 +317,7 @@ function PickTile({
       </div>
       <p className="text-2xs uppercase tracking-widest text-text-muted mt-2.5">{CATEGORY_LABEL[item.category]}</p>
       <p className="font-display text-base text-text-primary truncate">{item.name}</p>
-      {shop && <p className="text-xs text-text-muted tabular-nums">{formatINR(shop.estimatedPrice)}</p>}
+      {price && <p className="text-xs text-text-muted tabular-nums">{price}</p>}
     </button>
   )
 }

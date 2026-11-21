@@ -1,4 +1,4 @@
-import type { CatalogItem, ClothingCategory, ClothingItem, Outfit, OutfitItem, PieceSnapshot } from '@/types'
+import type { ClothingCategory, ClothingItem, Outfit, OutfitItem, PieceSnapshot } from '@/types'
 
 // Outfits can mix wardrobe pieces with shop finds and inspiration photos. Those
 // aren't in the wardrobe, so the outfit carries a snapshot of each one and it's
@@ -11,35 +11,6 @@ export const ROLE_FOR_CATEGORY: Record<ClothingCategory, OutfitItem['role']> = {
   outerwear: 'outerwear',
   shoes: 'shoes',
   accessories: 'accessory',
-}
-
-/** A catalog piece shaped like a wardrobe item, for adding to the Kloset or showing in pickers. */
-export function catalogToItem(c: CatalogItem, id: string = c.id): ClothingItem {
-  const now = new Date().toISOString()
-  return {
-    id,
-    name: c.name,
-    category: c.category,
-    subcategory: c.subcategory,
-    imageUrl: c.imageUrl,
-    imageSource: 'remote',
-    colour: c.colours,
-    material: c.material,
-    pattern: c.pattern,
-    fit: c.fit,
-    formality: c.formality,
-    seasons: c.seasons,
-    occasions: c.occasions,
-    isFavourite: false,
-    timesWorn: 0,
-    createdAt: now,
-    updatedAt: now,
-    catalogId: c.id,
-  }
-}
-
-export function catalogSnapshot(c: CatalogItem): PieceSnapshot {
-  return { source: 'shop', name: c.name, category: c.category, imageUrl: c.imageUrl, colour: c.colours, catalogId: c.id }
 }
 
 function snapshotToItem(id: string, s: PieceSnapshot): ClothingItem {

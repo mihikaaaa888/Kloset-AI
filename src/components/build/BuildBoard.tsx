@@ -10,8 +10,9 @@ import { useRecommendationStore } from '@/store/recommendationStore'
 import { useOutfitStore } from '@/store/outfitStore'
 import { useBoardStore, type BoardPiece } from '@/store/boardStore'
 import { deleteWithUndo } from '@/store/undoStore'
-import { catalogForPreference } from '@/lib/catalogData'
-import { formatINR, rankForUser } from '@/lib/shopping'
+import { buildDiscoverQueries, buildSearchQueries, filterForUser } from '@/lib/discoverFeed'
+import { useLiveProducts } from '@/lib/liveShop'
+import { learnTasteProfile } from '@/lib/recommendationFeedback'
 import { ROLE_FOR_CATEGORY } from '@/lib/outfitPieces'
 import { colourNameToHex, isLightColour } from '@/lib/colourUtils'
 import { CategoryGlyph } from '@/components/wardrobe/categoryVisuals'
@@ -506,25 +507,10 @@ function PieceDrawer({ wardrobe, onPick, onAddPiece }: { wardrobe: ClothingItem[
           item: i,
         }))
     }
-    if (source === 'shop') {
-      return rankForUser(catalogForPreference(profile?.genderStylePreference), profile, wardrobe, recommendationFeedback)
-        .map((c) => ({
-          key: c.id,
-          itemId: c.id,
-          source: 'shop',
-          name: c.name,
-          category: c.category,
-          subcategory: c.subcategory,
-          imageUrl: c.imageUrl,
-          colour: c.colours,
-          catalogId: c.id,
-          caption: formatINR(c.estimatedPrice),
-        }))
-    }
     return []
-  }, [source, wardrobe, profile])
+  }, [source, wardrobe])
 
-  const availableFilters = useMemo(() => source === 'inspiration'
+  const availableFilters = useMemo(() => source !== 'kloset'
     ? FILTERS
     : FILTERS.filter((f) => f.id === 'all' ? sourceCandidates.length > 0 : sourceCandidates.some((candidate) => matchesFilter(f.id, candidate.category, candidate.name, candidate.subcategory))), [source, sourceCandidates])
   const visibleCandidates = useMemo(() => sourceCandidates
@@ -574,6 +560,8 @@ function PieceDrawer({ wardrobe, onPick, onAddPiece }: { wardrobe: ClothingItem[
       <div className="max-h-[55vh] min-h-0 flex-1 overflow-y-auto pr-1 lg:-mr-2 lg:pr-2 lg:max-h-none">
         {source === 'inspiration' ? (
           <InspirationResults filter={filter} onPick={onPick} />
+        ) : source === 'shop' ? (
+          <ShopResults filter={filter} search={search} profile={profile} feedback={recommendationFeedback} onPick={onPick} />
         ) : visibleCandidates.length === 0 ? (
           <p className="text-sm text-text-muted py-6">
             {source === 'kloset' && wardrobe.length === 0
@@ -632,6 +620,54 @@ function CandidateTile({ candidate, onPick }: { candidate: Candidate; onPick: ()
       <p className="text-[11px] text-text-primary truncate mt-1.5">{candidate.name}</p>
       {candidate.caption && <p className="text-[11px] text-text-muted truncate tabular-nums">{candidate.caption}</p>}
     </button>
+  )
+}
+
+// ─── Shop (live products) ─────────────────────────────────────────────────────
+
+/** Live products for the drawer's Shop tab: the filter's category, or what was typed. */
+function ShopResults({ filter, search, profile, feedback, onPick }: {
+  filter: Filter
+  search: string
+  profile: ReturnType<typeof useUserStore.getState>['profile']
+  feedback: Parameters<typeof learnTasteProfile>[0]
+  onPick: (c: Candidate) => void
+}) {
+  const preset = FILTERS.find((f) => f.id === filter)!
+  const taste = useMemo(() => learnTasteProfile(feedback), [feedback])
+  // Search once typing pauses: each search is a live call.
+  const [typed, setTyped] = useState(search.trim())
+  useEffect(() => {
+    const timer = window.setTimeout(() => setTyped(search.trim()), 700)
+    return () => window.clearTimeout(timer)
+  }, [search])
+  const text = typed || (filter === 'bags' ? 'handbag' : '')
+  const category: ClothingCategory | 'all' = filter === 'all' ? 'all' : preset.category
+  const { items, loading, status, loadMore, retry } = useLiveProducts((page) => text
+    ? buildSearchQueries(profile, text, { category, avoid: taste.avoids.colours }, page)
+    : buildDiscoverQueries(profile, taste, category, page))
+  const candidates: Candidate[] = filterForUser(items, profile, taste, new Set()).map((product) => ({
+    key: `live-${product.id}`,
+    itemId: `shop-${product.id.replace(/^https?:\/\//, '').slice(0, 120)}`,
+    source: 'shop',
+    name: product.title,
+    category: product.search.category,
+    subcategory: product.search.traits.subcategory,
+    imageUrl: product.imageUrl,
+    colour: product.search.traits.colours ?? [],
+    caption: product.price ?? product.retailer,
+  }))
+
+  if (status === 'error' || status === 'no-key') {
+    return <p className="py-6 text-sm text-text-muted">Couldn’t load shop pieces right now. <button onClick={() => void retry()} className="underline underline-offset-4 hover:text-text-primary">Try again</button></p>
+  }
+  return (
+    <>
+      {candidates.length > 0 && <CandidateGrid candidates={candidates} onPick={onPick} />}
+      {loading && <div className="grid grid-cols-3 gap-3 pb-4 sm:grid-cols-4 lg:grid-cols-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="aspect-[3/4] animate-pulse bg-text-primary/8" />)}</div>}
+      {!loading && !candidates.length && <p className="py-6 text-sm text-text-muted">No live pieces found. Try another search.</p>}
+      {!loading && candidates.length > 0 && <button onClick={() => void loadMore()} className="mb-4 w-full rounded-full border border-text-primary/25 py-2 text-xs text-text-primary hover:bg-text-primary/5">Show more</button>}
+    </>
   )
 }
 

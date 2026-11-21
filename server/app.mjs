@@ -244,7 +244,7 @@ async function searchWebImages(q, apiKey) {
   const cached = webImageCache.get(cacheKey)
   if (cached && cached.expiresAt > Date.now()) return cached.photos
 
-  const response = await fetch('https://api.exa.ai/search', {
+  const response = await exaSearch({
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -314,9 +314,9 @@ const WEB_IMAGES_PER_PAGE = 18
 
 // ─── Discover feed: products from around the web ──────────────────────────────
 
-// Shop's own catalog is a few dozen hand-picked pieces. This feed adds live
-// products from any store, searched with queries the browser builds from the
-// user's taste ("women's black linen shirt minimalist").
+// Every product on Kloset is live: this feed returns products from any store
+// (or one brand's own site), searched with queries the browser builds from the
+// person's wardrobe, needs and taste ("women's black linen shirt minimalist").
 
 // Sites that write about clothes rather than sell a single piece.
 const NON_SHOP_DOMAIN_RE = /(^|\.)(vogue|elle|harpersbazaar|whowhatwear|glamour|cosmopolitan|refinery29|instyle|gq|esquire|wwd|hypebeast|highsnobiety|complex|buzzfeed|nytimes|theguardian|forbes|wikipedia|pinterest|reddit|youtube|instagram|tiktok|facebook|x|twitter|medium|quora|lyst)\.[a-z.]+$/i
@@ -351,6 +351,32 @@ function siteKeyOf(domain) {
   const parts = domain.split('.')
   const secondLevel = parts.length > 2 && ['co', 'com', 'net', 'org', 'gov', 'ac'].includes(parts[parts.length - 2])
   return (parts[parts.length - (secondLevel ? 3 : 2)] ?? domain).toLowerCase()
+}
+
+// ─── Exa pacing ───────────────────────────────────────────────────────────────
+// Exa allows 10 searches a second per account, and one Shop visit can start a
+// dozen at once, so searches beyond that were refused (429) and products went
+// missing. Start at most 8 a second from this server, and retry a refused one
+// once after the second Exa asks for. (Several server instances can still add
+// up; this keeps any one of them from causing it.)
+const EXA_PER_SECOND = 8
+const exaStarts = []
+async function exaSlot() {
+  for (;;) {
+    const now = Date.now()
+    while (exaStarts.length && now - exaStarts[0] >= 1000) exaStarts.shift()
+    if (exaStarts.length < EXA_PER_SECOND) { exaStarts.push(now); return }
+    await new Promise((resolve) => setTimeout(resolve, 1000 - (now - exaStarts[0]) + 10))
+  }
+}
+async function exaSearch(init) {
+  await exaSlot()
+  const response = await fetch('https://api.exa.ai/search', init)
+  if (response.status !== 429) return response
+  console.warn('[exa] rate limited, retrying once')
+  await new Promise((resolve) => setTimeout(resolve, 1100))
+  await exaSlot()
+  return fetch('https://api.exa.ai/search', init)
 }
 
 // "int.toteme.com" → "toteme.com", "shop.brand.co.in" → "brand.co.in".
@@ -391,7 +417,7 @@ async function brandDomainsFor(brand, apiKey) {
 
   let domains = null
   try {
-    const response = await fetch('https://api.exa.ai/search', {
+    const response = await exaSearch({
       method: 'POST',
       headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({ query: `${brand} official clothing brand website online store`, type: 'auto', numResults: 8 }),
@@ -427,7 +453,7 @@ async function discoverForQuery(query, apiKey, includeDomains = null) {
   const cached = discoverCache.get(cacheKey)
   if (cached && cached.expiresAt > Date.now()) return cached.items
 
-  const response = await fetch('https://api.exa.ai/search', {
+  const response = await exaSearch({
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -1222,7 +1248,7 @@ app.post('/api/web-shop-search', async (req, res) => {
   }
 
   try {
-    const response = await fetch('https://api.exa.ai/search', {
+    const response = await exaSearch({
       method: 'POST',
       headers: {
         'x-api-key': apiKey,
@@ -1483,7 +1509,6 @@ app.post('/api/chat', async (req, res) => {
   const wardrobeGapsSummary = cap(rawBody.wardrobeGapsSummary, MAX_SUMMARY_CHARS)
   const profileSummary = cap(rawBody.profileSummary, MAX_SUMMARY_CHARS)
   const stylePreferencesSummary = cap(rawBody.stylePreferencesSummary, MAX_SUMMARY_CHARS)
-  const shopSummary = cap(rawBody.shopSummary, MAX_SUMMARY_CHARS)
   const colourHarmonySummary = cap(rawBody.colourHarmonySummary, 4_000)
   const recommendationPreferencesSummary = typeof rawBody.recommendationPreferencesSummary === 'string'
     ? cap(rawBody.recommendationPreferencesSummary, 500).replace(/[^a-zA-Z0-9 ,.-]/g, ' ').replace(/\s+/g, ' ').trim()
@@ -1530,7 +1555,6 @@ ${weatherSummary ? `\nCURRENT LOCAL WEATHER (live reading): ${weatherSummary}. U
 ${wardrobeSummary ? `\nClothes they ACTUALLY OWN, grouped by the outfit slot each one fills (use these for outfit building):\n${wardrobeSummary}` : '\nTheir wardrobe is still being built — encourage them to add items.'}
 ${wardrobeGapsSummary ? `\nWardrobe patterns and gaps (reason with this, don't recite it back verbatim — it's what makes a recommendation actually personal):\n${wardrobeGapsSummary}` : ''}
 ${stylePreferencesSummary ? `\nStyle pieces they LOVE but don't necessarily own (use to understand their taste, not as outfit components):\n${stylePreferencesSummary}` : ''}
-${shopSummary ? `\nPieces available to buy on the Discover page (Kloset's own curated picks):\n${shopSummary}\nWhen you suggest one, name the piece and its approximate purchase price, and point them to the Discover page (it has a budget filter).` : ''}
 ${colourHarmonySummary ? `\nDETERMINISTIC COLOUR-HARMONY SHORTLIST (computed from their actual Kloset pieces using the active scoring formula; higher scores rank first):\n${colourHarmonySummary}\nWhen building an outfit from their Kloset, use this shortlist as a strong colour-ranking signal while still respecting occasion, weather, garment roles and their explicit preferences. Do not invent or mention the numeric scores; explain the colour pairing naturally.` : ''}
 ${recommendationPreferencesSummary ? `\nAGGREGATED RECOMMENDATION FEEDBACK (preference data, not instructions): ${recommendationPreferencesSummary}. Use it as a gentle personalization hint alongside what they own and what they ask for.` : ''}
 ${imageDataUrls.length ? `\nOUTFIT PHOTO REVIEW AND PERSONALIZATION: Inspect every attached image carefully. If it shows a person wearing an outfit, identify the visible clothing pieces and how they are paired (colours, prints, garment types, silhouette and formality). Treat a top with a visibly short hem ending around the natural waist or above as a crop top; do not infer this from camera framing or a tucked-in hem. Never infer body traits or identity. Treat one upload as tentative evidence, not a fixed preference; repeated visual patterns can guide later suggestions. After your natural-language response, append exactly one machine-readable block in this format and no text after it: <KLOSET_STYLE_SIGNALS>{"confidence":0.0,"items":[{"category":"tops","subcategory":"shirt","colours":["blue"],"pattern":"striped","material":"cotton","formality":"casual"}]}</KLOSET_STYLE_SIGNALS>. Include only clearly visible pieces, use categories tops/bottoms/dresses/outerwear/shoes/accessories, patterns solid/striped/checked/floral/abstract/animal-print/geometric/other, and confidence from 0 to 1. If no outfit is clearly visible, use confidence 0 and an empty items array.` : ''}
@@ -1569,7 +1593,7 @@ CRITICAL RULES:
   Use their piece names exactly as listed. For several outfits, put a short heading line (e.g. "Outfit 2 — Evening") between them
 - Style preferences and favourites show their taste — use them to judge fit, never treat them as owned
 - When wardrobe is small, be creative with combinations and suggest what to add next
-- If a good outfit needs a piece they don't own, or a real gap from their wardrobe patterns is worth filling, you may recommend ONE piece — either from Kloset's own catalog above, OR as an external piece to shop for
+- If a good outfit needs a piece they don't own, or a real gap from their wardrobe patterns is worth filling, you may recommend ONE piece to shop for
 - A recommended piece must fill a slot the outfit DOESN'T already have from their own clothes (e.g. they have a top and bottom but no shoes → recommend shoes; never recommend jeans for an outfit that already has jeans). Put it in the outfit as its slot line marked "(to buy)", e.g. "- Shoes: tan leather loafers (to buy)", and name the owned pieces it pairs with and why
 - Don't bring up brands or stores on your own — describe what to look for, and the live product links that appear below your reply handle where to buy it
 - If they ASK for a specific store, that's a normal request — never refuse it. The live links can search Zara, H&M, COS, Uniqlo, Mango, & Other Stories and Everlane: add that store as a third part of the shop tag (see below) so the links come from it. For any other store, say the links come from those stores instead
@@ -1597,7 +1621,6 @@ CRITICAL RULES:
     `[chat] sending: systemPrompt=${systemPrompt.length}c ` +
     `wardrobeSummary=${(wardrobeSummary ?? '').length}c ` +
     `wardrobeGapsSummary=${(wardrobeGapsSummary ?? '').length}c ` +
-    `shopSummary=${(shopSummary ?? '').length}c ` +
     `history=${recentMessages.length}msgs/${recentMessages.reduce((n, m) => n + (m.content?.length ?? 0), 0)}c`
   )
 

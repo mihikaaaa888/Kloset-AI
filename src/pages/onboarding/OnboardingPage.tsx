@@ -10,7 +10,9 @@ import {
   frequencyOptions,
   genderStyleOptions,
 } from './onboardingData'
-import { CATALOGUE_ITEMS, CATALOGUE_CATEGORIES } from './catalogueData'
+import { CATALOGUE_CATEGORIES } from './catalogueData'
+import { buildOnboardingQueries } from '@/lib/discoverFeed'
+import { useLiveProducts } from '@/lib/liveShop'
 import { SelectChip } from '@/components/ui/SelectChip'
 import { AgeRuler } from '@/components/ui/AgeRuler'
 import { TextInput } from '@/components/ui/TextInput'
@@ -18,7 +20,7 @@ import { Button } from '@/components/ui/Button'
 import { useUserStore } from '@/store/userStore'
 import { useAuth } from '@/contexts/AuthContext'
 import { upsertProfile } from '@/lib/profileService'
-import type { UserProfile, StylePreference, Occasion, AgeRange, RecommendationFrequency } from '@/types'
+import type { UserProfile, StylePreference, Occasion, AgeRange, RecommendationFrequency, ClothingCategory } from '@/types'
 
 // ─── Draft state ─────────────────────────────────────────────────────────────
 
@@ -248,6 +250,7 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
         {step === 5 && (
           <Step4Catalogue
             selected={draft.styleItemSelections}
+            styles={draft.stylePreferences}
             preferredAudience={draft.genderStylePreference === 'masculine'
               ? 'men'
               : draft.genderStylePreference === 'feminine'
@@ -500,24 +503,25 @@ function Step3Occupation({
 }
 
 // Step 4 — Style Catalogue
+// Live pieces for the styles they chose. A pick is saved as readable text,
+// "tops: Linen shirt", which the stylist chat reads back (chatService).
 function Step4Catalogue({
   selected,
+  styles,
   preferredAudience,
   onToggle,
   onNext,
 }: {
   selected: string[]
+  styles: StylePreference[]
   preferredAudience: 'all' | 'women' | 'men'
   onToggle: (id: string) => void
   onNext: () => void
 }) {
-  const [activeCategory, setActiveCategory] = useState<string>('all')
+  const [activeCategory, setActiveCategory] = useState<ClothingCategory | 'all'>('all')
   const [activeAudience, setActiveAudience] = useState<'all' | 'women' | 'men'>(preferredAudience)
-
-  const filtered = CATALOGUE_ITEMS.filter((item) =>
-    (activeCategory === 'all' || item.category === activeCategory) &&
-    (activeAudience === 'all' || (item.gender ?? 'women') === activeAudience)
-  )
+  const { items: filtered, loading, status, retry } = useLiveProducts(() => buildOnboardingQueries(styles, activeAudience, activeCategory))
+  const pickKey = (item: (typeof filtered)[number]) => `${item.search.category}: ${item.title.slice(0, 100)}`
 
   return (
     <div>
@@ -575,14 +579,19 @@ function Step4Catalogue({
       )}
 
       {/* Grid */}
+      {status !== 'ok' && !filtered.length && (
+        <p className="py-8 text-center text-sm text-text-muted">Couldn’t load pieces right now. <button type="button" onClick={() => void retry()} className="underline underline-offset-4">Try again</button>, or continue without picks.</p>
+      )}
+      {loading && !filtered.length && <p className="py-8 text-center text-sm text-text-muted">Finding pieces in your style…</p>}
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
         {filtered.map((item) => {
-          const isSelected = selected.includes(item.id)
+          const key = pickKey(item)
+          const isSelected = selected.includes(key)
           return (
             <button
               key={item.id}
               type="button"
-              onClick={() => onToggle(item.id)}
+              onClick={() => onToggle(key)}
               className={clsx(
                 'relative rounded-xl overflow-hidden aspect-[3/4] transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow',
                 isSelected
@@ -592,25 +601,20 @@ function Step4Catalogue({
             >
               <img
                 src={item.imageUrl}
-                alt={item.label}
+                alt={item.title}
                 referrerPolicy="no-referrer"
                 loading="lazy"
                 className="w-full h-full object-cover object-top"
-                onError={(e) => {
-                  const el = e.currentTarget as HTMLImageElement
-                  el.style.display = 'none'
-                  const parent = el.parentElement
-                  if (parent) parent.style.backgroundColor = item.fallbackColor
-                }}
+                onError={(e) => { (e.currentTarget.closest('button') as HTMLElement | null)?.style.setProperty('display', 'none') }}
               />
               {/* subtle bottom gradient */}
               <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
               {/* label */}
               <p className="absolute bottom-0 inset-x-0 px-2 pb-2 text-white text-2xs font-medium leading-tight">
-                {item.label}
+                {item.title}
               </p>
               <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-black/40 backdrop-blur-sm text-white/90 text-[9px] tracking-wide">
-                {item.brand}
+                {item.retailer}
               </span>
               {/* checkmark */}
               {isSelected && (

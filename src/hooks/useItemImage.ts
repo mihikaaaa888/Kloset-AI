@@ -9,7 +9,7 @@ import type { ClothingItem } from '@/types'
  * Priority:
  *   1. item.imageId  — photo taken on this device: loads the Blob from IndexedDB
  *   2. item.imageStoragePath — photo taken on another device, served from Supabase Storage
- *   3. item.imageUrl — remote/catalog photo, legacy base64, or the small copy saved
+ *   3. item.imageUrl — remote photo (e.g. a shop find), legacy base64, or the small copy saved
  *                      when a photo couldn't be uploaded to Storage
  *   4. null          — no image; show placeholder
  *

@@ -5,7 +5,7 @@ import type { ClothingCategory } from '@/types'
 /** A piece pinned to the Build board. Position and size are fractions of the board, so it survives resizing. */
 export interface BoardPiece {
   id: string
-  /** Wardrobe item id, catalog id, or `pexels-<id>` for an inspiration photo. */
+  /** Wardrobe item id, `shop-<url>` for a live shop piece, or `pexels-<id>` for an inspiration photo. */
   itemId: string
   source: 'kloset' | 'shop' | 'inspiration'
   name: string

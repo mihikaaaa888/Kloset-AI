@@ -1,37 +1,23 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ChevronDown, Heart, Search, SlidersHorizontal, X } from 'lucide-react'
 import { clsx } from 'clsx'
 
-import { ShopItemCard } from '@/components/shop/ShopItemCard'
 import { CompleteAPiece } from '@/components/shop/CompleteAPiece'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useUserStore } from '@/store/userStore'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRecommendationStore } from '@/store/recommendationStore'
-import { deleteItem as dbDeleteItem, insertItem } from '@/lib/wardrobeService'
 import { saveFavouriteBrands } from '@/lib/profileService'
 import { ALL_BRANDS, brandKey, canonicalBrand, likedBrands, searchBrands } from '@/lib/brands'
-import { deleteWithUndo, notify, offerUndo } from '@/store/undoStore'
-import { ALL_CATALOG_ITEMS, CATALOG_STYLE_LABELS, matchesStylePreference } from '@/lib/catalogData'
+import { notify } from '@/store/undoStore'
+import { CATALOG_STYLE_LABELS } from '@/lib/catalogData'
 import { WebDiscoverFeed } from '@/components/shop/WebDiscoverFeed'
-import { BUNDLED_COLOUR_CONFIG, getColourHarmonyConfig } from '@/lib/colourHarmonyService'
-import { catalogToItem } from '@/lib/outfitPieces'
-import {
-  BUDGET_BANDS,
-  fitsBuyBudget,
-  fitsRentBudget,
-  isRentable,
-  rankForUser,
-  suggestForStyle,
-  suggestFromKloset,
-  type BudgetId,
-  type PieceAnchor,
-} from '@/lib/shopping'
-import type { CatalogItem, ClothingCategory, ClothingItem, StylePreference } from '@/types'
+import { BUDGET_BANDS, type BudgetId, type PieceAnchor } from '@/lib/shopping'
+import type { ClothingCategory, ClothingItem, StylePreference } from '@/types'
 
 type ShopMode = 'buy' | 'rent'
-type SortMode = 'recommended' | 'price-low' | 'price-high' | 'name'
+type SortMode = 'recommended' | 'price-low' | 'price-high'
 
 const CATEGORY_FILTERS: { value: ClothingCategory | 'all'; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -53,14 +39,13 @@ const anchorFromWardrobeItem = (item: ClothingItem): PieceAnchor => ({
   formality: item.formality, imageUrl: item.imageUrl,
 })
 
-const anchorFromCatalogItem = (item: CatalogItem): PieceAnchor => ({
-  name: item.name, category: item.category, colours: item.colours, occasions: item.occasions,
-  formality: item.formality, imageUrl: item.imageUrl,
-})
+// Colour filter choices; they're added to the live search words.
+const SHOP_COLOURS = ['black', 'white', 'cream', 'beige', 'brown', 'grey', 'navy', 'blue', 'green', 'olive', 'sage', 'red', 'pink', 'yellow', 'lilac', 'orange']
+const ALL_STYLES = Object.keys(CATALOG_STYLE_LABELS) as StylePreference[]
 
 export function DiscoverPage() {
   const { user } = useAuth()
-  const { items: wardrobeItems, addItem, removeItem } = useWardrobeStore()
+  const wardrobeItems = useWardrobeStore((state) => state.items)
   const profile = useUserStore((s) => s.profile)
   const updateProfile = useUserStore((s) => s.updateProfile)
   const feedback = useRecommendationStore((state) => profile?.id ? state.feedbackByUser[profile.id] ?? [] : [])
@@ -73,21 +58,25 @@ export function DiscoverPage() {
   const [budget, setBudget] = useState<BudgetId>('any')
   const [customBudgetAmount, setCustomBudgetAmount] = useState(6500)
   const [category, setCategory] = useState<ClothingCategory | 'all'>('all')
-  // Shop one brand: its curated pieces plus live picks from its own site.
+  // Shop one brand: live picks from its own site.
   const [brand, setBrand] = useState<string | null>(null)
   const [brandPickerOpen, setBrandPickerOpen] = useState(false)
   const [brandQuery, setBrandQuery] = useState('')
-  const [colourConfig, setColourConfig] = useState(BUNDLED_COLOUR_CONFIG)
-  useEffect(() => { void getColourHarmonyConfig().then(setColourConfig) }, [])
   const [searchQuery, setSearchQuery] = useState('')
-  const [retailers, setRetailers] = useState<string[]>([])
+  // Live search runs once typing pauses, not on every keystroke (each search costs a call).
+  const [liveSearch, setLiveSearch] = useState('')
+  useEffect(() => {
+    const timer = window.setTimeout(() => setLiveSearch(searchQuery.trim()), 700)
+    return () => window.clearTimeout(timer)
+  }, [searchQuery])
+  // Brands live under the search bar: shown while searching, not as a row of their own.
+  const [searchFocused, setSearchFocused] = useState(false)
   const [colours, setColours] = useState<string[]>([])
   const [styles, setStyles] = useState<StylePreference[]>([])
   const [sort, setSort] = useState<SortMode>('recommended')
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [completeOpen, setCompleteOpen] = useState(false)
   const [completeAnchor, setCompleteAnchor] = useState<PieceAnchor | undefined>()
-  const [addedThisSession, setAddedThisSession] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (!routeItem) return
@@ -110,115 +99,13 @@ export function DiscoverPage() {
     }
   }, [filtersOpen])
 
-  const addedCatalogIds = useMemo(
-    () => new Set(wardrobeItems.map((item) => item.catalogId).filter(Boolean) as string[]),
-    [wardrobeItems],
-  )
-  const isInWardrobe = (id: string) => addedCatalogIds.has(id) || addedThisSession.has(id)
 
-  const retailersAvailable = useMemo(() => [...new Set(ALL_CATALOG_ITEMS.map((item) => item.brand).filter(Boolean) as string[])].sort(), [])
-  const brandSuggestions = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase()
-    return query ? retailersAvailable.filter((brand) => brand.toLowerCase().includes(query)).slice(0, 5) : []
-  }, [retailersAvailable, searchQuery])
-  const coloursAvailable = useMemo(() => [...new Set(ALL_CATALOG_ITEMS.flatMap((item) => item.colours))].sort(), [])
-  // Styles that have pieces, the person's own first.
+
+  // The person's own styles first in the Style filter.
   const myStyles = profile?.stylePreferences ?? []
-  const stylesAvailable = useMemo(() => {
-    const tagged = new Set(ALL_CATALOG_ITEMS.flatMap((item) => item.styleAesthetics))
-    return [...tagged].sort((a, b) => Number(myStyles.includes(b)) - Number(myStyles.includes(a)) || a.localeCompare(b))
-  }, [myStyles])
-
-  const pieces = useMemo(() => {
-    const pool = ALL_CATALOG_ITEMS
-      .filter((item) => matchesStylePreference(item, profile?.genderStylePreference))
-      .filter((item) => mode === 'rent' ? isRentable(item) && fitsRentBudget(item, budget, customBudgetAmount) : fitsBuyBudget(item, budget, customBudgetAmount))
-      .filter((item) => category === 'all' || item.category === category)
-      .filter((item) => {
-        const query = searchQuery.trim().toLowerCase()
-        return !query || [item.name, item.brand, item.category, item.subcategory, item.material, item.description, ...(item.colours ?? []), ...(item.occasions ?? [])]
-          .some((value) => value?.toLowerCase().includes(query))
-      })
-      .filter((item) => retailers.length === 0 || retailers.includes(item.brand ?? ''))
-      .filter((item) => !brand || brandKey(item.brand ?? '') === brandKey(brand))
-      .filter((item) => colours.length === 0 || item.colours.some((colour) => colours.includes(colour)))
-      .filter((item) => styles.length === 0 || item.styleAesthetics.some((style) => styles.includes(style)))
-    const ranked = rankForUser(pool, profile, wardrobeItems, feedback)
-    if (sort === 'price-low') return [...ranked].sort((a, b) => (mode === 'rent' ? a.rentPricePerWeek - b.rentPricePerWeek : a.estimatedPrice - b.estimatedPrice))
-    if (sort === 'price-high') return [...ranked].sort((a, b) => (mode === 'rent' ? b.rentPricePerWeek - a.rentPricePerWeek : b.estimatedPrice - a.estimatedPrice))
-    if (sort === 'name') return [...ranked].sort((a, b) => a.name.localeCompare(b.name))
-    return ranked
-  }, [mode, budget, customBudgetAmount, category, profile, wardrobeItems, feedback, retailers, colours, styles, sort, searchQuery, brand])
-
-  const handleAdd = useCallback((catalogItem: CatalogItem) => {
-    if (isInWardrobe(catalogItem.id)) return
-    const newItem = catalogToItem(catalogItem, crypto.randomUUID())
-    console.log('[shop] add to Kloset', { id: catalogItem.id, mode })
-    addItem(newItem)
-    setAddedThisSession((previous) => new Set(previous).add(catalogItem.id))
-    const saved = user
-      ? insertItem(user.id, newItem).catch((error) => {
-          console.error('[shop] failed to save item', catalogItem.id, error)
-          throw error
-        })
-      : Promise.resolve()
-    offerUndo(`Added ${catalogItem.name} to your Kloset`, async () => {
-      removeItem(newItem.id)
-      setAddedThisSession((previous) => {
-        const next = new Set(previous)
-        next.delete(catalogItem.id)
-        return next
-      })
-      try {
-        await saved
-        if (user) await dbDeleteItem(user.id, newItem.id, newItem.imageStoragePath)
-      } catch {
-        addItem(newItem)
-        setAddedThisSession((previous) => new Set(previous).add(catalogItem.id))
-        notify(`Couldn't undo adding ${catalogItem.name}. It's back in your Kloset.`)
-      }
-    })
-  }, [addItem, removeItem, user, mode, wardrobeItems, addedThisSession])
-
-  const handleRemove = useCallback((catalogItem: CatalogItem) => {
-    const item = useWardrobeStore.getState().items.find((wardrobeItem) => wardrobeItem.catalogId === catalogItem.id)
-    if (!item) {
-      setAddedThisSession((previous) => {
-        const next = new Set(previous)
-        next.delete(catalogItem.id)
-        return next
-      })
-      return
-    }
-    console.log('[shop] remove from Kloset', { id: catalogItem.id })
-    deleteWithUndo({
-      message: `Removed ${catalogItem.name} from your Kloset`,
-      keys: [`wardrobe:${item.id}`],
-      remove: () => {
-        removeItem(item.id)
-        setAddedThisSession((previous) => {
-          const next = new Set(previous)
-          next.delete(catalogItem.id)
-          return next
-        })
-      },
-      restore: () => {
-        addItem(item)
-        setAddedThisSession((previous) => new Set(previous).add(catalogItem.id))
-      },
-      commit: async () => {
-        if (!user) return
-        try {
-          await dbDeleteItem(user.id, item.id, item.imageStoragePath)
-        } catch (error) {
-          addItem(item)
-          setAddedThisSession((previous) => new Set(previous).add(catalogItem.id))
-          notify(`Couldn't remove ${catalogItem.name}. It's back in your Kloset.`)
-          throw error
-        }
-      },
-    })
-  }, [addItem, removeItem, user])
+  const stylesAvailable = [...ALL_STYLES].sort((a, b) => Number(myStyles.includes(b)) - Number(myStyles.includes(a)) || a.localeCompare(b))
+  const band = BUDGET_BANDS.find((candidate) => candidate.id === budget) ?? BUDGET_BANDS[0]
+  const budgetRange: [number, number] | null = budget === 'any' ? null : budget === 'custom' ? [0, customBudgetAmount > 0 ? customBudgetAmount : Infinity] : band.buy
 
   const openComplete = (anchor?: PieceAnchor) => {
     setCompleteAnchor(anchor)
@@ -254,38 +141,13 @@ export function DiscoverPage() {
     setBrandQuery('')
   }
 
-  const isEmpty = pieces.length === 0
-  // Suggested = what works with the user's Kloset (pairs with pieces they own,
-  // fills a short category, isn't a near-copy), when the default sort is on.
-  const klosetSuggestions = useMemo(
-    // Narrowed to the person's chosen styles (topped up when few pieces match).
-    () => (mode === 'buy' && sort === 'recommended' ? suggestForStyle(suggestFromKloset(pieces, profile, wardrobeItems, feedback, colourConfig), profile) : []),
-    [mode, sort, pieces, profile, wardrobeItems, feedback, colourConfig],
-  )
-  const reasons = new Map(klosetSuggestions.map(({ item, reason }) => [item.id, reason]))
-  const suggested = mode === 'buy' ? (sort === 'recommended' ? klosetSuggestions.map(({ item }) => item) : pieces.slice(0, 10)) : []
-  const suggestedIds = new Set(suggested.map((item) => item.id))
-  const rest = mode === 'buy' ? pieces.filter((item) => !suggestedIds.has(item.id)) : pieces
-  const renderGrid = (list: CatalogItem[]) => (
-    <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-      {list.map((item) => (
-        <ShopItemCard
-          key={item.id}
-          item={item}
-          mode={mode}
-          inWardrobe={isInWardrobe(item.id)}
-          onAdd={() => handleAdd(item)}
-          onRemove={() => handleRemove(item)}
-          onCompletePiece={() => openComplete(anchorFromCatalogItem(item))}
-          reason={reasons.get(item.id)}
-        />
-      ))}
-    </div>
-  )
+  // Under All, Suggested for you (live picks for their Kloset: what they own
+  // and need) comes first, when nothing narrows the page.
+  const liveSuggested = mode === 'buy' && category === 'all' && !brand && !liveSearch && sort === 'recommended' && budget === 'any' && colours.length === 0 && styles.length === 0
+
 
   const activeFilters = [
     ...(budget !== 'any' ? [{ key: 'budget', label: budgetLabel(budget, mode), remove: () => setBudget('any') }] : []),
-    ...retailers.map((retailer) => ({ key: `retailer-${retailer}`, label: retailer, remove: () => setRetailers(retailers.filter((entry) => entry !== retailer)) })),
     ...colours.map((colour) => ({ key: `colour-${colour}`, label: colour, remove: () => setColours(colours.filter((entry) => entry !== colour)) })),
     ...styles.map((style) => ({ key: `style-${style}`, label: CATALOG_STYLE_LABELS[style] ?? style, remove: () => setStyles(styles.filter((entry) => entry !== style)) })),
   ]
@@ -306,10 +168,47 @@ export function DiscoverPage() {
         {mode === 'buy' && !completeOpen && <>
           <label className="mt-4 flex items-center gap-2 border-b border-text-primary/15 px-1 py-2 text-text-muted focus-within:border-text-primary/50">
             <Search size={16} strokeWidth={1.5} />
-            <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} type="search" placeholder="Search items or brands" aria-label="Search Shop by item or brand" className="min-w-0 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none" />
+            <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} type="search" placeholder="Search items or brands" aria-label="Search Shop by item or brand" className="min-w-0 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none" />
             {searchQuery && <button type="button" onClick={() => setSearchQuery('')} aria-label="Clear shop search" className="p-1 hover:text-text-primary"><X size={14} /></button>}
           </label>
-          {brandSuggestions.length > 0 && <div className="flex flex-wrap gap-2 pt-2" aria-label="Matching brands">{brandSuggestions.map((brand) => <button key={brand} type="button" onClick={() => { setRetailers((selected) => selected.includes(brand) ? selected : [...selected, brand]); setSearchQuery('') }} className="rounded-full border border-text-primary/15 bg-surface px-3 py-1.5 text-xs text-text-primary hover:border-text-primary/40">Shop {brand}</button>)}</div>}
+          {/* Brands under search: your brands while the box is focused, matching brands as you type. */}
+          {(searchFocused || searchQuery.trim() || brandPickerOpen) && (
+            <div className="flex items-center gap-2 overflow-x-auto py-2.5 no-scrollbar" aria-label="Shop by brand">
+              <span className="shrink-0 pr-1 text-2xs uppercase tracking-widest text-text-muted">Brands</span>
+              {(searchQuery.trim() ? searchBrands(searchQuery).slice(0, 6).map((name) => ({ name, favourite: isFavouriteBrand(name) })) : brandBubbles).map(({ name, favourite }) => (
+                <button key={name} type="button" onPointerDown={(event) => event.preventDefault()} onClick={() => { pickBrand(name); setSearchQuery('') }} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-text-primary/15 px-3 py-1 text-xs text-text-muted transition-colors hover:border-text-primary/40 hover:text-text-primary">
+                  {favourite && <Heart size={10} fill="currentColor" aria-label="Favourite" />}
+                  {name}
+                </button>
+              ))}
+              <button type="button" onPointerDown={(event) => event.preventDefault()} onClick={() => setBrandPickerOpen((open) => !open)} aria-expanded={brandPickerOpen} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-dashed border-text-primary/30 px-3 py-1 text-xs text-text-primary hover:border-text-primary/60">
+                <Search size={11} /> All brands
+              </button>
+            </div>
+          )}
+        {brandPickerOpen && (
+          <section aria-label="All brands" className="border-b border-text-primary/10 py-3">
+            <label className="flex items-center gap-2 border-b border-text-primary/15 px-1 py-2 text-text-muted focus-within:border-text-primary/50">
+              <Search size={14} strokeWidth={1.5} />
+              <input autoFocus value={brandQuery} onChange={(event) => setBrandQuery(event.target.value)} type="search" placeholder="Search any brand" aria-label="Search brands" className="min-w-0 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none" />
+              <button type="button" onClick={() => { setBrandPickerOpen(false); setBrandQuery('') }} aria-label="Close brands" className="p-1 hover:text-text-primary"><X size={14} /></button>
+            </label>
+            <p className="mt-2 text-2xs text-text-muted">Tap a brand to shop it. Tap the heart to keep it in your bubbles.</p>
+            <div className="mt-2 flex max-h-64 flex-wrap gap-2 overflow-y-auto pb-1">
+              {brandResults.map((name) => <BrandBubble key={name} name={name} favourite={isFavouriteBrand(name)} onPick={() => pickBrand(name)} onToggleFavourite={() => toggleFavouriteBrand(name)} />)}
+              {/* Any other brand, after the directory's matches. */}
+              {typedIsNew && <BrandBubble name={typedBrand} label={`Shop “${typedBrand}”`} favourite={isFavouriteBrand(typedBrand)} onPick={() => pickBrand(typedBrand)} onToggleFavourite={() => toggleFavouriteBrand(typedBrand)} />}
+              {!typedIsNew && brandResults.length === 0 && <p className="text-xs text-text-muted">No brands match. Keep typing to search any brand.</p>}
+            </div>
+          </section>
+        )}
+          {brand && (
+            <div className="flex items-center gap-2 pt-2.5">
+              <button type="button" onClick={() => setBrand(null)} className="inline-flex items-center gap-1.5 rounded-full border border-text-primary bg-text-primary px-3 py-1 text-xs text-warm-cream" aria-label={`Stop shopping ${brand}`}>
+                {isFavouriteBrand(brand) && <Heart size={10} fill="currentColor" aria-hidden="true" />}Shopping {brand} <X size={12} />
+              </button>
+            </div>
+          )}
         </>}
 
         {mode === 'rent' && !completeOpen ? (
@@ -319,7 +218,7 @@ export function DiscoverPage() {
             <div className="mb-4 flex items-center justify-end">
               <button onClick={() => { setCompleteOpen(false); setCompleteAnchor(undefined) }} aria-label="Close complete-a-piece" className="p-1 text-text-muted hover:text-text-primary"><X size={18} /></button>
             </div>
-            <CompleteAPiece key={completeAnchor?.name ?? 'choose-piece'} mode={mode} budget={budget} onBudgetChange={setBudget} customBudgetAmount={customBudgetAmount} onCustomBudgetAmountChange={setCustomBudgetAmount} profile={profile} wardrobe={wardrobeItems} isInWardrobe={isInWardrobe} initialAnchor={completeAnchor} />
+            <CompleteAPiece key={completeAnchor?.name ?? 'choose-piece'} profile={profile} wardrobe={wardrobeItems} feedback={feedback} initialAnchor={completeAnchor} />
           </section>
         ) : <>
         <div className="flex items-center gap-4 border-b border-text-primary/10 py-3">
@@ -337,93 +236,56 @@ export function DiscoverPage() {
                 {activeFilters.length > 0 && <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-text-primary px-1 text-[9px] text-warm-cream">{activeFilters.length}</span>}
               </button>
               {filtersOpen && <div className="absolute right-0 top-full z-30 mt-2 w-[min(20rem,calc(100vw-2rem))] border border-text-primary/10 bg-surface p-4 shadow-lifted">
-                <div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-medium text-text-primary">Filters</h3><button onClick={() => { setBudget('any'); setRetailers([]); setColours([]); setStyles([]) }} className="text-xs text-text-muted hover:text-text-primary">Clear all</button></div>
+                <div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-medium text-text-primary">Filters</h3><button onClick={() => { setBudget('any'); setColours([]); setStyles([]) }} className="text-xs text-text-muted hover:text-text-primary">Clear all</button></div>
                 <FilterGroup label="Budget">
                   {BUDGET_BANDS.map((band) => <label key={band.id} className="flex cursor-pointer items-center gap-2 py-1.5 text-sm text-text-muted"><input type="radio" name="shop-budget" checked={budget === band.id} onChange={() => setBudget(band.id)} />{band.buyLabel}</label>)}
                   {budget === 'custom' && <label className="mt-2 flex items-center gap-2 text-xs text-text-muted">Maximum ₹<input type="number" min="1" value={customBudgetAmount} onChange={(event) => setCustomBudgetAmount(Number(event.target.value))} className="w-24 border-b border-text-primary/20 bg-transparent px-1 py-1 text-text-primary focus:outline-none" /></label>}
+                </FilterGroup>
+                <FilterGroup label="Colour">
+                  <div className="grid max-h-28 grid-cols-2 gap-x-2 overflow-y-auto">{SHOP_COLOURS.map((colour) => <label key={colour} className="flex cursor-pointer items-center gap-2 py-1 text-xs capitalize text-text-muted"><input type="checkbox" checked={colours.includes(colour)} onChange={() => toggleValue(colours, colour, setColours)} />{colour}</label>)}</div>
                 </FilterGroup>
                 <FilterGroup label="Style">
                   {myStyles.length > 0 && <button type="button" onClick={() => setStyles(myStyles.filter((style) => stylesAvailable.includes(style)))} className="mb-1.5 text-xs text-text-primary underline underline-offset-4">Just my style</button>}
                   <div className="grid grid-cols-2 gap-x-2">{stylesAvailable.map((style) => <label key={style} className="flex cursor-pointer items-center gap-2 py-1 text-xs text-text-muted"><input type="checkbox" checked={styles.includes(style)} onChange={() => setStyles(styles.includes(style) ? styles.filter((entry) => entry !== style) : [...styles, style])} />{CATALOG_STYLE_LABELS[style] ?? style}{myStyles.includes(style) && <span className="text-2xs text-[#355E3B]">· yours</span>}</label>)}</div>
                 </FilterGroup>
-                <FilterGroup label="Retailer">
-                  <div className="grid max-h-28 grid-cols-2 gap-x-2 overflow-y-auto">{retailersAvailable.map((retailer) => <label key={retailer} className="flex cursor-pointer items-center gap-2 py-1 text-xs text-text-muted"><input type="checkbox" checked={retailers.includes(retailer)} onChange={() => toggleValue(retailers, retailer, setRetailers)} />{retailer}</label>)}</div>
-                </FilterGroup>
-                <FilterGroup label="Colour">
-                  <div className="grid max-h-28 grid-cols-2 gap-x-2 overflow-y-auto">{coloursAvailable.map((colour) => <label key={colour} className="flex cursor-pointer items-center gap-2 py-1 text-xs text-text-muted"><input type="checkbox" checked={colours.includes(colour)} onChange={() => toggleValue(colours, colour, setColours)} />{colour}</label>)}</div>
-                </FilterGroup>
-                <FilterGroup label="Size"><p className="text-xs leading-relaxed text-text-muted">Sizes are selected on the retailer’s site. Size data isn’t available in this catalog yet.</p></FilterGroup>
+
+                <FilterGroup label="Size"><p className="text-xs leading-relaxed text-text-muted">Sizes are picked on each store’s site.</p></FilterGroup>
               </div>}
             </div>
             <label className="flex items-center gap-1 text-xs text-text-primary">
               <span className="sr-only">Sort products</span>
               <select value={sort} onChange={(event) => setSort(event.target.value as SortMode)} className="max-w-24 appearance-none bg-transparent py-1.5 pr-3 text-xs text-text-primary focus:outline-none sm:max-w-none">
-                <option value="recommended">Sort</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option><option value="name">Name</option>
+                <option value="recommended">Sort</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option>
               </select><ChevronDown size={13} className="pointer-events-none -ml-1" />
             </label>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto border-b border-text-primary/10 py-2.5 no-scrollbar" aria-label="Shop by brand">
-          <span className="shrink-0 pr-1 text-2xs uppercase tracking-widest text-text-muted">Brands</span>
-          {brandBubbles.map(({ name, favourite }) => {
-            const active = brand !== null && brandKey(brand) === brandKey(name)
-            return (
-              <button key={name} onClick={() => setBrand(active ? null : name)} aria-pressed={active} className={clsx('inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1 text-xs transition-colors', active ? 'border-text-primary bg-text-primary text-warm-cream' : 'border-text-primary/15 text-text-muted hover:border-text-primary/40 hover:text-text-primary')}>
-                {favourite && <Heart size={10} fill="currentColor" aria-label="Favourite" />}
-                {name}
-              </button>
-            )
-          })}
-          <button onClick={() => setBrandPickerOpen((open) => !open)} aria-expanded={brandPickerOpen} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-dashed border-text-primary/30 px-3 py-1 text-xs text-text-primary hover:border-text-primary/60">
-            <Search size={11} /> All brands
-          </button>
-        </div>
 
-        {brandPickerOpen && (
-          <section aria-label="All brands" className="border-b border-text-primary/10 py-3">
-            <label className="flex items-center gap-2 border-b border-text-primary/15 px-1 py-2 text-text-muted focus-within:border-text-primary/50">
-              <Search size={14} strokeWidth={1.5} />
-              <input autoFocus value={brandQuery} onChange={(event) => setBrandQuery(event.target.value)} type="search" placeholder="Search any brand" aria-label="Search brands" className="min-w-0 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none" />
-              <button type="button" onClick={() => { setBrandPickerOpen(false); setBrandQuery('') }} aria-label="Close brands" className="p-1 hover:text-text-primary"><X size={14} /></button>
-            </label>
-            <p className="mt-2 text-2xs text-text-muted">Tap a brand to shop it. Tap the heart to keep it in your bubbles.</p>
-            <div className="mt-2 flex max-h-64 flex-wrap gap-2 overflow-y-auto pb-1">
-              {brandResults.map((name) => <BrandBubble key={name} name={name} favourite={isFavouriteBrand(name)} onPick={() => pickBrand(name)} onToggleFavourite={() => toggleFavouriteBrand(name)} />)}
-              {/* Any other brand, after the directory's matches. */}
-              {typedIsNew && <BrandBubble name={typedBrand} label={`Shop “${typedBrand}”`} favourite={isFavouriteBrand(typedBrand)} onPick={() => pickBrand(typedBrand)} onToggleFavourite={() => toggleFavouriteBrand(typedBrand)} />}
-              {!typedIsNew && brandResults.length === 0 && <p className="text-xs text-text-muted">No brands match. Keep typing to search any brand.</p>}
-            </div>
-          </section>
-        )}
 
         {activeFilters.length > 0 && <div className="flex flex-wrap gap-2 pt-3">{activeFilters.map((filter) => <button key={filter.key} onClick={filter.remove} className="inline-flex items-center gap-1.5 rounded-full border border-text-primary/15 px-2.5 py-1 text-xs text-text-muted hover:border-text-primary/35 hover:text-text-primary">{filter.label}<X size={12} /></button>)}</div>}
 
-        <div className="flex items-center justify-between gap-3 pt-4 pb-3">
-          <div>
-            <h2 className="text-sm font-medium text-text-muted">{brand ? `${brand}, picked for you` : 'Suggested for you'}</h2>
-            {!brand && sort === 'recommended' && (myStyles.length > 0 || wardrobeItems.length > 0) && <p className="mt-0.5 text-2xs text-text-muted">{[myStyles.length > 0 && `Your style: ${myStyles.map((style) => CATALOG_STYLE_LABELS[style] ?? style).join(', ')}`, wardrobeItems.length > 0 && 'Goes with your Kloset'].filter(Boolean).join(' · ')}</p>}
-          </div>
-          <div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-3">
-            <button onClick={() => openComplete()} className="inline-flex h-8 shrink-0 items-center gap-1.5 border border-text-primary/25 px-3 text-xs text-text-primary transition-colors hover:border-text-primary/50 hover:bg-text-primary/5">
-              Complete a piece
-            </button>
-          </div>
+        <div className="flex items-center justify-end pt-4">
+          <button onClick={() => openComplete()} className="inline-flex h-8 shrink-0 items-center gap-1.5 border border-text-primary/25 px-3 text-xs text-text-primary transition-colors hover:border-text-primary/50 hover:bg-text-primary/5">
+            Complete a piece
+          </button>
         </div>
 
-        {isEmpty && brand ? (
-          // Shop's own catalog has few brands; the live feed below searches the brand's site.
-          <p className="pb-2 text-sm text-text-muted">None of Shop’s own pieces are from {brand} yet. Live picks from {brand}’s site are below.</p>
-        ) : isEmpty ? (
-          <div className="py-20 text-center"><p className="mb-2 font-display text-2xl text-text-primary">No pieces found</p><button onClick={() => { setBudget('any'); setCategory('all'); setRetailers([]); setColours([]); setStyles([]) }} className="text-sm text-text-primary underline underline-offset-4">Show everything</button></div>
-        ) : (
-          <>
-            {suggested.length > 0 && <section aria-label="Suggested for you">{renderGrid(suggested)}</section>}
-            {rest.length > 0 && <section aria-label="More pieces" className="mt-12 border-t border-text-primary/10 pt-6"><h2 className="mb-4 text-sm font-medium text-text-muted">More pieces</h2>{renderGrid(rest)}</section>}
-          </>
-        )}
-        {/* Endless live picks beyond the curated catalog, searched with the user's taste. */}
-        <WebDiscoverFeed key={`${category}:${brand ?? ''}`} profile={profile} category={category} feedback={feedback} brand={brand} />
+        {/* Everything on Shop is live: Suggested for your Kloset first under All, then the feed for the tab, search, filters or brand. */}
+        {liveSuggested && <WebDiscoverFeed key="kloset-suggested" variant="suggested" profile={profile} category="all" feedback={feedback} wardrobe={wardrobeItems} />}
+        <WebDiscoverFeed
+          key={`${category}:${brand ?? ''}:${liveSearch}:${colours.join(',')}:${styles.join(',')}`}
+          variant={liveSearch ? 'search' : 'browse'}
+          profile={profile}
+          category={category}
+          feedback={feedback}
+          brand={brand}
+          search={liveSearch}
+          colours={colours}
+          styles={styles}
+          budgetRange={budgetRange}
+          sort={sort}
+        />
         </>}
       </div>
     </div>

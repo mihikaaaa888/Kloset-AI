@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Archive, Camera, ChevronRight, Cog, ImagePlus, LogOut, Pencil,
@@ -10,7 +10,6 @@ import { ThemePicker } from '@/components/ui/ThemeToggle'
 import { useItemImage } from '@/hooks/useItemImage'
 import { deleteImage, getImage, saveImage } from '@/lib/imageStorage'
 import { compressImage } from '@/lib/imageStorage'
-import { ALL_CATALOG_ITEMS } from '@/lib/catalogData'
 import { useAuth } from '@/contexts/AuthContext'
 import { useUserStore } from '@/store/userStore'
 import { useWardrobeStore } from '@/store/wardrobeStore'
@@ -46,25 +45,18 @@ export function ProfilePage() {
   const [deleteError, setDeleteError] = useState('')
   const [avatarId, setAvatarId] = useState<string | null>(null)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
-  const [counts, setCounts] = useState({ pieces: 0, outfits: 0, costPerWear: 0 })
+  const [counts, setCounts] = useState({ pieces: 0, outfits: 0 })
   const avatarInput = useRef<HTMLInputElement>(null)
 
-  const pricedWears = useMemo(() => wardrobeItems.reduce((summary, item) => {
-    if (!item.catalogId || item.timesWorn <= 0) return summary
-    const catalogItem = ALL_CATALOG_ITEMS.find((candidate) => candidate.id === item.catalogId)
-    if (!catalogItem) return summary
-    return { total: summary.total + catalogItem.estimatedPrice, wears: summary.wears + item.timesWorn }
-  }, { total: 0, wears: 0 }), [wardrobeItems])
-  const costPerWear = pricedWears.wears ? Math.round(pricedWears.total / pricedWears.wears) : null
   const mostWornItems = wardrobeItems.filter((item) => item.timesWorn > 0).sort((a, b) => b.timesWorn - a.timesWorn).slice(0, 4)
   const neverWorn = wardrobeItems.filter((item) => item.timesWorn === 0).slice(0, 5)
   const coverItems = wardrobeItems.filter((item) => item.imageUrl || item.imageId || item.imageStoragePath).slice(0, 5)
 
   useEffect(() => {
-    setCounts({ pieces: wardrobeItems.length, outfits: savedOutfits.length, costPerWear: costPerWear ?? 0 })
+    setCounts({ pieces: wardrobeItems.length, outfits: savedOutfits.length })
     const id = profile ? localStorage.getItem(`kloset-profile-avatar:${profile.id}`) : null
     setAvatarId(id)
-  }, [profile?.id, wardrobeItems.length, savedOutfits.length, costPerWear])
+  }, [profile?.id, wardrobeItems.length, savedOutfits.length])
 
   useEffect(() => {
     if (!avatarId) { setAvatarUrl(null); return }
@@ -139,10 +131,9 @@ export function ProfilePage() {
               <h3 className="mb-4 font-sans text-base font-medium sm:text-lg">Most Worn</h3>
               {mostWornItems.length > 0 ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">{mostWornItems.map((item, index) => <MostWornPiece key={item.id} item={item} className={index === 3 ? 'sm:hidden' : undefined} onOpen={() => navigate('/wardrobe')} />)}</div> : <button onClick={() => navigate('/wardrobe')} className="text-sm underline underline-offset-4">Add a piece</button>}
           </section>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <StatTile label="Pieces" value={counts.pieces} action={counts.pieces === 0 ? 'Add your first piece' : undefined} onClick={() => navigate('/wardrobe')} />
             <StatTile label="Outfits" value={counts.outfits} action={counts.outfits === 0 ? 'Create an outfit' : undefined} onClick={() => navigate('/wardrobe?view=outfits')} />
-            <StatTile label="Cost per wear" value={costPerWear} prefix="₹" action={costPerWear === null ? 'Browse shop to start tracking' : undefined} onClick={() => navigate('/discover')} />
           </div>
 
           <section className={clsx(CARD, 'mt-3 p-5 sm:p-6')}>

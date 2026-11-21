@@ -1,17 +1,14 @@
 import { useEffect, useState } from 'react'
 import { ArrowUpRight } from 'lucide-react'
 import { searchWebShop, cleanProductTitle } from '@/lib/webShopService'
-import { catalogForPreference, suggestedGenders } from '@/lib/catalogData'
+import { suggestedGenders } from '@/lib/catalogData'
 import { useUserStore } from '@/store/userStore'
-import { formatINR } from '@/lib/shopping'
 import type { OutfitSuggestion } from '@/lib/stylist'
-import type { ClothingCategory } from '@/types'
 
 type MissingRole = 'top' | 'bottom' | 'outerwear' | 'shoes'
 
 const ROLE_NOUN: Record<MissingRole, string> = { top: 'top', bottom: 'trousers', outerwear: 'jacket', shoes: 'shoes' }
 const ROLE_LABEL: Record<MissingRole, string> = { top: 'A top', bottom: 'A bottom', outerwear: 'Woolens', shoes: 'Shoes' }
-const ROLE_CATEGORY: Record<MissingRole, ClothingCategory> = { top: 'tops', bottom: 'bottoms', outerwear: 'outerwear', shoes: 'shoes' }
 const OCCASION_WORD: Record<string, string> = {
   work: 'work', casual: 'casual', 'date-night': 'evening', formal: 'formal', weekend: 'weekend',
   travel: 'travel', 'special-event': 'occasion', gym: 'sport',
@@ -35,7 +32,6 @@ interface Suggestion {
   title: string
   url: string
   imageUrl: string | null
-  price?: number
 }
 
 function MissingPiece({ role, suggestion }: { role: MissingRole; suggestion: OutfitSuggestion }) {
@@ -50,27 +46,21 @@ function MissingPiece({ role, suggestion }: { role: MissingRole; suggestion: Out
     const audience = genders.length === 1 ? (genders[0] === 'men' ? "men's" : "women's") : ''
     const query = `${audience} ${colour} ${OCCASION_WORD[suggestion.occasion] ?? ''} ${ROLE_NOUN[role]}`.replace(/\s+/g, ' ').trim()
 
-    // Fallback: the best-matching piece from Kloset's own catalog.
-    const catalogFallback = (): Suggestion[] => {
-      const inCategory = catalogForPreference(preference).filter((c) => c.category === ROLE_CATEGORY[role])
-      const match = inCategory.find((c) => c.occasions.includes(suggestion.occasion)) ?? inCategory[0]
-      return match ? [{ id: match.id, title: match.name, url: match.shopUrl, imageUrl: match.imageUrl, price: match.estimatedPrice }] : []
-    }
-
     console.log('[complete-the-look] searching', { role, query })
     searchWebShop(query)
       .then(({ results: found, noKey, error }) => {
         if (cancelled) return
+        // Live only: no results means "Nothing found", never a fixed fallback piece.
         if (noKey || error || !found.length) {
-          console.log('[complete-the-look] no live results, using catalog', { role, noKey, error })
-          setResults(catalogFallback())
+          console.log('[complete-the-look] no live results', { role, noKey, error })
+          setResults([])
           return
         }
         setResults(found.slice(0, 2).map((r) => ({ id: r.id, title: cleanProductTitle(r.title), url: r.url, imageUrl: r.imageUrl })))
       })
       .catch((err) => {
         console.error('[complete-the-look] search failed', err)
-        if (!cancelled) setResults(catalogFallback())
+        if (!cancelled) setResults([])
       })
     return () => { cancelled = true }
   }, [role, suggestion, preference])
@@ -98,7 +88,6 @@ function MissingPiece({ role, suggestion }: { role: MissingRole; suggestion: Out
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-text-primary leading-snug line-clamp-2 group-hover:underline underline-offset-4">{r.title}</p>
-                  {r.price && <p className="text-xs font-semibold text-text-primary mt-0.5">{formatINR(r.price)}</p>}
                 </div>
                 <ArrowUpRight size={14} className="text-butter-yellow flex-shrink-0" />
               </a>

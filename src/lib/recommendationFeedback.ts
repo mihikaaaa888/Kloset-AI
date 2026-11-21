@@ -1,4 +1,4 @@
-import type { CatalogItem, ClothingItem, ClothingCategory, Pattern, Occasion, StylePreference } from '@/types'
+import type { ClothingItem, ClothingCategory, Pattern, Occasion, StylePreference } from '@/types'
 
 export type FeedbackAction = 'like' | 'dislike' | 'dwell'
 
@@ -78,19 +78,6 @@ export function feedbackFromOutfitPhoto(signal: OutfitPhotoStyleSignal, photoId:
       createdAt,
     }
   })
-}
-
-export function traitsFromCatalog(item: CatalogItem): RecommendationTraits {
-  return {
-    category: item.category,
-    subcategory: item.subcategory,
-    colours: item.colours,
-    material: item.material,
-    pattern: item.pattern,
-    formality: item.formality,
-    occasions: item.occasions,
-    aesthetics: item.styleAesthetics,
-  }
 }
 
 export function traitsFromWardrobe(item: ClothingItem): RecommendationTraits {

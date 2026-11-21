@@ -4,71 +4,52 @@ import { clsx } from 'clsx'
 import { useItemImage } from '@/hooks/useItemImage'
 import { compressImage } from '@/lib/imageStorage'
 import { analyzeImage } from '@/lib/analyzeImage'
-import { fitsBuyBudget, fitsRentBudget, isRentable, recommendForPiece, type BudgetId, type PieceAnchor } from '@/lib/shopping'
-import { catalogForPreference } from '@/lib/catalogData'
-import { formatINR } from '@/lib/shopping'
+import { BUDGET_BANDS, type BudgetId, type PieceAnchor } from '@/lib/shopping'
+import { buildPieceQueries, filterForUser } from '@/lib/discoverFeed'
+import { parsePrice, useLiveProducts } from '@/lib/liveShop'
+import { learnTasteProfile, type RecommendationFeedback } from '@/lib/recommendationFeedback'
 import { BudgetDropdown } from '@/components/shop/BudgetDropdown'
-import type { CatalogItem, ClothingCategory, ClothingItem, UserProfile } from '@/types'
+import type { ClothingCategory, ClothingItem, UserProfile } from '@/types'
 
 const CATEGORY_LABELS: Record<ClothingCategory, string> = {
   tops: 'Tops', bottoms: 'Bottoms', dresses: 'Dresses', outerwear: 'Woolens', shoes: 'Shoes', accessories: 'Accessories',
 }
-const SLOT_HEADINGS: Record<ClothingCategory, string> = {
-  tops: 'Tops', bottoms: 'Bottoms', dresses: 'Dresses', outerwear: 'Woolens', shoes: 'Shoes', accessories: 'Accessories',
-}
 const CATEGORIES = Object.keys(CATEGORY_LABELS) as ClothingCategory[]
+// What to suggest for each kind of piece, most needed first; three groups at most.
 const COMPLEMENTS: Record<ClothingCategory, ClothingCategory[]> = {
-  tops: ['bottoms', 'shoes', 'outerwear', 'accessories'],
-  bottoms: ['tops', 'shoes', 'outerwear', 'accessories'],
+  tops: ['bottoms', 'shoes', 'outerwear'],
+  bottoms: ['tops', 'shoes', 'outerwear'],
   dresses: ['shoes', 'outerwear', 'accessories'],
-  outerwear: ['tops', 'bottoms', 'shoes', 'accessories'],
-  shoes: ['tops', 'bottoms', 'dresses', 'accessories'],
-  accessories: ['tops', 'bottoms', 'dresses', 'shoes'],
+  outerwear: ['tops', 'bottoms', 'shoes'],
+  shoes: ['tops', 'bottoms', 'accessories'],
+  accessories: ['tops', 'bottoms', 'dresses'],
 }
 
-type PickerSource = 'closet' | 'shop'
 type Picked =
   | { kind: 'kloset'; item: ClothingItem }
-  | { kind: 'catalog'; item: CatalogItem }
   | { kind: 'anchor'; anchor: PieceAnchor }
   | { kind: 'upload'; previewUrl: string; anchor: PieceAnchor }
 
 interface CompleteAPieceProps {
-  budget: BudgetId
-  onBudgetChange: (budget: BudgetId) => void
-  customBudgetAmount: number
-  onCustomBudgetAmountChange: (amount: number) => void
-  mode: 'buy' | 'rent'
   profile: UserProfile | null
   wardrobe: ClothingItem[]
-  isInWardrobe: (catalogId: string) => boolean
+  feedback: RecommendationFeedback[]
   initialAnchor?: PieceAnchor
 }
 
 const anchorFromItem = (item: ClothingItem): PieceAnchor => ({
   name: item.name, category: item.category, colours: item.colour, occasions: item.occasions, formality: item.formality, imageUrl: item.imageUrl,
 })
-const anchorFromCatalogItem = (item: CatalogItem): PieceAnchor => ({
-  name: item.name, category: item.category, colours: item.colours, occasions: item.occasions, formality: item.formality, imageUrl: item.imageUrl,
-})
 
-export function CompleteAPiece({ budget, onBudgetChange, customBudgetAmount, onCustomBudgetAmountChange, mode, profile, wardrobe, isInWardrobe, initialAnchor }: CompleteAPieceProps) {
-  const [source, setSource] = useState<PickerSource>('closet')
+/** Pick a piece (from the closet or a photo); live picks that go with it, by category. */
+export function CompleteAPiece({ profile, wardrobe, feedback, initialAnchor }: CompleteAPieceProps) {
   const [picked, setPicked] = useState<Picked | null>(initialAnchor ? { kind: 'anchor', anchor: initialAnchor } : null)
   const [addedToOutfit, setAddedToOutfit] = useState<string[]>([])
-  const anchor = useMemo(() => picked ? (picked.kind === 'kloset' ? anchorFromItem(picked.item) : picked.kind === 'catalog' ? anchorFromCatalogItem(picked.item) : picked.anchor) : null, [picked])
-
-  const groups = useMemo(() => {
-    if (!anchor) return []
-    const shopGroups = recommendForPiece(anchor, 'any', profile, 12)
-    return COMPLEMENTS[anchor.category].map((category) => {
-      let shopMatches = shopGroups.find((group) => group.category === category)?.items ?? []
-      shopMatches = shopMatches.filter((item) => mode === 'rent' ? isRentable(item) : true)
-      if (budget !== 'any') shopMatches = shopMatches.filter((item) => mode === 'rent' ? fitsRentBudget(item, budget, customBudgetAmount) : fitsBuyBudget(item, budget, customBudgetAmount))
-      shopMatches = shopMatches.filter((item) => !isInWardrobe(item.id)).slice(0, 8)
-      return { category, shopMatches }
-    }).filter((group) => group.shopMatches.length > 0)
-  }, [anchor, profile, budget, customBudgetAmount, isInWardrobe, mode])
+  const [budget, setBudget] = useState<BudgetId>('any')
+  const [customAmount, setCustomAmount] = useState(6500)
+  const anchor = useMemo(() => picked ? (picked.kind === 'kloset' ? anchorFromItem(picked.item) : picked.anchor) : null, [picked])
+  const band = BUDGET_BANDS.find((candidate) => candidate.id === budget) ?? BUDGET_BANDS[0]
+  const budgetRange: [number, number] | null = budget === 'any' ? null : budget === 'custom' ? [0, customAmount > 0 ? customAmount : Infinity] : band.buy
 
   useEffect(() => {
     if (picked?.kind !== 'upload') return
@@ -83,15 +64,11 @@ export function CompleteAPiece({ budget, onBudgetChange, customBudgetAmount, onC
     <div className="w-full">
       {!picked && <section aria-label="Choose a piece to complete">
         <h2 className="mb-1 font-display text-2xl font-medium text-text-primary">What are you completing?</h2>
-        <p className="mb-4 text-sm text-text-muted">Choose a piece from your closet or the shop.</p>
-        <div className="mb-5 inline-flex rounded-full border border-text-primary/15 bg-surface p-1" role="tablist" aria-label="Choose a piece from">
-          {(['closet', 'shop'] as const).map((value) => <button key={value} role="tab" aria-selected={source === value} onClick={() => setSource(value)} className={clsx('rounded-full px-4 py-2 text-xs tracking-normal transition-colors', source === value ? 'bg-text-primary/8 font-medium text-text-primary' : 'text-text-muted hover:text-text-primary')}>{value === 'closet' ? 'My closet' : 'Shop'}</button>)}
-        </div>
-
-        {source === 'closet' && wardrobe.length === 0 && <p className="mb-4 text-sm text-text-muted">Your closet is empty. Add a piece or choose one from Shop.</p>}
+        <p className="mb-4 text-sm text-text-muted">Choose a piece from your closet, or upload a photo of one.</p>
+        {wardrobe.length === 0 && <p className="mb-4 text-sm text-text-muted">Your closet is empty. Upload a photo of the piece instead.</p>}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
           <PhotoUploadTile onReady={(previewUrl, uploadAnchor) => setPicked({ kind: 'upload', previewUrl, anchor: uploadAnchor })} />
-          {source === 'closet' ? wardrobe.map((item) => <ClosetPickCard key={item.id} item={item} selected={false} onClick={() => { console.log('[complete-a-piece] picked from Kloset', item.id); setPicked({ kind: 'kloset', item }) }} />) : availableShopItems(profile).map((item) => <ShopPickCard key={item.id} item={item} selected={false} onClick={() => setPicked({ kind: 'catalog', item })} />)}
+          {wardrobe.map((item) => <ClosetPickCard key={item.id} item={item} selected={false} onClick={() => { console.log('[complete-a-piece] picked from Kloset', item.id); setPicked({ kind: 'kloset', item }) }} />)}
         </div>
       </section>}
 
@@ -108,42 +85,58 @@ export function CompleteAPiece({ budget, onBudgetChange, customBudgetAmount, onC
           <h2 className="mt-4 font-display text-2xl leading-tight text-text-primary lg:text-3xl">{anchor.name}</h2>
           <p className="mt-1 text-xs text-text-muted">{CATEGORY_LABELS[anchor.category]}</p>
           <div className="mt-5 border-t border-text-primary/10 pt-4" aria-label="Suggestion filters">
-            <BudgetDropdown value={budget} onChange={onBudgetChange} customAmount={customBudgetAmount} onCustomAmountChange={onCustomBudgetAmountChange} mode={mode} />
+            <BudgetDropdown value={budget} onChange={setBudget} customAmount={customAmount} onCustomAmountChange={setCustomAmount} mode="buy" />
           </div>
         </aside>
 
-        <div className="min-w-0">
-          {mode === 'rent' && <div role="status" className="mb-6 border border-text-primary/10 bg-text-primary/[0.03] px-4 py-3 text-center font-display text-lg text-text-primary">Rentals are coming soon</div>}
-          <div className="space-y-10">
-            {groups.length === 0 ? <p className="py-6 text-center text-sm text-text-muted">No matches with these options. Try turning off a filter.</p> : groups.map((group) => <section key={group.category}>
-              <h3 className="mb-3 font-display text-xl text-text-primary">{SLOT_HEADINGS[group.category]}</h3>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 xl:grid-cols-4">
-                {group.shopMatches.map((item) => <OutfitSuggestionCard key={`shop-${item.id}`} name={item.name} category={CATEGORY_LABELS[item.category]} image={<img src={item.imageUrl} alt="" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />} href={mode === 'rent' ? item.rentUrl : item.shopUrl} price={mode === 'rent' ? `${formatINR(item.rentPricePerWeek)} / wk` : formatINR(item.estimatedPrice)} added={addedToOutfit.includes(`shop:${item.id}`)} onAdd={() => addKey(`shop:${item.id}`)} />)}
-              </div>
-            </section>)}
-          </div>
+        <div className="min-w-0 space-y-10">
+          {COMPLEMENTS[anchor.category]
+            .filter((category) => profile?.genderStylePreference !== 'masculine' || category !== 'dresses')
+            .map((category) => <LiveGroup key={`${anchor.name}:${category}`} profile={profile} feedback={feedback} anchor={anchor} category={category} budgetRange={budgetRange} added={addedToOutfit} onAdd={addKey} />)}
+          <p className="text-center text-[10px] text-text-muted">Live from stores. Prices and stock are set by each store and may change.</p>
         </div>
       </section>}
     </div>
   )
 }
 
-function availableShopItems(profile: UserProfile | null) {
-  return catalogForPreference(profile?.genderStylePreference)
+/** One category of live picks that go with the anchor piece. */
+function LiveGroup({ profile, feedback, anchor, category, budgetRange, added, onAdd }: {
+  profile: UserProfile | null
+  feedback: RecommendationFeedback[]
+  anchor: PieceAnchor
+  category: ClothingCategory
+  budgetRange: [number, number] | null
+  added: string[]
+  onAdd: (key: string) => void
+}) {
+  const taste = useMemo(() => learnTasteProfile(feedback), [feedback])
+  const { items, loading, status, retry } = useLiveProducts((page) => buildPieceQueries(profile, anchor, page, [category], taste.avoids.colours))
+  const visible = useMemo(() => {
+    let list = filterForUser(items, profile, taste, new Set())
+    if (budgetRange) list = list.filter((item) => { const price = parsePrice(item.price); return !!price && price.currency === '₹' && price.amount >= budgetRange[0] && price.amount <= budgetRange[1] })
+    return list.slice(0, 8)
+  }, [items, profile, taste, budgetRange])
+
+  return <section>
+    <h3 className="mb-3 font-display text-xl text-text-primary">{CATEGORY_LABELS[category]}</h3>
+    {status === 'error' || status === 'no-key' ? (
+      <p className="py-4 text-sm text-text-muted">Couldn’t load live picks right now. <button onClick={() => void retry()} className="underline underline-offset-4 hover:text-text-primary">Try again</button></p>
+    ) : !loading && !visible.length ? (
+      <p className="py-4 text-sm text-text-muted">{budgetRange ? 'Nothing here shows a price in your budget.' : 'No live matches this time.'}</p>
+    ) : (
+      <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 xl:grid-cols-4">
+        {visible.map((item) => <OutfitSuggestionCard key={item.id} name={item.title} category={item.retailer} image={<img src={item.imageUrl} alt="" referrerPolicy="no-referrer" loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />} href={item.url} price={item.price ?? undefined} added={added.includes(item.id)} onAdd={() => onAdd(item.id)} />)}
+        {loading && Array.from({ length: 4 }).map((_, i) => <div key={`skeleton-${i}`} className="animate-pulse"><div className="aspect-[3/4] bg-text-primary/8" /><div className="mt-2 h-3 w-3/4 bg-text-primary/8" /></div>)}
+      </div>
+    )}
+  </section>
 }
 
 function ClosetPickCard({ item, selected, onClick }: { item: ClothingItem; selected: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={selected} className="group text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow">
     <div className="relative aspect-[3/4] overflow-hidden bg-tile"><KlosetItemImage item={item} />{selected && <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-text-primary text-warm-cream"><Check size={14} /></span>}</div>
     <p className="mt-2 truncate text-xs text-text-primary">{item.name}</p>
-  </button>
-}
-
-function ShopPickCard({ item, selected, onClick }: { item: CatalogItem; selected: boolean; onClick: () => void }) {
-  return <button onClick={onClick} aria-pressed={selected} className="group text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow">
-    <div className="relative aspect-[3/4] overflow-hidden bg-tile"><img src={item.imageUrl} alt={item.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />{selected && <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-text-primary text-warm-cream"><Check size={14} /></span>}</div>
-    <p className="mt-2 truncate text-xs text-text-primary">{item.name}</p>
-    <p className="truncate text-2xs text-text-muted">{item.brand ?? 'Shop'} · {formatINR(item.estimatedPrice)}</p>
   </button>
 }
 
@@ -167,7 +160,6 @@ function KlosetItemImage({ item }: { item: ClothingItem }) {
 
 function SelectedImage({ picked, anchor }: { picked: Picked; anchor: PieceAnchor }) {
   if (picked.kind === 'upload') return <img src={picked.previewUrl} alt={anchor.name} className="h-full w-full object-cover" />
-  if (picked.kind === 'catalog') return <img src={picked.item.imageUrl} alt={anchor.name} className="h-full w-full object-cover" />
   if (anchor.imageUrl) return <img src={anchor.imageUrl} alt={anchor.name} className="h-full w-full object-cover" />
   return <div className="h-full w-full bg-tile" />
 }

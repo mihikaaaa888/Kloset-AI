@@ -19,9 +19,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { insertItem } from '@/lib/wardrobeService'
 import { useItemImage } from '@/hooks/useItemImage'
 import { CategoryGlyph } from '@/components/wardrobe/categoryVisuals'
-import { ALL_CATALOG_ITEMS } from '@/lib/catalogData'
 import recommendationWorkbookGuide from '../../../recommendation-workbook-guidance.json'
-import type { CatalogItem, ClothingCategory, ClothingItem, WebShopResult } from '@/types'
+import type { ClothingCategory, ClothingItem, WebShopResult } from '@/types'
 
 const SUGGESTED_PROMPTS = [
   'What should I wear today?',
@@ -56,26 +55,6 @@ const FOLLOW_UP_QUESTIONS = new Set([
 ])
 function isFollowUpQuestion(content: string): boolean {
   return FOLLOW_UP_QUESTIONS.has(content.trim())
-}
-
-// Kaia is grounded on a sample of the catalog (see chatService's shopSummary)
-// and will name real pieces by their exact catalog name — matching on that
-// name lets the chat surface an "Add to Kloset" action for anything she
-// suggests, instead of leaving the user to go find it on Discover themselves.
-function findMentionedCatalogItems(content: string): CatalogItem[] {
-  const lower = content.toLowerCase()
-  return ALL_CATALOG_ITEMS.filter((item) => lower.includes(item.name.toLowerCase()))
-}
-
-function removeDuplicateCatalogCopy(content: string, items: CatalogItem[]): string {
-  if (!items.length) return content
-  let cleaned = content
-  for (const item of items) {
-    const escapedName = item.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    cleaned = cleaned.replace(new RegExp(`[^.!?\\n]*\\b${escapedName}\\b[^.!?\\n]*[.!?]?`, 'gi'), '')
-  }
-  cleaned = cleaned.replace(/^\s*(?:#{1,4}\s*)?(?:\*\*)?(?:recommended addition|recommended accessories|you could add)(?:\*\*)?\s*:?.*$/gim, '')
-  return cleaned.replace(/\n{3,}/g, '\n\n').trim()
 }
 
 // Kaia is instructed (see server's system prompt) to end a genuine external
@@ -226,9 +205,6 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
   const [pendingFollowUp, setPendingFollowUp] = useState<FollowUp | null>(null)
   const [otherFollowUp, setOtherFollowUp] = useState(false)
   const [otherFollowUpText, setOtherFollowUpText] = useState('')
-  const [addedCatalogIds, setAddedCatalogIds] = useState<Set<string>>(
-    () => new Set(items.map((i) => i.catalogId).filter(Boolean) as string[])
-  )
   const [addedShopIds, setAddedShopIds] = useState<Set<string>>(() => new Set())
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -422,33 +398,6 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
     })
   }
 
-  const handleAddCatalogItem = (catalogItem: CatalogItem) => {
-    const now = new Date().toISOString()
-    const newItem: ClothingItem = {
-      id: crypto.randomUUID(),
-      name: catalogItem.name,
-      category: catalogItem.category,
-      subcategory: catalogItem.subcategory,
-      imageUrl: catalogItem.imageUrl,
-      imageSource: 'remote',
-      colour: catalogItem.colours,
-      material: catalogItem.material,
-      pattern: catalogItem.pattern,
-      fit: catalogItem.fit,
-      formality: catalogItem.formality,
-      seasons: catalogItem.seasons,
-      occasions: catalogItem.occasions,
-      isFavourite: false,
-      timesWorn: 0,
-      createdAt: now,
-      updatedAt: now,
-      catalogId: catalogItem.id,
-    }
-    addItem(newItem)
-    setAddedCatalogIds((prev) => new Set(prev).add(catalogItem.id))
-    if (user) insertItem(user.id, newItem).catch(() => {})
-  }
-
   const handleAddShopItem = (result: WebShopResult, slot: string | null) => {
     const category = slot ? SLOT_CATEGORY[slot] : undefined
     if (!category) return
@@ -474,7 +423,7 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
   }
 
   const isEmpty = messages.length === 0
-  const hasAddedFromChat = addedCatalogIds.size > 0
+  const hasAddedFromChat = addedShopIds.size > 0
 
   return (
     <div className="flex gap-8 h-full">
@@ -506,8 +455,6 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
               <MessageBubble
                 key={i}
                 message={msg}
-                addedCatalogIds={addedCatalogIds}
-                onAddCatalogItem={handleAddCatalogItem}
                 addedShopIds={addedShopIds}
                 onAddShopItem={handleAddShopItem}
               />
@@ -805,14 +752,10 @@ function MessageContent({ text, shopQueries = [] }: { text: string; shopQueries?
 
 function MessageBubble({
   message,
-  addedCatalogIds,
-  onAddCatalogItem,
   addedShopIds,
   onAddShopItem,
 }: {
   message: ChatMessage
-  addedCatalogIds: Set<string>
-  onAddCatalogItem: (item: CatalogItem) => void
   addedShopIds: Set<string>
   onAddShopItem: (result: WebShopResult, slot: string | null) => void
 }) {
@@ -820,11 +763,8 @@ function MessageBubble({
   const { text: extractedText, queries: extractedQueries } = isUser
     ? { text: message.content, queries: [] as ShopQuery[] }
     : extractShopQueries(message.content)
-  const mentioned = isUser ? [] : findMentionedCatalogItems(extractedText)
-  const text = removeDuplicateCatalogCopy(extractedText, mentioned)
-  const shopQueries = extractedQueries.filter((query) => !mentioned.some((item) =>
-    shoppingItemKey(item.name, query.slot) === shoppingItemKey(query.query, query.slot)
-  ))
+  const text = extractedText
+  const shopQueries = extractedQueries
 
   return (
     <div className={clsx('flex flex-col', isUser ? 'items-end' : 'items-start')}>
@@ -863,35 +803,6 @@ function MessageBubble({
         />
       ))}
 
-      {/* Show one visual card per named catalog recommendation with a quick-add control. */}
-      {mentioned.length > 0 && (
-        <div className="flex gap-2.5 mt-2 ml-9 max-w-[calc(100%-2.25rem)] md:max-w-[80%] overflow-x-auto scrollbar-hide pb-1">
-          {mentioned.map((item) => {
-            const added = addedCatalogIds.has(item.id)
-            return (
-              <div key={item.id} className="group relative w-32 flex-shrink-0 rounded-2xl bg-surface shadow-card overflow-hidden">
-                <img src={item.imageUrl} alt={item.name} loading="lazy" className="w-full aspect-[3/4] object-cover bg-text-primary/5" />
-                <p className="p-2 text-xs font-medium text-text-primary leading-snug line-clamp-2">{item.name}</p>
-                <button
-                  type="button"
-                  onClick={() => !added && onAddCatalogItem(item)}
-                  disabled={added}
-                  aria-label={added ? `${item.name} is in your Kloset` : `Add ${item.name} to Kloset`}
-                  title={added ? 'In your Kloset' : 'Add to Kloset'}
-                  className={clsx(
-                    'absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full shadow-soft transition-opacity',
-                    '[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100',
-                    '[@media(hover:none)]:opacity-100',
-                    added ? 'bg-surface/95 text-text-muted' : 'bg-dark-purple text-butter-yellow hover:bg-deep-purple'
-                  )}
-                >
-                  {added ? <Check size={15} /> : <Plus size={16} />}
-                </button>
-              </div>
-            )
-          })}
-        </div>
-      )}
     </div>
   )
 }

@@ -53,18 +53,25 @@ Start everything with `npm run dev:all` (site on :5173, API on :3001). `npm run 
 - Log with prefixes like `[shop]`, `[webShopService]`; never log tokens, keys or passwords. Production builds strip `console.log`.
 - Don't add a dependency for a few lines of code.
 
-## Shop catalog (Discover → "New pieces")
+## Live shopping (no fixed catalog)
 
-`src/lib/catalogData.ts` holds hand-written items in `RAW_CATALOG_ITEMS`, enriched at load (price, rent price, links).
+Every product in Kloset comes from a live search. There is no hard-coded product list or product photo; don't add one.
 
-- `PRODUCT_PICKS` maps item id → real retailer `image`, product `url` and `brand`. Items without a pick fall back to generic Unsplash photos.
-- Items have `gender: 'women' | 'men'` (default women). `ALL_CATALOG_ITEMS` is everything. Anything that suggests items goes through `catalogForPreference` / `matchesStylePreference`, which follow the profile's `genderStylePreference`: feminine → women's, masculine → men's, androgynous / no preference → both. Clothes, shoes and bags follow it; other accessories always come from both. `CATALOG_ITEMS` (women's) and `MEN_CATALOG_ITEMS` are fixed lists; onboarding uses the men's one.
-- Photos are hotlinked and can break; `ShopItemCard` shows a "Photo unavailable" placeholder on error or for logo-like images.
-- To add items: add the raw entry, find a real product via Exa (`includeDomains` for the retailers), check the image URL returns an image over ~15KB (a 200 alone isn't enough; one "image" was a store logo), then add it to `PRODUCT_PICKS`.
+- `server/app.mjs` `/api/discover-feed`: Exa searches (paced to 8 a second, cached 6 h per query). It can be limited to one brand's own site (`brand-directory.json`, and other brands' sites are looked up). `/api/web-shop-search` serves the stylist chat's links and Complete the Look.
+- `src/lib/liveShop.ts`: `useLiveProducts(queriesFor, { enabled, brand })` is how screens load products. It also has `parsePrice` (for budget filters) and `liveToSnapshot` / `liveToItem` (to put a live piece in an outfit or picker).
+- `src/lib/discoverFeed.ts` builds the search words:
+  - `buildKlosetQueries`: Suggested for you, from what they own and need.
+  - `buildDiscoverQueries`: the taste feed.
+  - `buildSearchQueries`: Shop search plus colour and style filters.
+  - `buildPieceQueries`: Complete a piece.
+  - `buildOnboardingQueries`: onboarding picks.
+- Women's / men's follows `genderStylePreference` via `suggestedGenders` (`src/lib/catalogData.ts`, which now only holds that and the style labels).
+- Live photos are hotlinked and can break or be logos. Cards hide images that fail or look like banners.
+- Items and outfits saved before this change may carry a `catalogId`. They still show, because they keep their own image URL.
 
 ## Environment
 
-Copy `.env.example` to `.env` (gitignored). `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are required or the app is blank. Server-only keys: `GROQ_API_KEY` (photo analysis, chat), `CLAUDE_API_KEY` (chat fallback), `EXA_API_KEY` (shop search, the Shop "From around the web" feed, Add Item → Browse image search and reading product links in Add Item → URL), `PEXELS_API_KEY` (image search), `PHOTOROOM_API_KEY` (cutouts), `SUPABASE_SERVICE_ROLE_KEY` (account deletion, cron), `CRON_SECRET` / `RESEND_API_KEY` / `EMAIL_FROM` (inactive-account job). A new key goes into `.env.example` with an empty value, in the same change that first reads it.
+Copy `.env.example` to `.env` (gitignored). `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are required or the app is blank. Server-only keys: `GROQ_API_KEY` (photo analysis, chat), `CLAUDE_API_KEY` (chat fallback), `EXA_API_KEY` (all live shopping: Shop, Suggested, For You, Complete a piece, the outfit builder, onboarding picks and the chat's product links; also Add Item → Browse image search and reading product links in Add Item → URL), `PEXELS_API_KEY` (image search), `PHOTOROOM_API_KEY` (cutouts), `SUPABASE_SERVICE_ROLE_KEY` (account deletion, cron), `CRON_SECRET` / `RESEND_API_KEY` / `EMAIL_FROM` (inactive-account job). A new key goes into `.env.example` with an empty value, in the same change that first reads it.
 
 ## Working well
 
