@@ -6,6 +6,7 @@ import { clsx } from 'clsx'
 import { ClothingCard } from '@/components/wardrobe/ClothingCard'
 import { useItemImage } from '@/hooks/useItemImage'
 import { AddItemModal } from '@/components/wardrobe/AddItemModal'
+import { WardrobeScanner } from '@/components/wardrobe/WardrobeScanner'
 import { ItemDetailModal } from '@/components/wardrobe/ItemDetailModal'
 import { MyOutfits } from '@/components/saved/MyOutfits'
 import { BuildBoard } from '@/components/build/BuildBoard'
@@ -18,7 +19,7 @@ import { useKlosetStore } from '@/store/klosetStore'
 import { useUserStore } from '@/store/userStore'
 import { deleteImage } from '@/lib/imageStorage'
 import { deleteWithUndo, notify } from '@/store/undoStore'
-import { SAMPLE_WARDROBE_ITEMS } from '@/lib/sampleData'
+import { useSampleKloset } from '@/hooks/useSampleKloset'
 import { useAuth } from '@/contexts/AuthContext'
 import { insertItem, updateItem as dbUpdateItem, deleteItem as dbDeleteItem } from '@/lib/wardrobeService'
 import type { ClothingItem, ClothingCategory } from '@/types'
@@ -51,6 +52,7 @@ export function WardrobePage() {
 
   const [showAddModal, setShowAddModal] = useState(false)
   const [showAddMenu, setShowAddMenu] = useState(false)
+  const [showScanner, setShowScanner] = useState(false)
   const [addPhotoTab, setAddPhotoTab] = useState<'upload' | 'browse'>('upload')
   const [selectedUploadFiles, setSelectedUploadFiles] = useState<File[] | null>(null)
   const [editItem, setEditItem] = useState<ClothingItem | undefined>()
@@ -126,15 +128,10 @@ export function WardrobePage() {
     return result
   }, [closetItems, activeCategory, searchQuery])
 
-  const handleAddSamples = () => {
-    const addedIds: string[] = []
-    for (const sample of SAMPLE_WARDROBE_ITEMS) {
-      const item = { ...sample, id: crypto.randomUUID() }
-      addItem(item)
-      addedIds.push(item.id)
-      if (user) insertItem(user.id, item).catch(() => {})
-    }
-    if (!isMainCollection) addItems(activeCollectionId, addedIds)
+  const sampleKloset = useSampleKloset()
+  const handleAddSamples = async () => {
+    const added = await sampleKloset.load()
+    if (!isMainCollection) addItems(activeCollectionId, added.map((item) => item.id))
   }
 
   const handleSaveItem = (item: ClothingItem) => {
@@ -324,6 +321,7 @@ export function WardrobePage() {
                 <button type="button" aria-haspopup="menu" aria-expanded={showAddMenu} aria-label="More ways to add" onClick={() => setShowAddMenu((visible) => !visible)} className="flex items-center border-l border-warm-cream/25 px-2 sm:px-2.5 transition-colors hover:bg-white/10"><ChevronDown size={13} /></button>
               </div>
               {showAddMenu && <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-48 border border-text-primary/10 bg-surface p-1 shadow-lifted">
+                <button role="menuitem" onClick={() => { setShowAddMenu(false); setShowScanner(true) }} className="block w-full px-3 py-2.5 text-left text-sm font-medium text-text-primary hover:bg-text-primary/5">Scan wardrobe</button>
                 <button role="menuitem" onClick={takePhoto} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Take photo</button>
                 <button role="menuitem" onClick={() => { setShowAddMenu(false); uploadInputRef.current?.click() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Upload</button>
                 <button role="menuitem" onClick={() => { setShowAddMenu(false); openAddBrowse() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Browse</button>
@@ -384,7 +382,7 @@ export function WardrobePage() {
 
         {/* Content */}
         {closetItems.length === 0 ? isMainCollection ? (
-          <EmptyState onAdd={openAdd} onLoadSamples={handleAddSamples} onStyleMe={() => navigate('/stylist')} />
+          <EmptyState onAdd={openAdd} onLoadSamples={() => void handleAddSamples()} onStyleMe={() => navigate('/stylist')} />
         ) : (
           <EmptySubsetState closetName={activeCollection?.name ?? 'this Kloset'} mainKlosetName={mainKlosetName} onAddFromMain={openMainPicker} onAddPiece={openAdd} />
         ) :
@@ -433,6 +431,19 @@ export function WardrobePage() {
         </>}
       </div>
 
+      <WardrobeScanner
+        open={showScanner}
+        onClose={() => setShowScanner(false)}
+        onSaveItems={(scanned) => {
+          // Same as saving one new piece, for each scanned piece.
+          scanned.forEach((item) => {
+            addItem(item)
+            if (!isMainCollection) addItems(activeCollectionId, [item.id])
+            if (user) insertItem(user.id, item).catch(() => {})
+          })
+          notify(`Added ${scanned.length} ${scanned.length === 1 ? 'piece' : 'pieces'} to your Kloset`)
+        }}
+      />
       <AddItemModal
         open={showAddModal}
         onClose={() => { setShowAddModal(false); setEditItem(undefined); setSelectedUploadFiles(null) }}
@@ -519,7 +530,7 @@ function EmptyState({ onAdd, onLoadSamples, onStyleMe }: { onAdd: () => void; on
         <Button variant="outline" size="md" onClick={onStyleMe}>Style me</Button>
         <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs text-text-muted">
           <button onClick={() => navigate('/discover')} className="inline-flex items-center gap-1.5 hover:text-text-primary"><Compass size={14} /> Browse inspiration</button>
-          <button onClick={onLoadSamples} className="hover:text-text-primary">Load sample wardrobe</button>
+          <button onClick={onLoadSamples} className="hover:text-text-primary">Load a sample Kloset</button>
         </div>
       </div>
     </div>

@@ -58,7 +58,7 @@ export function WebDiscoverFeed({
   const queriesFor = useCallback((page: number) => {
     if (suggested) return buildKlosetQueries(profile, wardrobe, tasteAtOpen.current, page)
     if (searching) return buildSearchQueries(profile, search, { category, colours, styles, avoid: tasteAtOpen.current.avoids.colours }, page)
-    return buildDiscoverQueries(profile, tasteAtOpen.current, category, page)
+    return buildDiscoverQueries(profile, tasteAtOpen.current, category, page, wardrobe)
   }, [suggested, searching, profile, wardrobe, search, category, colours, styles])
   const { items, loading, status, loadMore, retry } = useLiveProducts(queriesFor, { enabled: inView, brand })
   useEffect(() => { setShown(SUGGESTED_STEP) }, [items.length === 0])
@@ -91,14 +91,6 @@ export function WebDiscoverFeed({
     })
   }
 
-  const basedOn = useMemo(() => {
-    const t = tasteAtOpen.current
-    return [...new Set([
-      ...t.loves.colours.slice(0, 2), ...(profile?.favouriteColours ?? []).slice(0, 2).map((c) => c.toLowerCase()),
-      ...t.loves.materials.slice(0, 1), ...t.loves.patterns.slice(0, 1), ...(t.patternLean === 'prints' ? ['prints'] : []),
-      ...t.loves.styles.slice(0, 1), ...(profile?.stylePreferences ?? []).slice(0, 2),
-    ])].slice(0, 5)
-  }, [profile])
 
   // Without the search key there's no live feed; for a brand that's all there
   // is to show, so say so instead of leaving the page blank.
@@ -115,13 +107,12 @@ export function WebDiscoverFeed({
         {suggested ? (
           <div>
             <h2 className="font-display text-2xl text-text-primary">Suggested for you</h2>
-            <p className="mt-1 text-xs text-text-muted">Live picks that go with your Kloset and what you dress for.</p>
           </div>
         ) : (
           <div>
             <h2 className="font-display text-2xl text-text-primary">{brand ? `From ${brand}` : search.trim() ? `Results for “${search.trim()}”` : searching ? 'Your filtered picks' : 'From around the web'}</h2>
             <p className="mt-1 text-xs text-text-muted">
-              {brand ? `Live from ${brand}’s site` : searching ? 'Searched live across stores' : 'Live picks from stores everywhere'}{basedOn.length ? <>, chosen using <span className="text-text-primary">{basedOn.map((b) => b.charAt(0).toUpperCase() + b.slice(1)).join(' · ')}</span></> : ', tuned to your taste as you heart and skip'}.
+              {brand ? `Live from ${brand}’s site` : searching ? 'Searched live across stores' : wardrobe.length ? 'Live picks for what your Kloset is missing, what goes with your pieces, and what you’ve hearted' : 'Live picks from stores everywhere, tuned to your taste as you heart and skip'}.
             </p>
           </div>
         )}
@@ -137,7 +128,7 @@ export function WebDiscoverFeed({
         <p className="py-10 text-center text-sm text-text-muted">Couldn’t load live picks right now. <button onClick={() => void retry()} className="underline underline-offset-4 hover:text-text-primary">Try again</button></p>
       ) : (
         <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {visible.map((item) => <WebProductCard key={item.id} item={item} vote={votes[item.id]} onVote={(action) => vote(item, action)} reason={suggested ? item.search.reason : undefined} />)}
+          {visible.map((item) => <WebProductCard key={item.id} item={item} vote={votes[item.id]} onVote={(action) => vote(item, action)} reason={searching ? undefined : item.search.reason} />)}
           {loading && Array.from({ length: visible.length ? 5 : (suggested ? 6 : 10) }).map((_, i) => (
             <div key={`skeleton-${i}`} className="animate-pulse"><div className="aspect-[3/4] bg-text-primary/8" /><div className="mt-2 h-3 w-3/4 bg-text-primary/8" /><div className="mt-1.5 h-3 w-1/3 bg-text-primary/8" /></div>
           ))}

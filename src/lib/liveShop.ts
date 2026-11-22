@@ -49,6 +49,31 @@ export function fetchLiveProducts(queries: DiscoverQuery[], options: { brand?: s
   return request
 }
 
+// ─── Remembered results ───────────────────────────────────────────────────────
+// The last good results for each search are kept on the device, so a failed
+// search (Exa down, out of credits, rate limited, offline) shows what was there
+// before instead of an error. Only the most recent searches are kept.
+const REMEMBER_PREFIX = 'kloset:live:v1:'
+const REMEMBER_INDEX = 'kloset:live:v1:index'
+const REMEMBER_MAX = 40
+
+function rememberResults(key: string, items: LiveProduct[]) {
+  try {
+    localStorage.setItem(REMEMBER_PREFIX + key, JSON.stringify(items.slice(0, 48)))
+    const index = (JSON.parse(localStorage.getItem(REMEMBER_INDEX) ?? '[]') as string[]).filter((entry) => entry !== key)
+    index.push(key)
+    for (const old of index.splice(0, Math.max(0, index.length - REMEMBER_MAX))) localStorage.removeItem(REMEMBER_PREFIX + old)
+    localStorage.setItem(REMEMBER_INDEX, JSON.stringify(index))
+  } catch { /* storage full or blocked: nothing to remember */ }
+}
+
+function recallResults(key: string): LiveProduct[] | null {
+  try {
+    const items = JSON.parse(localStorage.getItem(REMEMBER_PREFIX + key) ?? 'null') as LiveProduct[] | null
+    return Array.isArray(items) && items.length ? items : null
+  } catch { return null }
+}
+
 /**
  * Live products for a screen. `queriesFor(page)` builds the searches; page 0
  * loads when `enabled`, loadMore() fetches the next page. Searches again only
@@ -70,8 +95,25 @@ export function useLiveProducts(queriesFor: (page: number) => DiscoverQuery[], o
     const queries = queriesRef.current(nextPage)
     if (!queries.length) { setItems([]); return }
     setLoading(true)
-    const result = await fetchLiveProducts(queries, { brand })
+    const key = `${brand ?? ''}|${queries.map((q) => q.text).join('|')}`
+    let result = await fetchLiveProducts(queries, { brand })
     if (id !== requestId.current) return
+    if (result.status === 'error' || result.status === 'no-key') {
+      // Show what this search found last time; failing that, try once more
+      // after a short wait before telling anyone it failed.
+      const remembered = recallResults(key)
+      if (remembered) {
+        console.warn('[liveShop] live search failed, showing earlier results')
+        result = { items: remembered, status: 'ok' }
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 4000))
+        if (id !== requestId.current) return
+        result = await fetchLiveProducts(queries, { brand })
+        if (id !== requestId.current) return
+      }
+    } else if (result.status === 'ok' && result.items.length) {
+      rememberResults(key, result.items)
+    }
     setStatus(result.status)
     if (result.status === 'ok') {
       setItems((current) => {

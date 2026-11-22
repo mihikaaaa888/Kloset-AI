@@ -17,6 +17,7 @@ import {
 import { getPhotoUrl } from '@/lib/wardrobeService'
 import { analyzeImage, analyzeImageFromUrl, detectOutfitPieces } from '@/lib/analyzeImage'
 import { apiFetch, apiUrl } from '@/lib/apiUrl'
+import { imageSearchSuggestions } from '@/lib/searchSuggestions'
 import { cropPhotoToBounds, parseOutfitPhoto } from '@/lib/fashionParsing'
 import { deleteWithUndo, finalizeScope } from '@/store/undoStore'
 import type { ClothingAnalysis } from '@/lib/analyzeImage'
@@ -1198,6 +1199,8 @@ function SectionLabel({ children, error, review }: { children: React.ReactNode; 
 
 // ─── Product Search Browser ────────────────────────────────────────────────────
 
+const POPULAR_SEARCHES = ['white t-shirt', 'blue jeans', 'black dress', 'white sneakers', 'blazer', 'tote bag']
+
 const BROWSE_ITEM_QUERIES = [
   ['Tops', 'shirt blouse t-shirt'],
   ['Bottoms', 'trousers jeans skirt'],
@@ -1244,9 +1247,15 @@ function ImageSearchBrowser({
   // or banner once loaded — drop them from the grid.
   const [broken, setBroken] = useState<Set<string>>(new Set())
 
+  // Suggestions while typing; hidden once a search runs.
+  const [typing, setTyping] = useState(false)
+  const suggestions = imageSearchSuggestions(query)
   const search = useCallback(async (q: string, p = 1) => {
-    const searchQuery = q.trim()
+    // One letter isn't worth searching: take the best suggestion instead ("j" → jeans).
+    const searchQuery = q.trim().length < 2 ? imageSearchSuggestions(q)[0] ?? '' : q.trim()
+    setTyping(false)
     if (!searchQuery) return
+    if (searchQuery !== q.trim()) setQuery(searchQuery)
     setLoading(true)
     setError(null)
     try {
@@ -1272,18 +1281,10 @@ function ImageSearchBrowser({
     void search(defaultQuery, 1)
   }, [defaultQuery, search])
 
-  if (noKey) {
-    return (
-      <div className="rounded-2xl border border-text-primary/15 bg-text-primary/3 p-5 text-center space-y-2">
-        <p className="text-sm font-medium text-text-primary">Image search is unavailable</p>
-        <p className="text-xs text-text-muted leading-relaxed">
-          Image browsing is not configured yet. Please try again later.
-        </p>
-      </div>
-    )
-  }
-
   const visible = photos.filter((p) => !broken.has(p.url))
+  // Nothing found (or photo search is off): offer other searches instead of a dead end.
+  const related = imageSearchSuggestions(query.trim().split(' ')[0] ?? '').filter((option) => option !== query.trim())
+  const tryInstead = (related.length ? related : POPULAR_SEARCHES.filter((option) => option !== query.trim())).slice(0, 5)
 
   return (
     <div className="space-y-3">
@@ -1301,11 +1302,28 @@ function ImageSearchBrowser({
           <input
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') search(query, 1) }}
+            onChange={(e) => { setQuery(e.target.value); setTyping(true) }}
+            onKeyDown={(e) => { if (e.key === 'Enter') search(query, 1); if (e.key === 'Escape') setTyping(false) }}
+            onBlur={() => setTimeout(() => setTyping(false), 150)}
+            role="combobox"
+            aria-expanded={typing && suggestions.length > 0}
+            aria-controls="image-search-suggestions"
+            aria-autocomplete="list"
             placeholder="e.g. Dior heels, Zara black blazer…"
             className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-text-primary/20 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-primary/50 bg-surface"
           />
+          {typing && suggestions.length > 0 && (
+            <ul id="image-search-suggestions" role="listbox" className="absolute inset-x-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-text-primary/15 bg-surface py-1 shadow-lifted">
+              {suggestions.map((option) => (
+                <li key={option} role="option" aria-selected={false}>
+                  <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { setQuery(option); void search(option, 1) }} className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-primary hover:bg-text-primary/5">
+                    <Search size={13} className="shrink-0 text-text-muted" />
+                    {option}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <button
           type="button"
@@ -1329,7 +1347,14 @@ function ImageSearchBrowser({
           ))}
         </div>
       ) : visible.length === 0 ? (
-        <p className="text-sm text-text-muted text-center py-6">{query ? `No images found for "${query}" — try a different item or brand.` : 'Choose a category or search for an item or brand.'}</p>
+        tryInstead.length && (query.trim() || noKey) ? (
+          <div className="flex flex-wrap items-center gap-2 py-4">
+            <span className="text-xs text-text-muted">Try</span>
+            {tryInstead.map((option) => (
+              <button key={option} type="button" onClick={() => { setQuery(option); void search(option, 1) }} className="rounded-full border border-text-primary/15 px-3 py-1.5 text-xs text-text-primary transition-colors hover:border-text-primary/35">{option}</button>
+            ))}
+          </div>
+        ) : null
       ) : (
         <div className="grid grid-cols-3 gap-2">
           {visible.map((photo) => (

@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ArrowRight, Check, type LucideIcon } from 'lucide-react'
+import { ArrowRight, Check, Search, type LucideIcon } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { clsx } from 'clsx'
 
@@ -10,17 +10,18 @@ import {
   frequencyOptions,
   genderStyleOptions,
 } from './onboardingData'
-import { CATALOGUE_CATEGORIES } from './catalogueData'
-import { buildOnboardingQueries } from '@/lib/discoverFeed'
-import { useLiveProducts } from '@/lib/liveShop'
+import { buildOnboardingQueries, buildSimilarQueries } from '@/lib/discoverFeed'
+import { fetchLiveProducts, useLiveProducts, type LiveProduct } from '@/lib/liveShop'
+import { ALL_BRANDS, brandKey, canonicalBrand, relatedBrands, searchBrands, suggestedBrandsFor } from '@/lib/brands'
+import { useRecommendationStore } from '@/store/recommendationStore'
 import { SelectChip } from '@/components/ui/SelectChip'
 import { AgeRuler } from '@/components/ui/AgeRuler'
 import { TextInput } from '@/components/ui/TextInput'
 import { Button } from '@/components/ui/Button'
 import { useUserStore } from '@/store/userStore'
 import { useAuth } from '@/contexts/AuthContext'
-import { upsertProfile } from '@/lib/profileService'
-import type { UserProfile, StylePreference, Occasion, AgeRange, RecommendationFrequency, ClothingCategory } from '@/types'
+import { saveFavouriteBrands, upsertProfile } from '@/lib/profileService'
+import type { UserProfile, StylePreference, Occasion, AgeRange, RecommendationFrequency } from '@/types'
 
 // ─── Draft state ─────────────────────────────────────────────────────────────
 
@@ -35,6 +36,7 @@ interface OnboardingDraft {
   favouriteColours: string[]
   avoidColours: string[]
   genderStylePreference: UserProfile['genderStylePreference'] | ''
+  favouriteBrands: string[]
   recommendationFrequency: RecommendationFrequency | ''
 }
 
@@ -49,10 +51,11 @@ const INITIAL_DRAFT: OnboardingDraft = {
   favouriteColours: [],
   avoidColours: [],
   genderStylePreference: '',
+  favouriteBrands: [],
   recommendationFrequency: '',
 }
 
-const TOTAL_STEPS = 6
+const TOTAL_STEPS = 7
 
 function profileToDraft(profile: UserProfile): OnboardingDraft {
   return {
@@ -66,6 +69,7 @@ function profileToDraft(profile: UserProfile): OnboardingDraft {
     favouriteColours: profile.favouriteColours,
     avoidColours: profile.avoidColours,
     genderStylePreference: profile.genderStylePreference ?? '',
+    favouriteBrands: profile.favouriteBrands ?? [],
     recommendationFrequency: profile.recommendationFrequency,
   }
 }
@@ -105,6 +109,9 @@ export function OnboardingPage() {
 function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
   const navigate = useNavigate()
   const setProfile = useUserStore((s) => s.setProfile)
+  const recordFeedbackBatch = useRecommendationStore((s) => s.recordFeedbackBatch)
+  // The live pieces behind each pick, so finishing can record them as likes.
+  const pickedProducts = useRef(new Map<string, LiveProduct>())
   const profile = useUserStore((s) => s.profile)
   const { user } = useAuth()
 
@@ -141,9 +148,10 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
       case 1: return draft.name.trim().length >= 2
       case 2: return draft.ageRange !== ''
       case 3: return draft.occupation !== ''
-      case 4: return true // catalogue selection optional
-      case 5: return true // gender optional
-      case 6: return draft.recommendationFrequency !== ''
+      case 4: return true // gender optional
+      case 5: return true // piece picks optional
+      case 6: return true // brands optional
+      case 7: return draft.recommendationFrequency !== ''
       default: return false
     }
   }
@@ -185,6 +193,7 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
       favouriteColours: draft.favouriteColours,
       avoidColours: draft.avoidColours,
       genderStylePreference: (draft.genderStylePreference as UserProfile['genderStylePreference']) || undefined,
+      favouriteBrands: draft.favouriteBrands,
       // Skipping the survey before this question leaves it empty; default to daily suggestions.
       recommendationFrequency: (draft.recommendationFrequency || 'daily') as RecommendationFrequency,
       onboardingComplete: true,
@@ -192,13 +201,27 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
       updatedAt: now,
     }
     setProfile(newProfile)
+    // Picked pieces teach Kloset their taste, like a heart on Shop (same ids).
+    const picks = draft.styleItemSelections.map((key) => pickedProducts.current.get(key)).filter((p): p is LiveProduct => !!p)
+    if (picks.length) {
+      recordFeedbackBatch(newProfile.id, picks.map((product) => ({
+        id: `like:web:${product.id}:onboarding`,
+        itemId: `web:${product.id}`,
+        action: 'like' as const,
+        traits: product.search.traits,
+        createdAt: now,
+      })))
+    }
     if (user) {
       // On failure the local copy stays and useDataSync re-uploads it on the next load.
       const saved = await upsertProfile(user.id, newProfile)
-      console.log('[onboarding] completed', { savedToServer: saved })
+      const brandsSaved = await saveFavouriteBrands(user.id, draft.favouriteBrands)
+      console.log('[onboarding] completed', { savedToServer: saved, brandsSaved, picks: picks.length, brands: draft.favouriteBrands.length })
     }
     navigate(isEditMode ? '/profile' : '/wardrobe')
   }
+
+  const audience: 'all' | 'women' | 'men' = draft.genderStylePreference === 'masculine' ? 'men' : draft.genderStylePreference === 'feminine' ? 'women' : 'all'
 
   const stepClass = clsx(
     'transition-all duration-200',
@@ -251,16 +274,27 @@ function OnboardingFlow({ isEditMode }: { isEditMode: boolean }) {
           <Step4Catalogue
             selected={draft.styleItemSelections}
             styles={draft.stylePreferences}
-            preferredAudience={draft.genderStylePreference === 'masculine'
-              ? 'men'
-              : draft.genderStylePreference === 'feminine'
-                ? 'women'
-                : 'all'}
-            onToggle={(id) => toggleArray('styleItemSelections', id)}
+            ageRange={draft.ageRange}
+            preferredAudience={audience}
+            onToggle={(key, product) => { pickedProducts.current.set(key, product); toggleArray('styleItemSelections', key) }}
             onNext={goNext}
           />
         )}
         {step === 6 && (
+          <StepBrands
+            selected={draft.favouriteBrands}
+            ageRange={draft.ageRange}
+            audience={audience}
+            onToggle={(brand) => setDraft((d) => ({
+              ...d,
+              favouriteBrands: d.favouriteBrands.some((b) => brandKey(b) === brandKey(brand))
+                ? d.favouriteBrands.filter((b) => brandKey(b) !== brandKey(brand))
+                : [...d.favouriteBrands, brand].slice(-50),
+            }))}
+            onNext={goNext}
+          />
+        )}
+        {step === 7 && (
           <Step10Frequency
             name={draft.name}
             value={draft.recommendationFrequency}
@@ -503,146 +537,210 @@ function Step3Occupation({
 }
 
 // Step 4 — Style Catalogue
-// Live pieces for the styles they chose. A pick is saved as readable text,
-// "tops: Linen shirt", which the stylist chat reads back (chatService).
+// "Pick pieces you'd wear", Spotify-style: photos only, no store names or
+// filters. Tapping a piece adds a few more like it right after it, so the grid
+// follows their taste. Pieces suit their age and mix clothes, shoes and the
+// odd bag. Each pick is kept as readable text for Kaia ("tops: Linen shirt")
+// and recorded as a like when onboarding finishes.
+const pickKey = (item: LiveProduct) => `${item.search.category}: ${item.title.slice(0, 100)}`
+
 function Step4Catalogue({
   selected,
   styles,
+  ageRange,
   preferredAudience,
   onToggle,
   onNext,
 }: {
   selected: string[]
   styles: StylePreference[]
+  ageRange: string
   preferredAudience: 'all' | 'women' | 'men'
-  onToggle: (id: string) => void
+  onToggle: (key: string, product: LiveProduct) => void
   onNext: () => void
 }) {
-  const [activeCategory, setActiveCategory] = useState<ClothingCategory | 'all'>('all')
-  const [activeAudience, setActiveAudience] = useState<'all' | 'women' | 'men'>(preferredAudience)
-  const { items: filtered, loading, status, retry } = useLiveProducts(() => buildOnboardingQueries(styles, activeAudience, activeCategory))
-  const pickKey = (item: (typeof filtered)[number]) => `${item.search.category}: ${item.title.slice(0, 100)}`
+  const { items, loading, status, loadMore, retry } = useLiveProducts((page) => buildOnboardingQueries(styles, preferredAudience, page, ageRange))
+  // Pieces found after a pick, shown right after the piece that was picked.
+  const [moreLike, setMoreLike] = useState<Record<string, LiveProduct[]>>({})
+  const [hidden, setHidden] = useState<Set<string>>(new Set())
+
+  const pickPiece = (item: LiveProduct) => {
+    const key = pickKey(item)
+    const wasPicked = selected.includes(key)
+    onToggle(key, item)
+    if (wasPicked || moreLike[item.id]) return
+    void fetchLiveProducts(buildSimilarQueries(item, preferredAudience)).then(({ items: found }) => {
+      setMoreLike((current) => {
+        const shown = new Set([...items.map((p) => p.id), ...Object.values(current).flat().map((p) => p.id)])
+        return { ...current, [item.id]: found.filter((p) => !shown.has(p.id) && p.id !== item.id).slice(0, 3) }
+      })
+    })
+  }
+
+  // Base pieces with each pick's "more like this" right after it.
+  const grid = items.flatMap((item) => [item, ...(moreLike[item.id] ?? [])]).filter((item) => !hidden.has(item.id))
 
   return (
     <div>
       <StepHeading
-        eyebrow="Style inspiration"
+        eyebrow="Your taste"
         title="Pick pieces you'd wear"
-        subtitle="Pick as many as you like."
+        subtitle="Tap what you like. We'll show more like it."
       />
 
-      {/* Keep the men's inspiration picks easy to discover without hiding the existing range. */}
-      <div className="mb-4 flex flex-wrap gap-2" aria-label="Style inspiration audience">
-        {([
-          ['all', 'All styles'],
-          ['women', 'Women'],
-          ['men', 'Men'],
-        ] as const).map(([audience, label]) => (
-          <button
-            key={audience}
-            type="button"
-            aria-pressed={activeAudience === audience}
-            onClick={() => setActiveAudience(audience)}
-            className={clsx(
-              'rounded-full border px-3 py-1.5 text-xs transition-colors',
-              activeAudience === audience
-                ? 'border-text-primary bg-text-primary text-warm-cream'
-                : 'border-text-primary/15 bg-surface/60 text-text-muted hover:border-text-primary/35 hover:text-text-primary'
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Category tabs */}
-      <div className="flex gap-6 overflow-x-auto pb-2 mb-5" style={{ scrollbarWidth: 'none' }}>
-        {CATALOGUE_CATEGORIES.map((cat) => (
-          <button
-            key={cat.value}
-            onClick={() => setActiveCategory(cat.value)}
-            className={clsx('text-tab flex-shrink-0', activeCategory === cat.value && 'text-tab-active')}
-          >
-            {cat.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Count pill */}
-      {selected.length > 0 && (
-        <div className="flex items-center gap-2 mb-4">
-          <span className="inline-flex items-center gap-1.5 bg-text-primary/10 text-butter-yellow text-xs font-semibold px-3 py-1 rounded-full">
-            <Check size={11} />
-            {selected.length} selected
-          </span>
-        </div>
-      )}
-
-      {/* Grid */}
-      {status !== 'ok' && !filtered.length && (
+      {status !== 'ok' && !grid.length && (
         <p className="py-8 text-center text-sm text-text-muted">Couldn’t load pieces right now. <button type="button" onClick={() => void retry()} className="underline underline-offset-4">Try again</button>, or continue without picks.</p>
       )}
-      {loading && !filtered.length && <p className="py-8 text-center text-sm text-text-muted">Finding pieces in your style…</p>}
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-        {filtered.map((item) => {
-          const key = pickKey(item)
-          const isSelected = selected.includes(key)
+
+      <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 lg:grid-cols-5">
+        {grid.map((item) => {
+          const isSelected = selected.includes(pickKey(item))
           return (
             <button
               key={item.id}
               type="button"
-              onClick={() => onToggle(key)}
+              onClick={() => pickPiece(item)}
+              aria-pressed={isSelected}
+              aria-label={item.title}
               className={clsx(
-                'relative rounded-xl overflow-hidden aspect-[3/4] transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow',
-                isSelected
-                  ? 'ring-2 ring-butter-yellow ring-offset-1 scale-[0.97]'
-                  : 'hover:scale-[0.97] hover:shadow-medium'
+                'relative aspect-[3/4] overflow-hidden rounded-2xl bg-white transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow animate-fade-in',
+                isSelected ? 'scale-[0.95] ring-2 ring-[#355E3B] ring-offset-2 ring-offset-warm-cream' : 'hover:scale-[0.98]'
               )}
             >
               <img
                 src={item.imageUrl}
-                alt={item.title}
+                alt=""
                 referrerPolicy="no-referrer"
                 loading="lazy"
-                className="w-full h-full object-cover object-top"
-                onError={(e) => { (e.currentTarget.closest('button') as HTMLElement | null)?.style.setProperty('display', 'none') }}
+                className="h-full w-full object-cover object-top"
+                onError={() => setHidden((current) => new Set(current).add(item.id))}
+                // Logos and banners load tiny or very wide; product photos don't.
+                onLoad={(e) => { const { naturalWidth: w, naturalHeight: h } = e.currentTarget; if (w < 160 || h < 160 || w / h > 1.6) setHidden((current) => new Set(current).add(item.id)) }}
               />
-              {/* subtle bottom gradient */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
-              {/* label */}
-              <p className="absolute bottom-0 inset-x-0 px-2 pb-2 text-white text-2xs font-medium leading-tight">
-                {item.title}
-              </p>
-              <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-black/40 backdrop-blur-sm text-white/90 text-[9px] tracking-wide">
-                {item.retailer}
-              </span>
-              {/* checkmark */}
               {isSelected && (
-                <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-dark-purple flex items-center justify-center shadow-soft">
-                  <Check size={11} className="text-butter-yellow" />
-                </div>
+                <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[#355E3B] shadow-soft">
+                  <Check size={13} className="text-white" />
+                </span>
               )}
             </button>
           )
         })}
+        {loading && Array.from({ length: grid.length ? 5 : 10 }).map((_, i) => <div key={`skeleton-${i}`} className="aspect-[3/4] animate-pulse rounded-2xl bg-text-primary/8" />)}
       </div>
 
-      {/* Actions */}
+      {!loading && grid.length > 0 && (
+        <div className="mt-6 flex justify-center">
+          <button type="button" onClick={() => void loadMore()} className="rounded-full border border-text-primary/20 px-5 py-2 text-xs text-text-primary hover:bg-text-primary/5">Show more</button>
+        </div>
+      )}
+
       <div className="mt-8 flex flex-col sm:flex-row items-start gap-4">
         <Button size="lg" onClick={onNext} className="group">
-          {selected.length > 0
-            ? `Continue with ${selected.length} picks`
-            : 'Continue'}
-          <ArrowRight
-            size={16}
-            className="transition-transform duration-200 group-hover:translate-x-1"
-          />
+          {selected.length > 0 ? `Continue with ${selected.length} ${selected.length === 1 ? 'pick' : 'picks'}` : 'Continue'}
+          <ArrowRight size={16} className="transition-transform duration-200 group-hover:translate-x-1" />
         </Button>
         {selected.length === 0 && (
-          <button
-            onClick={onNext}
-            className="text-text-muted hover:text-text-primary text-sm underline underline-offset-4 transition-colors"
-          >
+          <button onClick={onNext} className="text-text-muted hover:text-text-primary text-sm underline underline-offset-4 transition-colors">
+            Skip for now
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// "Brands you like": round brand bubbles, Spotify-artist style. Suggestions
+// lean on age and who they shop for; any brand can be searched and picked.
+// Saved as favourite brands, which Shop shows first under its search.
+const BUBBLE_COLOURS = ['#355E3B', '#6B4E71', '#8C5A3C', '#2F4858', '#9C6644', '#4A5D23', '#7A3B4F', '#3D5A80']
+const nameHash = (name: string) => [...name].reduce((sum, ch) => sum + ch.charCodeAt(0), 0)
+const bubbleColour = (name: string) => BUBBLE_COLOURS[nameHash(name) % BUBBLE_COLOURS.length]
+// Bubbles come in three sizes, so the field looks loose and alive rather than a grid.
+const BUBBLE_SIZES = ['h-[84px] w-[84px] text-xs', 'h-[100px] w-[100px] text-sm', 'h-[116px] w-[116px] text-sm']
+
+// Spotify-style brand bubbles: tap one and a few brands like it pop in beside it.
+function StepBrands({
+  selected,
+  ageRange,
+  audience,
+  onToggle,
+  onNext,
+}: {
+  selected: string[]
+  ageRange: string
+  audience: 'all' | 'women' | 'men'
+  onToggle: (brand: string) => void
+  onNext: () => void
+}) {
+  const [query, setQuery] = useState('')
+  // Brands brought in by tapping another, keyed by the brand that was tapped.
+  const [revealed, setRevealed] = useState<Record<string, string[]>>({})
+  const suggested = useMemo(() => suggestedBrandsFor(ageRange, audience), [ageRange, audience])
+  const typed = query.trim()
+  const field = useMemo(() => {
+    const out: string[] = []
+    const add = (name: string) => { if (!out.some((other) => brandKey(other) === brandKey(name))) out.push(name) }
+    // Tapped bubbles stay where they are; brands picked by search join at the front.
+    const searched = selected.filter((brand) => !suggested.some((other) => brandKey(other) === brandKey(brand)))
+    for (const name of [...searched, ...suggested]) {
+      add(name)
+      for (const related of revealed[brandKey(name)] ?? []) add(related)
+    }
+    return out
+  }, [selected, suggested, revealed])
+  const shown = typed
+    ? [...new Set([...searchBrands(typed).slice(0, 15), ...(typed.length >= 2 && !ALL_BRANDS.some((name) => brandKey(name) === brandKey(canonicalBrand(typed))) ? [typed] : [])])]
+    : field
+  const isSelected = (name: string) => selected.some((brand) => brandKey(brand) === brandKey(name))
+  const newlyRevealed = new Set(Object.values(revealed).flat().map(brandKey))
+
+  const tap = (name: string) => {
+    const brand = canonicalBrand(name)
+    if (!isSelected(brand) && !revealed[brandKey(brand)]) {
+      setRevealed((current) => ({ ...current, [brandKey(brand)]: relatedBrands(brand, audience, field) }))
+    }
+    onToggle(brand)
+  }
+
+  return (
+    <div>
+      <StepHeading eyebrow="Your brands" title="Brands you like" subtitle="Tap the ones you like, and we’ll show you more like them." />
+      <label className="mb-6 flex items-center gap-2 border-b border-text-primary/15 px-1 py-2 text-text-muted focus-within:border-text-primary/50">
+        <Search size={15} strokeWidth={1.5} />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} type="search" placeholder="Search any brand" aria-label="Search brands" className="min-w-0 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none" />
+      </label>
+      <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-3 py-2">
+        {shown.map((name) => {
+          const on = isSelected(name)
+          const hash = nameHash(name)
+          return (
+            <div key={name} className="motion-safe:animate-bubble-float" style={{ animationDelay: `${-(hash % 7)}s`, animationDuration: `${6 + (hash % 4)}s` }}>
+              <button
+                type="button"
+                onClick={() => tap(name)}
+                aria-pressed={on}
+                className={clsx(
+                  'relative flex items-center justify-center rounded-full px-2 text-center font-medium leading-tight text-white shadow-soft transition-transform duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow',
+                  BUBBLE_SIZES[on ? 2 : hash % 3],
+                  on ? 'scale-105 ring-2 ring-butter-yellow ring-offset-2 ring-offset-warm-cream' : 'hover:scale-[1.04]',
+                  newlyRevealed.has(brandKey(name)) && 'motion-safe:animate-bubble-in',
+                )}
+                style={{ backgroundColor: bubbleColour(name) }}
+              >
+                <span className="line-clamp-2 break-words">{name}</span>
+                {on && <span className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-butter-yellow text-dark-purple"><Check size={13} /></span>}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+      <div className="mt-8 flex flex-col sm:flex-row items-start gap-4">
+        <Button size="lg" onClick={onNext} className="group">
+          {selected.length > 0 ? `Continue with ${selected.length} ${selected.length === 1 ? 'brand' : 'brands'}` : 'Continue'}
+          <ArrowRight size={16} className="transition-transform duration-200 group-hover:translate-x-1" />
+        </Button>
+        {selected.length === 0 && (
+          <button onClick={onNext} className="text-text-muted hover:text-text-primary text-sm underline underline-offset-4 transition-colors">
             Skip for now
           </button>
         )}

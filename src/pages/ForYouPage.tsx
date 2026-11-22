@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { Heart, RotateCcw, Shirt, ThumbsDown } from 'lucide-react'
-import { buildDiscoverQueries, filterForUser } from '@/lib/discoverFeed'
-import { useLiveProducts, type LiveProduct } from '@/lib/liveShop'
+import { buildDiscoverQueries, buildExploreQueries, buildHunchQueries, filterForUser, pluralPiece, type DiscoverQuery, type TasteHunch } from '@/lib/discoverFeed'
+import { fetchLiveProducts, useLiveProducts, type LiveProduct } from '@/lib/liveShop'
 import { learnTasteProfile, scoreRecommendationFeedback, traitsFromWardrobe, type RecommendationFeedback, type RecommendationTraits } from '@/lib/recommendationFeedback'
 import { useRecommendationStore } from '@/store/recommendationStore'
 import { useUserStore } from '@/store/userStore'
@@ -11,7 +11,7 @@ import { useItemImage } from '@/hooks/useItemImage'
 import type { ClothingCategory, ClothingItem } from '@/types'
 
 type ForYouCard =
-  | { kind: 'shop'; id: string; category: ClothingCategory; item: LiveProduct }
+  | { kind: 'shop'; id: string; category: ClothingCategory; item: LiveProduct; note?: string }
   | { kind: 'pairing'; id: string; category: 'pairing'; items: ClothingItem[]; traits: RecommendationTraits }
 
 const CARD_CATEGORIES: ClothingCategory[] = ['tops', 'bottoms', 'dresses', 'shoes', 'outerwear', 'accessories']
@@ -104,6 +104,44 @@ function mixedDeck(shopCards: ForYouCard[], pairingCards: ForYouCard[]): ForYouC
   return deck
 }
 
+// ─── Checking a hunch ─────────────────────────────────────────────────────────
+// Two likes this visit that share a colour, style, print or kind of piece make a
+// hunch. For You then checks it with a few cards that have it and a few that
+// don't, and every few swipes tries a style they haven't rated yet.
+
+type SessionVote = { action: 'like' | 'dislike'; traits: RecommendationTraits }
+
+function findHunch(votes: SessionVote[], checked: Set<string>): TasteHunch | null {
+  const counts = new Map<string, number>()
+  const bump = (dimension: TasteHunch['dimension'], value: string | undefined, by: number) => {
+    const clean = value?.toLowerCase().trim()
+    if (!clean || clean === 'solid' || clean === 'mixed' || clean.includes('+')) return
+    const key = `${dimension}:${clean}`
+    counts.set(key, (counts.get(key) ?? 0) + by)
+  }
+  for (const vote of votes) {
+    const by = vote.action === 'like' ? 1 : -1
+    bump('colours', vote.traits.colours[0], by)
+    for (const style of vote.traits.aesthetics ?? []) bump('styles', style, by)
+    bump('patterns', typeof vote.traits.pattern === 'string' ? vote.traits.pattern : undefined, by)
+    bump('pieces', vote.traits.subcategory, by)
+  }
+  const best = [...counts.entries()].filter(([key, count]) => count >= 2 && !checked.has(key)).sort((a, b) => b[1] - a[1])[0]
+  if (!best) return null
+  const [dimension, ...rest] = best[0].split(':')
+  return { dimension: dimension as TasteHunch['dimension'], value: rest.join(':') }
+}
+
+/** One card per search (its first find with a photo), in the searches' order. */
+function cardsForSearches(queries: DiscoverQuery[], items: LiveProduct[], taken: Set<string>): ForYouCard[] {
+  return queries.flatMap((query) => {
+    const item = items.find((candidate) => candidate.search.text === query.text && candidate.imageUrl && !taken.has(`web:${candidate.id}`))
+    if (!item) return []
+    taken.add(`web:${item.id}`)
+    return [{ kind: 'shop' as const, id: `web:${item.id}`, category: item.search.category, item, note: query.reason }]
+  })
+}
+
 export function ForYouPage() {
   const profile = useUserStore((state) => state.profile)
   const wardrobe = useWardrobeStore((state) => state.items)
@@ -122,6 +160,12 @@ export function ForYouPage() {
   // swipe would reshuffle the deck); more are fetched as the deck runs low.
   const tasteAtOpen = useRef(taste)
   const live = useLiveProducts((page) => buildDiscoverQueries(profile, tasteAtOpen.current, 'all', page))
+  // Cards that check a hunch or try something new, shown right after the current card.
+  const [probeCards, setProbeCards] = useState<ForYouCard[]>([])
+  const [hunchNote, setHunchNote] = useState<string | null>(null)
+  const sessionVotes = useRef<SessionVote[]>([])
+  const checkedHunches = useRef(new Set<string>())
+  const probing = useRef(false)
   const deck = useMemo(() => {
     const ratedIds = new Set(feedback.filter((event) => event.action !== 'dwell').map((event) => event.itemId))
     const pool = filterForUser(live.items, profile, taste, new Set()).filter((item) => !ratedIds.has(`web:${item.id}`))
@@ -129,8 +173,36 @@ export function ForYouPage() {
     const pairings = wardrobePairings(wardrobe, feedback)
     // Re-ranked after every swipe: each rating changes `feedback`, so the
     // cards still to come move towards what the user likes.
-    return mixedDeck(diverseShop, pairings).filter((entry) => !skipped.has(entry.id))
-  }, [feedback, profile, wardrobe, skipped, live.items, taste])
+    const main = mixedDeck(diverseShop, pairings).filter((entry) => !skipped.has(entry.id))
+    const probes = probeCards.filter((entry) => !ratedIds.has(entry.id) && !skipped.has(entry.id))
+    const probeIds = new Set(probes.map((entry) => entry.id))
+    const rest = main.filter((entry) => !probeIds.has(entry.id))
+    return rest.length ? [rest[0], ...probes, ...rest.slice(1)] : probes
+  }, [feedback, profile, wardrobe, skipped, live.items, taste, probeCards])
+
+  // After a swipe: check a new hunch, or every sixth swipe try untried styles.
+  const probe = (votes: SessionVote[]) => {
+    if (probing.current) return
+    const hunch = findHunch(votes, checkedHunches.current)
+    const explore = !hunch && votes.length > 0 && votes.length % 6 === 0
+    if (!hunch && !explore) return
+    if (hunch) checkedHunches.current.add(`${hunch.dimension}:${hunch.value}`)
+    const queries = hunch
+      ? buildHunchQueries(profile, hunch, taste.avoids.colours, votes.length)
+      : buildExploreQueries(profile, taste, votes.length)
+    if (!queries.length) return
+    probing.current = true
+    console.log('[forYou] checking', hunch ? `${hunch.dimension}: ${hunch.value}` : 'untried styles', queries.length, 'searches')
+    void fetchLiveProducts(queries).then(({ items, status }) => {
+      probing.current = false
+      if (status !== 'ok') return
+      const taken = new Set(deck.map((entry) => entry.id))
+      const cards = cardsForSearches(queries, filterForUser(items, profile, taste, new Set()), taken)
+      if (!cards.length) return
+      setProbeCards((current) => [...cards, ...current])
+      setHunchNote(hunch ? `You seem to like ${hunch.dimension === 'styles' ? `a ${hunch.value} style` : hunch.dimension === 'pieces' ? pluralPiece(hunch.value) : hunch.value}. A few quick ones to be sure.` : 'A few styles you haven’t tried yet. Keep or skip?')
+    })
+  }
   const shopLeft = deck.filter((entry) => entry.kind === 'shop').length
   const { loading: liveLoading, status: liveStatus, loadMore } = live
   // At most a few extra pages per visit, so a run of already-rated finds can't keep searching.
@@ -153,6 +225,11 @@ export function ForYouPage() {
       traits,
       createdAt: new Date().toISOString(),
     })
+    if (card.kind === 'shop') {
+      sessionVotes.current = [...sessionVotes.current, { action, traits }]
+      probe(sessionVotes.current)
+    }
+    if (!deck.slice(1).some((entry) => entry.kind === 'shop' && entry.note)) setHunchNote(null)
     setRatedThisSession((current) => current + 1)
     setDragX(0)
     setSwiping(false)
@@ -200,6 +277,7 @@ export function ForYouPage() {
           <p className="py-20 text-center text-sm text-text-muted">Finding pieces for you…</p>
         ) : card ? (
           <div className="mx-auto max-w-md">
+            {hunchNote && <p className="mb-3 text-center text-sm text-text-primary" aria-live="polite">{hunchNote}</p>}
             <article
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
@@ -217,7 +295,7 @@ export function ForYouPage() {
               <div className={`relative aspect-[4/5] bg-cream-200 ${card.kind === 'pairing' ? 'grid grid-cols-2 gap-0.5' : ''}`}>
                 {card.kind === 'shop' ? (card.item.imageUrl ? <img src={card.item.imageUrl} alt={card.item.title} draggable={false} referrerPolicy="no-referrer" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center"><Shirt size={44} className="text-text-muted/50" /></div>) : card.items.map((wardrobeItem) => <PairingImage key={wardrobeItem.id} item={wardrobeItem} />)}
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-6 pb-6 pt-24 text-white">
-                  {card.kind === 'shop' ? <><p className="text-xs uppercase tracking-[0.2em] text-white/75">Shop · {card.category} · {card.item.retailer}</p><h2 className="mt-2 font-display text-3xl leading-tight">{card.item.title}</h2>{card.item.price && <p className="mt-2 text-sm text-white/80">{card.item.price}</p>}</> : <><p className="text-xs uppercase tracking-[0.2em] text-white/75">From your Kloset · pairing idea</p><div className="mt-2 space-y-1">{card.items.map((wardrobeItem) => <h2 key={wardrobeItem.id} className="font-display text-xl leading-tight">{wardrobeItem.name}</h2>)}</div></>}
+                  {card.kind === 'shop' ? <>{card.note && <p className="mb-2 inline-block rounded-full bg-butter-yellow/90 px-3 py-1 text-xs font-medium text-dark-purple">{card.note}</p>}<p className="text-xs uppercase tracking-[0.2em] text-white/75">Shop · {card.category} · {card.item.retailer}</p><h2 className="mt-2 font-display text-3xl leading-tight">{card.item.title}</h2>{card.item.price && <p className="mt-2 text-sm text-white/80">{card.item.price}</p>}</> : <><p className="text-xs uppercase tracking-[0.2em] text-white/75">From your Kloset · pairing idea</p><div className="mt-2 space-y-1">{card.items.map((wardrobeItem) => <h2 key={wardrobeItem.id} className="font-display text-xl leading-tight">{wardrobeItem.name}</h2>)}</div></>}
                 </div>
                 {dragX > 28 && <span className="absolute left-5 top-5 rounded-lg border-2 border-green-700 bg-white/90 px-3 py-1 text-sm font-bold uppercase tracking-widest text-green-800">Like</span>}
                 {dragX < -28 && <span className="absolute right-5 top-5 rounded-lg border-2 border-rose-700 bg-white/90 px-3 py-1 text-sm font-bold uppercase tracking-widest text-rose-800">Skip</span>}
@@ -235,7 +313,7 @@ export function ForYouPage() {
             <Heart size={28} className="text-deep-purple" />
             <h2 className="mt-4 font-display text-3xl text-text-primary">You’re all caught up</h2>
             <p className="mt-2 text-sm text-text-muted">Your choices are saved and will shape future recommendations.</p>
-            <button onClick={() => { clearSwipeFeedback(userId); setRatedThisSession(0); setSkipped(new Set()) }} className="mt-6 inline-flex items-center gap-2 rounded-full bg-deep-purple px-5 py-3 text-sm text-butter-yellow"><RotateCcw size={16} /> Start over</button>
+            <button onClick={() => { clearSwipeFeedback(userId); setRatedThisSession(0); setSkipped(new Set()); setProbeCards([]); setHunchNote(null); sessionVotes.current = []; checkedHunches.current.clear() }} className="mt-6 inline-flex items-center gap-2 rounded-full bg-deep-purple px-5 py-3 text-sm text-butter-yellow"><RotateCcw size={16} /> Start over</button>
           </div>
         )}
         </div>

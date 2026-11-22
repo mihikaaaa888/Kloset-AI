@@ -149,6 +149,7 @@ function buildProfileSummary(profile: UserProfile | null): string {
   if (!profile) return ''
   const parts: string[] = []
   if (profile.name) parts.push(`Name: ${profile.name}`)
+  if (profile.ageRange) parts.push(`Age range: ${profile.ageRange === 'under-25' ? 'under 25' : profile.ageRange}`)
   if (profile.genderStylePreference) parts.push(`Clothing style preference: ${profile.genderStylePreference}`)
   if (profile.occupation) parts.push(`Occupation: ${profile.occupation}`)
   if (profile.lifestyle) parts.push(`Lifestyle: ${profile.lifestyle}`)

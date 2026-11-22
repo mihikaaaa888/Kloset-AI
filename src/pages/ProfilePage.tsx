@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Archive, Camera, ChevronRight, Cog, ImagePlus, LogOut, Pencil,
+  Archive, Camera, ChevronRight, Cog, ImagePlus, LogOut, Pencil, Shirt, Trash2,
   X, type LucideIcon,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
 import { ThemePicker } from '@/components/ui/ThemeToggle'
 import { useItemImage } from '@/hooks/useItemImage'
+import { useSampleKloset } from '@/hooks/useSampleKloset'
+import { notify } from '@/store/undoStore'
 import { deleteImage, getImage, saveImage } from '@/lib/imageStorage'
 import { compressImage } from '@/lib/imageStorage'
 import { useAuth } from '@/contexts/AuthContext'
@@ -206,10 +208,33 @@ function SettingsSheet({ onClose, onEdit, onRecycle, onSignOut, onClear, email }
       <div className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm">Appearance</p></div><ThemePicker /></div>
       <SettingsRow icon={Pencil} title="Edit style" subtitle="Update your style preferences" onClick={onEdit} />
       <SettingsRow icon={Archive} title="Recycle bin" subtitle="Restore or permanently delete saved outfits" onClick={onRecycle} />
+      <SampleKlosetRow />
       <SettingsRow icon={LogOut} title="Sign out" subtitle={email ?? 'Sign out of your account'} onClick={onSignOut} />
     </div>
     <div className="mt-7 border-t border-red-700/20 pt-5"><button onClick={onClear} className="text-sm text-red-700 underline underline-offset-4 dark:text-red-400">Delete account</button><p className="mt-1 text-xs text-text-muted">Permanently delete your account and its synced data.</p></div>
   </div></ModalShell>
+}
+
+// Load the sample basics, or remove them (only the sample pieces; their own stay).
+// Removing asks for a second tap first.
+function SampleKlosetRow() {
+  const sampleKloset = useSampleKloset()
+  const [confirming, setConfirming] = useState(false)
+  const count = sampleKloset.samples.length
+  if (!count) {
+    return <SettingsRow icon={Shirt} title="Load a sample Kloset" subtitle="A few basics picked for your style, to try outfits with" onClick={() => { void sampleKloset.load(); notify('Sample Kloset added') }} />
+  }
+  return <SettingsRow
+    icon={Trash2}
+    title={confirming ? `Tap again to remove ${count} sample ${count === 1 ? 'piece' : 'pieces'}` : 'Remove sample Kloset'}
+    subtitle={confirming ? 'Your own pieces stay' : `${count} sample ${count === 1 ? 'piece' : 'pieces'} in your Kloset`}
+    onClick={() => {
+      if (!confirming) { setConfirming(true); return }
+      const removed = sampleKloset.remove()
+      setConfirming(false)
+      notify(`Removed ${removed} sample ${removed === 1 ? 'piece' : 'pieces'}`)
+    }}
+  />
 }
 
 function SettingsRow({ icon: Icon, title, subtitle, onClick }: { icon: LucideIcon; title: string; subtitle: string; onClick: () => void }) {

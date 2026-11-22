@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, Shirt, Check } from 'lucide-react'
+import { ArrowLeft, Shirt, Check, Compass, Plus } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { clsx } from 'clsx'
 
@@ -14,6 +14,7 @@ import { useUserStore } from '@/store/userStore'
 import { useOutfitStore } from '@/store/outfitStore'
 import { useRecommendationStore } from '@/store/recommendationStore'
 import { useItemImage } from '@/hooks/useItemImage'
+import { useSampleKloset } from '@/hooks/useSampleKloset'
 import { colourNameToHex, isLightColour } from '@/lib/colourUtils'
 import type { StyleRequest, OutfitSuggestion } from '@/lib/stylist'
 import type { ClothingItem, OutfitItem, Outfit } from '@/types'
@@ -204,7 +205,7 @@ export function StylistPage() {
             )}
 
             {/* Empty wardrobe */}
-            {isEmpty && <EmptyWardrobeState onGoToWardrobe={() => navigate('/wardrobe')} />}
+            {isEmpty && <EmptyWardrobeState onGoToWardrobe={() => navigate('/wardrobe')} onBrowse={() => navigate('/discover')} />}
 
             {/* Error */}
             {error && !isEmpty && (
@@ -359,22 +360,34 @@ function PinnedItemBanner({ item, onClear }: { item: ClothingItem; onClear: () =
 
 // ─── Empty wardrobe ───────────────────────────────────────────────────────────
 
-function EmptyWardrobeState({ onGoToWardrobe }: { onGoToWardrobe: () => void }) {
+// A new Kloset can still try an outfit: load a few sample basics (removable
+// from Profile), add their own pieces, or browse Shop for ideas.
+function EmptyWardrobeState({ onGoToWardrobe, onBrowse }: { onGoToWardrobe: () => void; onBrowse: () => void }) {
+  const sampleKloset = useSampleKloset()
   return (
     <div className="py-16 flex flex-col items-center text-center">
       <div className="w-20 h-20 rounded-3xl bg-text-primary/8 flex items-center justify-center mb-5">
         <Shirt size={32} className="text-text-primary/40" />
       </div>
       <h2 className="font-display text-2xl font-medium text-text-primary mb-2">
-        Your Kloset needs a few pieces first
+        Let’s put together your first outfit
       </h2>
       <p className="text-text-muted text-base max-w-sm leading-relaxed mb-8">
-        Add at least 2 items to your wardrobe and your stylist can start building outfits for you.
+        Start with a few sample basics picked for your style, or add your own pieces. You can remove the samples any time in Profile.
       </p>
-      <Button size="lg" onClick={onGoToWardrobe} className="gap-2">
-        <Shirt size={16} />
-        Go to My Kloset
-      </Button>
+      <div className="flex flex-col items-center gap-3">
+        <Button size="lg" onClick={() => void sampleKloset.load()} className="gap-2">
+          <HangerIcon size={16} />
+          Use a sample Kloset
+        </Button>
+        <Button variant="outline" size="md" onClick={onGoToWardrobe} className="gap-2">
+          <Plus size={15} />
+          Add my own pieces
+        </Button>
+        <button onClick={onBrowse} className="mt-1 inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text-primary">
+          <Compass size={14} /> Browse inspiration
+        </button>
+      </div>
     </div>
   )
 }

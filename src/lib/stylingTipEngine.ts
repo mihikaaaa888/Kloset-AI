@@ -34,7 +34,9 @@ function stem(word: string) {
   if (word.endsWith('s') && !word.endsWith('ss') && word.length > 3) return word.slice(0, -1)
   return word
 }
-function wordsOf(value: string) { return normalize(value).split(' ').filter(Boolean).map(stem) }
+// "T shirt" / "T-shirt" is one garment, not a shirt: shirt tips ("sleeves at the
+// wrist bone") were matching T-shirts.
+function wordsOf(value: string) { return normalize(value).replace(/\bt shirts?\b/g, 'tshirt').split(' ').filter(Boolean).map(stem) }
 
 // Tip vocabulary → words a garment may be called instead.
 const TAG_SYNONYMS: Record<string, string[]> = {

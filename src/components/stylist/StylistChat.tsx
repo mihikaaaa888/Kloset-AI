@@ -1011,6 +1011,8 @@ function ExternalShopSuggestion({
                 <ShopImage src={r.imageUrl} alt={cleanProductTitle(r.title)} />
                 <div className="p-2">
                   <p className="text-xs font-medium text-text-primary leading-snug line-clamp-2">{cleanProductTitle(r.title)}</p>
+                  {/* The search route puts the store's shown price in snippet ("₹1,990"). */}
+                  {/^(₹|\$|£|€)/.test(r.snippet) && <p className="mt-0.5 text-2xs font-semibold text-text-primary">{r.snippet}</p>}
                   <p className="flex items-center gap-1 mt-1 text-2xs text-text-muted group-hover:text-text-primary">
                     View piece <ExternalLink size={10} />
                   </p>

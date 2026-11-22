@@ -9,7 +9,9 @@ import { generateOutfit } from '@/lib/stylist'
 import { getLocalWeather, type LocalWeather } from '@/lib/weather'
 import { WeatherCard } from '@/components/home/WeatherCard'
 import { useRecommendationStore } from '@/store/recommendationStore'
-import { outfitCombinationType, traitsFromWardrobe } from '@/lib/recommendationFeedback'
+import { outfitRatingEvents, traitsFromWardrobe } from '@/lib/recommendationFeedback'
+import { MisfitPicker } from '@/components/stylist/MisfitPicker'
+import { useSampleKloset } from '@/hooks/useSampleKloset'
 import { getDailyStylingTip, rateStylingTip, type StylingTip } from '@/lib/stylingTipEngine'
 
 export function HomePage() {
@@ -103,22 +105,24 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
   const combinationId = recommendedItems.map((item) => item.id).sort().join('|')
   const dailyRating = feedback.find((event) => event.source === 'daily-outfit' && event.combinationId === combinationId)?.action ?? null
 
+  // A thumbs-down swaps today's look, so "what didn't go?" asks about the one just rated.
+  const [dislikedLook, setDislikedLook] = useState<ClothingItem[] | null>(null)
+  const dislikedLookId = dislikedLook?.map((item) => item.id).sort().join('|') ?? ''
+  const dislikedMisfits = feedback
+    .filter((event) => event.source === 'daily-outfit' && event.combinationId === dislikedLookId && event.misfit)
+    .map((event) => event.itemId.slice(event.itemId.lastIndexOf(':') + 1))
+
   function rateDailyOutfit(action: 'like' | 'dislike') {
     if (!stylingTip || !recommendedItems.length) return
     rateStylingTip(userId, stylingTip, action === 'like' ? 'helpful' : 'not-helpful')
     setTipRating(action === 'like' ? 'helpful' : 'not-helpful')
-    const now = new Date().toISOString()
-    const combinationType = outfitCombinationType(recommendedItems)
-    useRecommendationStore.getState().recordFeedbackBatch(userId, recommendedItems.map((item) => ({
-      id: `daily-outfit:${combinationId}:${item.id}`,
-      itemId: `daily-outfit:${combinationId}:${item.id}`,
-      action,
-      traits: traitsFromWardrobe(item),
-      combinationId,
-      combinationType,
-      source: 'daily-outfit' as const,
-      createdAt: now,
-    })))
+    setDislikedLook(action === 'dislike' && recommendedItems.length > 1 ? recommendedItems : null)
+    useRecommendationStore.getState().recordFeedbackBatch(userId, outfitRatingEvents(recommendedItems, action, 'daily-outfit'))
+  }
+
+  function markDailyMisfits(misfitIds: string[]) {
+    if (!dislikedLook) return
+    useRecommendationStore.getState().recordFeedbackBatch(userId, outfitRatingEvents(dislikedLook, 'dislike', 'daily-outfit', { misfitIds }))
   }
 
   useEffect(() => {
@@ -252,7 +256,7 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
           {recommendedItems.length ? (
             recommendedItems.map((item) => <RecommendationPiece key={item.id} item={item} />)
           ) : items.length < 2 ? (
-            <p className="text-sm text-text-muted">Add at least two pieces to your Kloset for a personal outfit recommendation.</p>
+            <StartKloset />
           ) : recommendationLoading || (!weather && !weatherError) ? (
             <p className="text-sm text-text-muted">Putting together today’s look from your Kloset…</p>
           ) : (
@@ -272,6 +276,9 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
                 <button type="button" aria-label="This outfit and styling tip are not helpful" aria-pressed={dailyRating === 'dislike'} onClick={() => rateDailyOutfit('dislike')} className={`rounded-full p-2 transition ${dailyRating === 'dislike' || tipRating === 'not-helpful' ? 'bg-text-primary/10 text-text-primary' : 'text-text-muted hover:bg-text-primary/5'}`}><ThumbsDown size={15} /></button>
               </div>
             </div>
+            {dislikedLook && (
+              <MisfitPicker items={dislikedLook} misfitIds={dislikedMisfits} onChange={markDailyMisfits} title="What didn’t go in that look?" />
+            )}
           </> : <p className="text-sm leading-relaxed text-text-muted">Add a few pieces to your Kloset to get a styling tip.</p>}
           </aside>
           <button
@@ -284,6 +291,22 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
         </div>
       </div>
     </section>
+  )
+}
+
+/** A new Kloset: sample basics for a first outfit, or Shop for ideas. */
+function StartKloset() {
+  const navigate = useNavigate()
+  const sampleKloset = useSampleKloset()
+  return (
+    <div className="text-sm text-text-muted">
+      <p>Today’s outfit needs a couple of pieces. Try it with a few sample basics picked for your style; you can remove them any time in Profile.</p>
+      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+        <button type="button" onClick={() => void sampleKloset.load()} className="rounded-full bg-[#355E3B] px-4 py-2 text-xs font-medium text-[#FFFDD0] hover:bg-[#2B4E31]">Use a sample Kloset</button>
+        <button type="button" onClick={() => navigate('/wardrobe')} className="text-xs underline-offset-4 hover:text-text-primary hover:underline">Add my own</button>
+        <button type="button" onClick={() => navigate('/discover')} className="text-xs underline-offset-4 hover:text-text-primary hover:underline">Browse inspiration</button>
+      </div>
+    </div>
   )
 }
 

@@ -16,7 +16,7 @@ import type { ColourHarmonyConfig } from '@/lib/colourHarmony'
 import { getColourHarmonyConfig } from '@/lib/colourHarmonyService'
 import indianWearGuide from '../../indian-wear-guide.json'
 import recommendationWorkbookGuide from '../../recommendation-workbook-guidance.json'
-import { dislikedOutfitCombinationTypes, outfitCombinationType, scoreRecommendationFeedback, traitsFromWardrobe, feedbackFromFavourites } from '@/lib/recommendationFeedback'
+import { dislikedOutfitCombinationTypes, outfitCombinationType, clashesWithPicked, outfitPairVerdicts, pairingFeedbackScore, scoreRecommendationFeedback, traitsFromWardrobe, feedbackFromFavourites } from '@/lib/recommendationFeedback'
 import type { RecommendationFeedback } from '@/lib/recommendationFeedback'
 
 // ─── Public types ─────────────────────────────────────────────────────────────
@@ -73,6 +73,89 @@ export interface StylistEngineResult {
  * `attempt` increments on "try another" to get a varied result.
  * `pinnedItem` is always included in the outfit (for "Style This Item" mode).
  */
+// A mis-tagged piece (a "Black T shirt" saved as Bottoms) made the engine pair
+// two tops with no bottom. When a name clearly says one kind of piece and the
+// saved category says another, trust the name. Names that mix kinds ("shirt
+// dress") are left as saved.
+const NAME_KINDS: [ClothingItem['category'], RegExp][] = [
+  ['tops', /\b(t[\s-]?shirts?|tees?|shirts?|tops?|blouses?|kurtis?|kurtas?|sweaters?|sweatshirts?|hoodies?|tanks?|camis?|polos?)\b/i],
+  ['bottoms', /\b(pants|trousers|jeans|skirts?|shorts|palazzos?|leggings|joggers|culottes|chinos|salwars?|churidars?)\b/i],
+  ['dresses', /\b(dress(es)?|gowns?|jumpsuits?|sarees?|saris?|lehengas?)\b/i],
+  ['shoes', /\b(shoes?|sneakers?|heels?|boots?|sandals?|loafers?|flats|sambas?|slides?|juttis?|mules?)\b/i],
+]
+const CORRECTABLE = new Set<ClothingItem['category']>(['tops', 'bottoms', 'dresses', 'shoes'])
+export function categoryFromName(item: ClothingItem): ClothingItem['category'] {
+  if (!CORRECTABLE.has(item.category)) return item.category
+  const kinds = NAME_KINDS.filter(([, pattern]) => pattern.test(item.name)).map(([kind]) => kind)
+  return kinds.length === 1 && kinds[0] !== item.category ? kinds[0] : item.category
+}
+function withNamedCategory(item: ClothingItem): ClothingItem {
+  const category = categoryFromName(item)
+  if (category === item.category) return item
+  console.log('[stylist] category from name', { name: item.name, saved: item.category, used: category })
+  return { ...item, category, subcategory: undefined }
+}
+
+// ─── Recently shown ───────────────────────────────────────────────────────────
+// Pieces and whole outfits shown recently in this visit, so "Try another"
+// brings something new instead of cycling through the same few looks.
+const recentPieces: string[] = []
+const recentOutfits: string[] = []
+const RECENT_PIECES = 24
+const RECENT_OUTFITS = 10
+const outfitSignature = (items: ClothingItem[]) => items.map((item) => item.id).sort().join('|')
+// What's been suggested across visits, kept on the device: pieces shown a lot
+// this week step back, and pieces never (or long not) suggested get a lift,
+// so the whole Kloset gets its turn instead of the same few favourites.
+const SHOWN_KEY = 'kloset:shown:v1'
+const DAY_MS = 86_400_000
+let shownHistory: Record<string, number[]> | null = null
+function loadShownHistory(): Record<string, number[]> {
+  if (shownHistory) return shownHistory
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(SHOWN_KEY) ?? '{}')
+    shownHistory = parsed && typeof parsed === 'object' ? parsed as Record<string, number[]> : {}
+  } catch { shownHistory = {} }
+  return shownHistory
+}
+function recordShownHistory(items: ClothingItem[]) {
+  const history = loadShownHistory()
+  const now = Date.now()
+  for (const item of items) {
+    const times = (history[item.id] ?? []).filter((time) => now - time < 30 * DAY_MS)
+    // The same look re-rendered a few minutes later isn't another showing.
+    if (!times.length || now - times[times.length - 1] > 10 * 60_000) times.push(now)
+    history[item.id] = times.slice(-10)
+  }
+  for (const [id, times] of Object.entries(history)) if (!times.some((time) => now - time < 30 * DAY_MS)) delete history[id]
+  try { localStorage.setItem(SHOWN_KEY, JSON.stringify(history)) } catch { /* storage full or blocked */ }
+}
+/** Positive for pieces that haven't had a turn lately, negative for ones shown a lot this week. */
+function freshnessScore(itemId: string): number {
+  const history = loadShownHistory()
+  const times = history[itemId] ?? []
+  const now = Date.now()
+  const thisWeek = times.filter((time) => now - time < 7 * DAY_MS).length
+  if (thisWeek) return -Math.min(6, thisWeek * 1.5)
+  // Only once there's some history to compare against (not on someone's first outfit).
+  if (Object.keys(history).length < 4) return 0
+  return times.length ? 2 : 4
+}
+
+function rememberShown(items: ClothingItem[]) {
+  recordShownHistory(items)
+  recentPieces.push(...items.map((item) => item.id))
+  recentPieces.splice(0, Math.max(0, recentPieces.length - RECENT_PIECES))
+  recentOutfits.push(outfitSignature(items))
+  recentOutfits.splice(0, Math.max(0, recentOutfits.length - RECENT_OUTFITS))
+}
+/** How much a piece is held back for having been shown recently (more for more often and more recently). */
+function recentPenalty(itemId: string): number {
+  let penalty = 0
+  recentPieces.forEach((id, index) => { if (id === itemId) penalty += 3 + (index / RECENT_PIECES) * 3 })
+  return penalty
+}
+
 export async function generateOutfit(
   request: StyleRequest,
   wardrobe: ClothingItem[],
@@ -81,6 +164,8 @@ export async function generateOutfit(
   pinnedItem?: ClothingItem,
   feedback: RecommendationFeedback[] = [],
 ): Promise<StylistEngineResult> {
+  wardrobe = wardrobe.map(withNamedCategory)
+  if (pinnedItem) pinnedItem = withNamedCategory(pinnedItem)
   // Simulate network latency for a realistic feel
   await new Promise((r) => setTimeout(r, 900 + Math.random() * 500))
 
@@ -97,12 +182,18 @@ export async function generateOutfit(
   let lastResult: StylistEngineResult | null = null
   // A disliked daily outfit teaches Kloset to avoid that garment-type pairing.
   // Try several closet rotations to find a different combination first.
-  for (let retry = 0; retry < (dislikedTypes.size ? 16 : 1); retry += 1) {
+  // Also skip an exact repeat of an outfit shown recently in this visit.
+  for (let retry = 0; retry < (dislikedTypes.size ? 16 : 6); retry += 1) {
     const result = mockEngine(request, wardrobe, profile, attempt + retry, pinnedItem, colourConfig, allFeedback)
     lastResult = result
     if (!result.suggestion) continue
-    const signature = outfitCombinationType(result.suggestion.items.map(({ item }) => item))
-    if (!dislikedTypes.has(signature)) return result
+    const pieces = result.suggestion.items.map(({ item }) => item)
+    const signature = outfitCombinationType(pieces)
+    const repeat = recentOutfits.includes(outfitSignature(pieces))
+    if (!dislikedTypes.has(signature) && (!repeat || retry === 5)) {
+      rememberShown(pieces)
+      return result
+    }
   }
   if (lastResult?.suggestion) {
     return { suggestion: null, error: 'I could not find a different outfit pairing from your Kloset yet. Add a few more pieces or adjust your preferences.' }
@@ -304,7 +395,11 @@ function scoreItem(
     }) * 0.4)
   }
   if (item.isFavourite) score += 2
-  score += scoreRecommendationFeedback(traitsFromWardrobe(item), feedback)
+  // Likes and dislikes steer, but can't pin a piece to the top: unbounded,
+  // a few likes made the same pieces win every "Try another".
+  score += Math.max(-8, Math.min(5, scoreRecommendationFeedback(traitsFromWardrobe(item), feedback)))
+  // A disliked outfit means its pieces don't go together: keep those pairs apart.
+  score += pairingFeedbackScore(item, alreadySelected, outfitPairVerdicts(feedback))
 
   // Gently rotate away from pieces worn very recently or very often, so
   // favourites don't crowd out the rest of the closet.
@@ -428,7 +523,7 @@ function pickBest(
 
   const scored = candidates.map((item) => ({
     item,
-    score: scoreItem(item, request, profile, learnedStyle, selected, colourConfig, feedback),
+    score: scoreItem(item, request, profile, learnedStyle, selected, colourConfig, feedback) - recentPenalty(item.id) + freshnessScore(item.id),
   }))
   scored.sort((a, b) => b.score - a.score || a.item.timesWorn - b.item.timesWorn || (a.item.lastWorn ?? '').localeCompare(b.item.lastWorn ?? '') || a.item.id.localeCompare(b.item.id))
   if (scored[0].score <= -100) return null
@@ -437,8 +532,17 @@ function pickBest(
   // ranked list. Capping this list made pieces later in a large wardrobe
   // effectively invisible to daily recommendations.
   const bestScore = scored[0].score
-  const contenders = scored
-    .filter((candidate) => bestScore - candidate.score <= 8)
+  // Close-fit options, and always at least the top few suitable pieces, so
+  // one strongly liked piece can't leave "Try another" with nothing to rotate to.
+  // Pieces rated down together with what's already picked stay out of the
+  // rotation, unless nothing else is left.
+  const verdicts = outfitPairVerdicts(feedback)
+  const pairable = scored.filter((candidate) => !clashesWithPicked(candidate.item.id, selected, verdicts))
+  const pool = pairable.length ? pairable : scored
+  const closeFits = pool.filter((candidate) => bestScore - candidate.score <= 8)
+  const contenders = closeFits.length >= 4
+    ? closeFits
+    : pool.filter((candidate) => candidate.score > -100).slice(0, Math.max(closeFits.length, 4))
   if (category === 'accessories' && contenders.length > 1) {
     return contenders[Math.floor(Math.random() * contenders.length)].item
   }
@@ -584,6 +688,21 @@ function generateWhyItWorks(
   void hasImage
 }
 
+const pieceWords = (item: ClothingItem) => `${item.name} ${item.subcategory ?? ''} ${item.construction ?? ''} ${item.neckline_closure ?? ''}`.toLowerCase()
+// Tops made to sit out or with their own shape (a peplum, a vest, a kurti, a
+// crop top) aren't tucked; loose shirts, tees, blouses and knits are.
+const NOT_TUCKED = /peplum|vest|waistcoat|kurt[ai]|tunic|crop|bodysuit|corset|bustier|tube|bralette|co.?ord|jumpsuit|kaftan|anarkali/
+const TUCKABLE = /shirt|\btee\b|blouse|polo|sweater|knit|jumper|button.?(down|up)/
+function canTuck(item: ClothingItem) {
+  const words = pieceWords(item)
+  return !NOT_TUCKED.test(words) && TUCKABLE.test(words)
+}
+// Only sleeves you can roll: shirts, blouses, knits; not sleeveless or short-sleeve tops.
+function hasRollableSleeves(item: ClothingItem) {
+  const words = pieceWords(item)
+  return !/sleeveless|strappy|cami|tank|vest|halter|tube|short.?sleeve|\btee\b|\bt[- ]?shirt|crop/.test(words) && /shirt|blouse|sweater|knit|jumper|cardigan|long.?sleeve/.test(words)
+}
+
 function generateStylingTips(
   items: ClothingItemResult[],
   request: StyleRequest
@@ -592,7 +711,9 @@ function generateStylingTips(
   const roles = items.map((i) => i.role)
   const garmentDetails = items.map(({ item }) => `${item.name} ${item.subcategory ?? ''} ${item.construction ?? ''}`).join(' ').toLowerCase()
 
-  if (roles.includes('top') && roles.includes('bottom')) {
+  const top = items.find(({ role }) => role === 'top')?.item
+  const bottom = items.find(({ role }) => role === 'bottom')?.item
+  if (top && bottom && canTuck(top)) {
     tips.push('Half-tuck the top for an easy waistline.')
   }
   if (roles.includes('outerwear')) {
@@ -604,11 +725,14 @@ function generateStylingTips(
   if (roles.includes('accessory')) {
     tips.push('Choose one statement accessory.')
   }
-  if (request.occasion === 'work' && roles.includes('top')) {
+  if (request.occasion === 'work' && top && hasRollableSleeves(top)) {
     tips.push('Roll the sleeves for an easy, polished finish.')
   }
   if (request.occasion === 'date-night') {
-    tips.push('Add a light fragrance for a finishing touch.')
+    // About the clothes, not grooming ("add a light fragrance" isn't how to wear it).
+    tips.push(roles.includes('accessory')
+      ? 'Let one piece of jewellery catch the light and keep the rest simple.'
+      : 'Add one statement piece, like earrings or a small bag, to dress it up for the evening.')
   }
   if (request.weather === 'cold') {
     const hasTurtleneck = items.some(({ item }) => item.category === 'tops'
@@ -616,9 +740,6 @@ function generateStylingTips(
     tips.push(hasTurtleneck
       ? 'Wear a coat or roomy jacket over the turtleneck for warmth.'
       : 'Add a warm outer layer on colder days.')
-  }
-  if (request.mood === 'confident') {
-    tips.push('Stand tall; confidence completes the look.')
   }
 
   return tips.slice(0, 3)
@@ -634,7 +755,7 @@ function getStylingNote(
   role: OutfitItemResult['role'],
   occasion: Occasion
 ): string | undefined {
-  if (role === 'top' && occasion === 'work') return 'Tuck neatly or half-tuck for different looks'
+  if (role === 'top' && occasion === 'work' && canTuck(_item)) return 'Tuck neatly or half-tuck for different looks'
   if (role === 'outerwear') return 'Wear open over the outfit'
   if (role === 'shoes') return 'Anchors the whole look'
   if (role === 'accessory') return 'Keep as the single statement'

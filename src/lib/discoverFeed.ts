@@ -1,4 +1,4 @@
-import type { ClothingCategory, ClothingItem, Occasion, UserProfile } from '@/types'
+import type { ClothingCategory, ClothingItem, Occasion, StylePreference, UserProfile } from '@/types'
 import type { RecommendationTraits, TasteProfile } from '@/lib/recommendationFeedback'
 import { suggestedGenders } from '@/lib/catalogData'
 
@@ -60,15 +60,46 @@ function regionWord(): string {
 const lower = (values: string[]) => [...new Set(values.map((v) => v.toLowerCase().trim()).filter(Boolean))]
 const pick = <T,>(list: T[], index: number): T | undefined => (list.length ? list[((index % list.length) + list.length) % list.length] : undefined)
 
+// ─── Age ──────────────────────────────────────────────────────────────────────
+// Searches suit the person's age range: a word that steers the results on
+// some searches, and pieces left out that rarely suit the range.
+const AGE_FIT: Record<string, { word?: string; skip: string[] }> = {
+  'under-18': { word: 'trendy', skip: ['slip dress', 'block heels', 'tailored blazer', 'evening dress'] },
+  '18-24': { word: 'trendy', skip: [] },
+  'under-25': { word: 'trendy', skip: [] },
+  '25-34': { skip: [] },
+  '35-44': { word: 'elegant', skip: ['tank top'] },
+  '45-54': { word: 'elegant', skip: ['tank top', 'cropped jacket', 'shacket', 'slip dress', 'cargo pants'] },
+  '55+': { word: 'classic', skip: ['tank top', 'cropped jacket', 'shacket', 'slip dress', 'cargo pants', 'co-ord set'] },
+}
+const ageFit = (profile: UserProfile | null) => AGE_FIT[profile?.ageRange ?? ''] ?? { skip: [] }
+/** The category's search items for this audience, minus ones that rarely suit their age. */
+function itemsFor(category: ClothingCategory, audience: Audience, profile: UserProfile | null): string[] {
+  const all = ITEMS[category][audience].length ? ITEMS[category][audience] : ITEMS[category].women
+  const skip = new Set(ageFit(profile).skip)
+  const fitting = all.filter((item) => !skip.has(item))
+  return fitting.length ? fitting : all
+}
+
 export function buildDiscoverQueries(
   profile: UserProfile | null,
   taste: TasteProfile,
   category: ClothingCategory | 'all',
   page: number,
+  wardrobe: ClothingItem[] = [],
 ): DiscoverQuery[] {
   const genders = suggestedGenders(profile?.genderStylePreference)
   const avoid = new Set(lower([...(profile?.avoidColours ?? []), ...taste.avoids.colours]))
   const colours = lower([...taste.loves.colours, ...(profile?.favouriteColours ?? [])]).filter((c) => !avoid.has(c))
+  // What their Kloset already has, so the feed suggests what's missing and
+  // what goes with their pieces, not just their favourite colour and style.
+  const ownedWords = new Map<ClothingCategory, string>()
+  for (const owned of wardrobe) ownedWords.set(owned.category, `${ownedWords.get(owned.category) ?? ''} ${owned.name} ${owned.subcategory ?? ''}`.toLowerCase())
+  const owns = (category: ClothingCategory, item: string) => {
+    const noun = item.toLowerCase().split(' ').pop() ?? item
+    return (ownedWords.get(category) ?? '').includes(noun.replace(/s$/, ''))
+  }
+  const anchors = [...wardrobe].sort((a, b) => Number(b.isFavourite) - Number(a.isFavourite) || b.timesWorn - a.timesWorn)
   const textures = lower([
     ...taste.loves.materials,
     ...taste.loves.patterns.map((p) => PATTERN_WORDS[p] ?? p),
@@ -83,23 +114,36 @@ export function buildDiscoverQueries(
 
   // Counts across pages so every colour gets its turn, not just the first two.
   let colourTurn = page * 4
+  let pairsUsed = 0
   const CLOTHING = new Set<ClothingCategory>(['tops', 'bottoms', 'dresses', 'outerwear'])
   return slots.slice(0, 6).map((slotCategory, i) => {
     const n = page * 6 + i
     const audience: Audience = genders.length === 1 ? genders[0] : (n % 2 === 0 ? 'women' : 'men')
-    const options = ITEMS[slotCategory][audience].length ? ITEMS[slotCategory][audience] : ITEMS[slotCategory].women
-    const item = pick(options, n * 7 + page) ?? slotCategory
+    const options = itemsFor(slotCategory, audience, profile)
+    // A third of searches fill a gap (a kind of piece they don't own yet); the
+    // others go with something they own where they can, or follow their taste.
+    const missing = options.filter((option) => !owns(slotCategory, option))
+    // Pairing searches go to the slots something they own pairs with (not every
+    // category does), at most three a page.
+    const partners = anchors.filter((owned) => PAIRS_WITH[owned.category].includes(slotCategory))
+    const role = n % 3 === 1 ? 'gap' : partners.length && pairsUsed < 3 ? 'pair' : 'taste'
+    if (role === 'pair') pairsUsed++
+    const item = pick(role === 'gap' && missing.length ? missing : options, n * 7 + page) ?? slotCategory
+    const partner = role === 'pair' ? pick(partners, n + page) : undefined
     // Not every search carries every preference, so the feed stays varied:
     // colour on two of three, fabric/print on every other, style on every third.
-    const colour = n % 3 !== 2 ? pick(colours, colourTurn++) : undefined
+    const colour = partner
+      ? pairingColour(partner, slotCategory, colours, avoid, n + page)
+      : n % 3 !== 2 ? pick(colours, colourTurn++) : undefined
     // Fabric and print only describe clothes ("striped watch", "linen sneakers" don't make sense).
     const texture = CLOTHING.has(slotCategory) && n % 2 === 0 ? pick(textures, n + page) : undefined
     const style = n % 3 === 0 ? pick(styles, n + page) : undefined
     const gendered = slotCategory !== 'accessories' || BAG_RE.test(item)
-    const words = [gendered ? (audience === 'women' ? "women's" : "men's") : '', colour, texture, item, style, region]
+    const words = [gendered ? (audience === 'women' ? "women's" : "men's") : '', colour, texture, item, style ?? (n % 3 === 1 ? ageFit(profile).word : undefined), region]
     return {
       text: words.filter(Boolean).join(' '),
       category: slotCategory,
+      reason: partner ? `Goes with your ${partner.name}` : role === 'gap' && missing.includes(item) && wardrobe.length ? 'Not in your Kloset yet' : undefined,
       traits: {
         category: slotCategory,
         subcategory: item,
@@ -157,20 +201,36 @@ const OCCASION_ITEMS: Partial<Record<Occasion, { category: ClothingCategory; wom
   casual: { category: 'shoes', women: 'white sneakers', men: 'white sneakers', label: 'everyday' },
 }
 
-/** A colour that goes with the owned piece: a neutral piece takes a favourite colour or a contrasting neutral; a coloured piece takes a neutral. */
-function pairingColour(owned: ClothingItem, favourites: string[], avoid: Set<string>, turn: number): string {
+// Neutrals that suit each kind of piece: denim is for jeans and jackets, not a
+// "denim t-shirt"; shoes and bags come in leather tones, not cream or navy.
+const PAIRING_NEUTRALS: Record<ClothingCategory, { light: string[]; dark: string[] }> = {
+  tops: { light: ['white', 'cream', 'beige', 'grey'], dark: ['black', 'navy', 'brown', 'olive'] },
+  dresses: { light: ['white', 'cream', 'beige'], dark: ['black', 'navy', 'olive'] },
+  bottoms: { light: ['white', 'beige', 'light denim', 'grey'], dark: ['black', 'navy', 'denim', 'olive'] },
+  outerwear: { light: ['beige', 'cream', 'grey', 'light denim'], dark: ['black', 'navy', 'brown', 'denim'] },
+  shoes: { light: ['white', 'tan', 'beige'], dark: ['black', 'brown', 'tan'] },
+  accessories: { light: ['tan', 'beige', 'gold'], dark: ['black', 'brown', 'tan'] },
+}
+
+/**
+ * A colour for a `category` piece that goes with the owned piece: next to a
+ * neutral, a favourite colour or a contrasting neutral; next to a colour, a
+ * neutral. Neutrals are ones that suit the category.
+ */
+function pairingColour(owned: ClothingItem, category: ClothingCategory, favourites: string[], avoid: Set<string>, turn: number): string {
   const ownedColours = lower(owned.colour)
   const ownedNeutral = ownedColours.length === 0 || ownedColours.every((c) => NEUTRAL_COLOURS.has(c))
+  const neutrals = PAIRING_NEUTRALS[category]
+  const usable = (list: string[]) => list.filter((c) => !avoid.has(c) && !ownedColours.includes(c))
   if (ownedNeutral) {
     // Every other search uses a favourite colour, so the row isn't all one colour.
     const favourite = favourites.filter((c) => !ownedColours.includes(c) && !avoid.has(c))
-    if (favourite.length && turn % 2 === 0) return pick(favourite, turn / 2) ?? 'white'
+    if (favourite.length && turn % 2 === 0) return pick(favourite, turn / 2) ?? neutrals.light[0]
     // A contrasting neutral they haven't said no to (swipes teach avoided colours too).
     const dark = ownedColours.some((c) => ['black', 'navy', 'charcoal', 'brown'].includes(c))
-    const contrast = (dark ? ['white', 'cream', 'beige', 'grey'] : ['black', 'navy', 'brown', 'olive']).filter((c) => !avoid.has(c) && !ownedColours.includes(c))
-    return pick(contrast, turn) ?? 'beige'
+    return pick(usable(dark ? neutrals.light : neutrals.dark), turn) ?? neutrals.light[0]
   }
-  return pick(['white', 'black', 'beige', 'denim', 'cream', 'navy'].filter((c) => !avoid.has(c)), turn) ?? 'beige'
+  return pick(usable([...neutrals.light, ...neutrals.dark]), turn) ?? neutrals.light[0]
 }
 
 export function buildKlosetQueries(
@@ -187,11 +247,10 @@ export function buildKlosetQueries(
   const region = regionWord()
   const say = (category: ClothingCategory, colour: string | undefined, item: string, withStyle: boolean) => {
     const gendered = category !== 'accessories' || BAG_RE.test(item)
-    return [gendered ? (audience === 'women' ? "women's" : "men's") : '', colour, item, withStyle ? style : '', region].filter(Boolean).join(' ')
+    return [gendered ? (audience === 'women' ? "women's" : "men's") : '', colour, item, withStyle ? style : ageFit(profile).word, region].filter(Boolean).join(' ')
   }
   const itemFor = (category: ClothingCategory, n: number) => {
-    const options = ITEMS[category][audience].length ? ITEMS[category][audience] : ITEMS[category].women
-    return pick(options, n) ?? category
+    return pick(itemsFor(category, audience, profile), n) ?? category
   }
   // A favourite colour on at most two searches per set; the rest stay neutral.
   let favouriteUses = 0
@@ -214,7 +273,7 @@ export function buildKlosetQueries(
     if (!owned) break
     const partners = PAIRS_WITH[owned.category].filter((c) => genders.includes('women') || c !== 'dresses')
     const category = pick(partners, page + i) ?? 'tops'
-    out.push(query(category, pairingColour(owned, favourites, avoid, page + i), itemFor(category, page * 3 + i), `Goes with your ${owned.name}`, i))
+    out.push(query(category, pairingColour(owned, category, favourites, avoid, page + i), itemFor(category, page * 3 + i), `Goes with your ${owned.name}`, i))
   }
   // 2. Categories they're short on (one piece or none).
   const counts = new Map<ClothingCategory, number>()
@@ -239,9 +298,11 @@ export function buildKlosetQueries(
   const basics: [ClothingCategory, string][] = [['tops', 'white shirt'], ['bottoms', 'straight jeans'], ['outerwear', 'blazer'], ['shoes', 'white sneakers'], ['accessories', audience === 'women' ? 'leather tote bag' : 'leather belt'], ['tops', 'black t-shirt']]
   for (let i = 0; out.length < 6 && i < basics.length; i++) {
     const [category, item] = basics[(page + i) % basics.length]
-    if (!out.some((q) => q.traits.subcategory === item)) out.push(query(category, undefined, item, 'A versatile basic', i))
+    const basic = query(category, undefined, item, 'A versatile basic', i)
+    // Skip a basic that's already searched ("white shirt" as a pairing and as a basic).
+    if (!out.some((q) => q.traits.subcategory === item || q.text === basic.text)) out.push(basic)
   }
-  return out.slice(0, 6)
+  return out.filter((q, i) => out.findIndex((other) => other.text === q.text) === i).slice(0, 6)
 }
 
 
@@ -276,7 +337,7 @@ export function buildSearchQueries(
     const n = page * 4 + i
     const audience = audienceFor(profile, n)
     const category = typed ? (options.category === 'all' ? 'tops' : options.category) : pick(categories, n) ?? 'tops'
-    const item = typed || pick(ITEMS[category][audience].length ? ITEMS[category][audience] : ITEMS[category].women, n + page) || category
+    const item = typed || pick(itemsFor(category, audience, profile), n + page) || category
     const varied = variety.length ? variety[n % variety.length] : undefined
     const colour = pick(colours, n) ?? (varied && ['black', 'white', 'beige'].includes(varied) ? varied : undefined)
     const style = pick(styles, n) ?? (varied && !['black', 'white', 'beige'].includes(varied) ? varied : undefined)
@@ -310,12 +371,11 @@ export function buildPieceQueries(
   return Array.from({ length: Math.max(3, Math.min(6, partners.length * 2)) }, (_, i) => {
     const n = page * 6 + i
     const category = pick(partners, i) ?? 'tops'
-    const options = ITEMS[category][audience].length ? ITEMS[category][audience] : ITEMS[category].women
-    const item = pick(options, n + Math.floor(i / partners.length)) ?? category
-    const colour = pairingColour(owned, favourites, avoid, n)
+    const item = pick(itemsFor(category, audience, profile), n + Math.floor(i / partners.length)) ?? category
+    const colour = pairingColour(owned, category, favourites, avoid, n)
     const gendered = category !== 'accessories' || BAG_RE.test(item)
     return {
-      text: [gendered ? genderWord(audience) : '', colour, item, region].filter(Boolean).join(' '),
+      text: [gendered ? genderWord(audience) : '', colour, item, i === 0 ? ageFit(profile).word : undefined, region].filter(Boolean).join(' '),
       category,
       reason: `Goes with ${anchor.name}`,
       traits: { category, subcategory: item, colours: [colour], occasions: [] },
@@ -325,24 +385,140 @@ export function buildPieceQueries(
 
 // ─── Onboarding: "Pick pieces you'd wear" ─────────────────────────────────────
 
+// A balanced mix (mostly clothes, one pair of shoes, a bag now and then,
+// never a page of watches), suited to their age, and different on every
+// page so "Show more" keeps finding new pieces.
+const ONBOARDING_MIX: Record<Audience, ClothingCategory[]> = {
+  women: ['tops', 'bottoms', 'dresses', 'tops', 'outerwear', 'shoes'],
+  men: ['tops', 'bottoms', 'outerwear', 'tops', 'bottoms', 'shoes'],
+}
+const LOOK_WORDS = ['', 'everyday', 'weekend', 'party', 'office', 'festive']
+
 export function buildOnboardingQueries(
   styles: string[],
   audience: 'all' | 'women' | 'men',
-  category: ClothingCategory | 'all',
+  page: number,
+  ageRange?: string,
 ): DiscoverQuery[] {
   const styleWords = lower(styles.map((s) => STYLE_WORDS[s] ?? s))
-  const categories: ClothingCategory[] = category === 'all' ? ALL_CATEGORIES : [category]
+  const ageProfile = { ageRange } as UserProfile
+  const fit = ageFit(ageProfile)
   const region = regionWord()
-  return Array.from({ length: 6 }, (_, n) => {
+  return Array.from({ length: 6 }, (_, i) => {
+    const n = page * 6 + i
     const who: Audience = audience === 'all' ? (n % 2 === 0 ? 'women' : 'men') : audience
-    const cat = pick(categories.filter((c) => who === 'women' || c !== 'dresses'), n) ?? 'tops'
-    const options = ITEMS[cat][who].length ? ITEMS[cat][who] : ITEMS[cat].women
-    const item = pick(options, n) ?? cat
-    const style = pick(styleWords, n)
+    // Every few pages a bag stands in for the shoes, for some variety.
+    const cat = i === 5 && page % 3 === 2 ? 'accessories' : ONBOARDING_MIX[who][i]
+    const item = cat === 'accessories'
+      ? (who === 'women' ? pick(['tote bag', 'shoulder bag', 'crossbody bag'], page) : pick(['backpack', 'crossbody bag'], page))
+      : pick(itemsFor(cat, who, ageProfile), n + page)
+    const look = pick(styleWords, n) ?? (n % 2 === 0 ? fit.word : pick(LOOK_WORDS, n + page))
     return {
-      text: [genderWord(who), item, style, region].filter(Boolean).join(' '),
+      text: [genderWord(who), item, look, region].filter(Boolean).join(' '),
       category: cat,
-      traits: { category: cat, subcategory: item, colours: [], occasions: [] },
+      traits: { category: cat, subcategory: item ?? cat, colours: [], occasions: [] },
     }
+  })
+}
+
+/** "More like this" after a pick: the same kind of piece, in a few different looks. */
+export function buildSimilarQueries(product: { title: string; search: DiscoverQuery }, audience: 'all' | 'women' | 'men'): DiscoverQuery[] {
+  const { category, subcategory } = product.search.traits
+  const item = subcategory ?? category
+  const who: Audience = audience === 'men' || /\bmen'?s\b/i.test(product.search.text) && !/\bwomen/i.test(product.search.text) ? 'men' : 'women'
+  const region = regionWord()
+  return ['similar', 'trending'].map((look) => ({
+    text: [genderWord(who), item, look, region].filter(Boolean).join(' '),
+    category,
+    traits: { category, subcategory: item, colours: [], occasions: [] },
+  }))
+}
+
+// ─── For You: checking a hunch ────────────────────────────────────────────────
+// When someone likes a couple of cards that share something (a colour, a
+// style, a print, a kind of piece), For You checks it: two searches that have
+// it and two that don't, so the next swipes confirm the leaning or rule it out.
+// Styles they haven't tried yet are mixed in too, to find more to keep or drop.
+
+/** "blouse" → "blouses"; "wide-leg pants" stays as it is. */
+export const pluralPiece = (piece: string) => (/(s|wear)$/.test(piece) ? piece : `${piece}s`)
+
+export type TasteHunch = { dimension: 'colours' | 'styles' | 'patterns' | 'pieces'; value: string }
+
+const CONTRAST_COLOURS: Record<string, string[]> = {
+  neutral: ['red', 'cobalt', 'emerald', 'mustard', 'pink'],
+  bright: ['black', 'white', 'beige', 'navy', 'grey'],
+}
+const HUNCH_ITEMS: [ClothingCategory, Record<Audience, string>][] = [
+  ['tops', { women: 'blouse', men: 'shirt' }],
+  ['outerwear', { women: 'cardigan', men: 'jacket' }],
+  ['bottoms', { women: 'trousers', men: 'chinos' }],
+  ['dresses', { women: 'midi dress', men: 'polo shirt' }],
+]
+
+function hunchQuery(audience: Audience, category: ClothingCategory, words: (string | undefined)[], traits: Partial<RecommendationTraits>, reason: string): DiscoverQuery {
+  const item = words[words.length - 1] ?? category
+  const gendered = category !== 'accessories' || BAG_RE.test(item)
+  const realCategory: ClothingCategory = category === 'dresses' && audience === 'men' ? 'tops' : category
+  return {
+    text: [gendered ? genderWord(audience) : '', ...words, regionWord()].filter(Boolean).join(' '),
+    category: realCategory,
+    reason,
+    traits: { category: realCategory, subcategory: item, colours: [], occasions: [], ...traits },
+  }
+}
+
+/** Two searches with the hunch (to confirm) and two without (to compare), alternating. */
+export function buildHunchQueries(profile: UserProfile | null, hunch: TasteHunch, avoidColours: string[], turn: number): DiscoverQuery[] {
+  const audience = audienceFor(profile, turn)
+  const avoid = new Set(lower([...(profile?.avoidColours ?? []), ...avoidColours]))
+  const items = [pick(HUNCH_ITEMS, turn), pick(HUNCH_ITEMS, turn + 1)].filter((entry): entry is (typeof HUNCH_ITEMS)[number] => !!entry)
+  const confirm: DiscoverQuery[] = []
+  const contrast: DiscoverQuery[] = []
+  const value = hunch.value.toLowerCase()
+  if (hunch.dimension === 'colours') {
+    const others = (NEUTRAL_COLOURS.has(value) ? CONTRAST_COLOURS.neutral : CONTRAST_COLOURS.bright).filter((c) => !avoid.has(c) && c !== value)
+    items.forEach(([category, names], i) => {
+      confirm.push(hunchQuery(audience, category, [value, names[audience]], { colours: [value] }, `Checking: do you like ${value}?`))
+      const other = pick(others, turn + i) ?? 'white'
+      contrast.push(hunchQuery(audience, category, [other, names[audience]], { colours: [other] }, 'Something different, to compare'))
+    })
+  } else if (hunch.dimension === 'styles') {
+    const word = STYLE_WORDS[value] ?? value
+    const otherStyles = Object.keys(STYLE_WORDS).filter((style) => style !== value)
+    items.forEach(([category, names], i) => {
+      confirm.push(hunchQuery(audience, category, [word, names[audience]], { aesthetics: [value as StylePreference] }, `Checking: is ${word} your style?`))
+      const other = pick(otherStyles, turn * 2 + i) ?? 'classic'
+      contrast.push(hunchQuery(audience, category, [STYLE_WORDS[other], names[audience]], { aesthetics: [other as StylePreference] }, 'Something different, to compare'))
+    })
+  } else if (hunch.dimension === 'patterns') {
+    const word = PATTERN_WORDS[value] ?? value
+    const printable = items.filter(([category]) => category !== 'outerwear')
+    for (const [category, names] of printable.length ? printable : items) {
+      confirm.push(hunchQuery(audience, category, [word, names[audience]], { pattern: value }, `Checking: do you like ${word}?`))
+      contrast.push(hunchQuery(audience, category, ['plain', names[audience]], { pattern: 'solid' }, 'Something different, to compare'))
+    }
+  } else {
+    const category = (Object.keys(ITEMS) as ClothingCategory[]).find((c) => ITEMS[c][audience].includes(value) || ITEMS[c].women.includes(value)) ?? 'tops'
+    const siblings = itemsFor(category, audience, profile).filter((item) => item !== value)
+    ;['black', 'beige'].filter((c) => !avoid.has(c)).forEach((colour, i) => {
+      confirm.push(hunchQuery(audience, category, [colour, value], { colours: [colour] }, `Checking: more ${pluralPiece(value)}?`))
+      const other = pick(siblings, turn + i) ?? category
+      contrast.push(hunchQuery(audience, category, [colour, other], { colours: [colour] }, 'Something different, to compare'))
+    })
+  }
+  return confirm.flatMap((query, i) => [query, contrast[i]].filter((q): q is DiscoverQuery => !!q))
+}
+
+/** Styles they haven't shown a view on yet, to try something new. */
+export function buildExploreQueries(profile: UserProfile | null, taste: TasteProfile, turn: number): DiscoverQuery[] {
+  const known = new Set([...taste.loves.styles, ...taste.avoids.styles, ...(profile?.stylePreferences ?? [])])
+  const untried = Object.keys(STYLE_WORDS).filter((style) => !known.has(style))
+  return [0, 1].flatMap((i) => {
+    const style = pick(untried, turn + i)
+    const entry = pick(HUNCH_ITEMS, turn * 3 + i)
+    if (!style || !entry) return []
+    const audience = audienceFor(profile, turn + i)
+    return [hunchQuery(audience, entry[0], [STYLE_WORDS[style], entry[1][audience]], { aesthetics: [style as StylePreference] }, 'New for you: keep or skip?')]
   })
 }

@@ -97,8 +97,20 @@ export default {
         'drawer-in-right': 'drawerInRight 0.3s cubic-bezier(0.32, 0.72, 0, 1) forwards',
         'slide-up': 'slideUp 0.35s cubic-bezier(0.32, 0.72, 0, 1) forwards',
         'scroll-cue': 'scrollCue 2.2s cubic-bezier(0.65, 0, 0.35, 1) infinite',
+        // Onboarding's brand bubbles: a slow drift, and a pop as new ones appear.
+        'bubble-float': 'bubbleFloat 7s ease-in-out infinite',
+        'bubble-in': 'bubbleIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both',
       },
       keyframes: {
+        bubbleFloat: {
+          '0%, 100%': { transform: 'translate(0, 0)' },
+          '33%': { transform: 'translate(3px, -6px)' },
+          '66%': { transform: 'translate(-3px, 4px)' },
+        },
+        bubbleIn: {
+          '0%': { opacity: '0', transform: 'scale(0.3)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        },
         fadeUp: {
           '0%': { opacity: '0', transform: 'translateY(24px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },

@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/Button'
 import { colourNameToHex, isLightColour } from '@/lib/colourUtils'
 import { useItemImage } from '@/hooks/useItemImage'
 import { getDailyStylingTip, rateStylingTip, type StylingTip } from '@/lib/stylingTipEngine'
-import { outfitCombinationType, traitsFromWardrobe } from '@/lib/recommendationFeedback'
+import { outfitRatingEvents } from '@/lib/recommendationFeedback'
+import { MisfitPicker } from '@/components/stylist/MisfitPicker'
 import { useRecommendationStore } from '@/store/recommendationStore'
 import type { OutfitSuggestion, OutfitItemResult } from '@/lib/stylist'
 import type { ClothingItem, UserProfile } from '@/types'
@@ -48,22 +49,14 @@ export function OutfitResult({
   const recordFeedbackBatch = useRecommendationStore((state) => state.recordFeedbackBatch)
   const combinationId = outfitItems.map((item) => item.id).sort().join('|')
   const rating = feedback.find((event) => event.source === 'stylist-outfit' && event.combinationId === combinationId)?.action ?? null
-  const rateOutfit = (action: 'like' | 'dislike') => {
+  const misfitIds = feedback
+    .filter((event) => event.source === 'stylist-outfit' && event.combinationId === combinationId && event.misfit)
+    .map((event) => event.itemId.slice(event.itemId.lastIndexOf(':') + 1))
+  const rateOutfit = (action: 'like' | 'dislike', misfits: string[] = []) => {
     if (!outfitItems.length) return
-    if (workbookTip) rateStylingTip(userId, workbookTip, action === 'like' ? 'helpful' : 'not-helpful')
-    const now = new Date().toISOString()
-    const combinationType = outfitCombinationType(outfitItems)
-    console.log('[stylist] rated outfit', { action, pieces: outfitItems.length, occasion: suggestion.occasion })
-    recordFeedbackBatch(userId, outfitItems.map((item) => ({
-      id: `stylist-outfit:${combinationId}:${item.id}`,
-      itemId: `stylist-outfit:${combinationId}:${item.id}`,
-      action,
-      traits: { ...traitsFromWardrobe(item), occasions: [suggestion.occasion] },
-      combinationId,
-      combinationType,
-      source: 'stylist-outfit' as const,
-      createdAt: now,
-    })))
+    if (workbookTip && action !== rating) rateStylingTip(userId, workbookTip, action === 'like' ? 'helpful' : 'not-helpful')
+    console.log('[stylist] rated outfit', { action, pieces: outfitItems.length, misfits: misfits.length, occasion: suggestion.occasion })
+    recordFeedbackBatch(userId, outfitRatingEvents(outfitItems, action, 'stylist-outfit', { misfitIds: misfits, occasions: [suggestion.occasion] }))
   }
 
   useEffect(() => {
@@ -139,12 +132,17 @@ export function OutfitResult({
         )}
 
         {/* ── Rate it: teaches Kloset what this person likes to wear ── */}
-        <div className="flex items-center justify-between gap-3 rounded-3xl border border-text-primary/10 bg-surface px-5 py-3.5">
-          <span className="text-sm text-text-muted">{rating === 'like' ? 'Glad you like it. Noted for next time.' : rating === 'dislike' ? 'Got it. Less like this next time.' : 'Rate this outfit'}</span>
+        <div className="rounded-3xl border border-text-primary/10 bg-surface px-5 py-3.5">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm text-text-muted">{rating === 'like' ? 'Glad you like it. Noted for next time.' : rating === 'dislike' ? (misfitIds.length ? 'Got it. The rest goes well together.' : 'Got it. Less like this next time.') : 'Rate this outfit'}</span>
           <div className="flex gap-2">
             <button type="button" aria-label="I like this outfit" aria-pressed={rating === 'like'} onClick={() => rateOutfit('like')} className={clsx('rounded-full p-2 transition', rating === 'like' ? 'bg-[#355E3B] text-white' : 'text-text-muted hover:bg-text-primary/5')}><ThumbsUp size={15} /></button>
             <button type="button" aria-label="I don't like this outfit" aria-pressed={rating === 'dislike'} onClick={() => rateOutfit('dislike')} className={clsx('rounded-full p-2 transition', rating === 'dislike' ? 'bg-text-primary/10 text-text-primary' : 'text-text-muted hover:bg-text-primary/5')}><ThumbsDown size={15} /></button>
           </div>
+        </div>
+        {rating === 'dislike' && outfitItems.length > 1 && (
+          <MisfitPicker items={outfitItems} misfitIds={misfitIds} onChange={(ids) => rateOutfit('dislike', ids)} />
+        )}
         </div>
 
         {/* ── Pieces to buy for whatever the Kloset couldn't supply ── */}

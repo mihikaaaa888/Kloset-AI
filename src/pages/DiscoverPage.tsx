@@ -285,6 +285,7 @@ export function DiscoverPage() {
           styles={styles}
           budgetRange={budgetRange}
           sort={sort}
+          wardrobe={wardrobeItems}
         />
         </>}
       </div>
