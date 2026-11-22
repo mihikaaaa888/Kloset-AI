@@ -1,4 +1,5 @@
 import type { ClothingCategory } from '@/types'
+import { reportIssue } from '@/lib/clientReport'
 
 const CLOTHING: Record<string, { category: ClothingCategory; name: string }> = {
   'upper-clothes': { category: 'tops', name: 'Top' },
@@ -39,6 +40,8 @@ export interface ParsedPhoto {
    * clothing in the box to cut out.
    */
   cutoutForBox: (box: [number, number, number, number]) => Promise<Blob | null>
+  /** What the on-device model saw (for problem reports). */
+  foundLabels: string[]
 }
 
 type Segmenter = (image: string) => Promise<SegmentationMask[]>
@@ -94,7 +97,7 @@ function jpegBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 }
 
 /** The pixels of `image` within [left, top, width, height] where `inside` holds, on white. Null if almost nothing is inside. */
-async function cutoutOnWhite(image: HTMLImageElement, inside: Inside, left: number, top: number, width: number, height: number): Promise<Blob | null> {
+async function cutoutOnWhite(image: HTMLImageElement, inside: Inside, left: number, top: number, width: number, height: number, minShare = 0.05): Promise<Blob | null> {
   const mask = document.createElement('canvas')
   mask.width = width
   mask.height = height
@@ -107,7 +110,7 @@ async function cutoutOnWhite(image: HTMLImageElement, inside: Inside, left: numb
     pixels.data[(y * width + x) * 4 + 3] = 255
     count++
   }
-  if (count < width * height * 0.05) return null
+  if (count < width * height * minShare) return null
   maskContext.putImageData(pixels, 0, 0)
 
   // Soften the outline a touch so edges don't look cut with scissors.
@@ -186,13 +189,19 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
   const sourceUrl = URL.createObjectURL(source)
   let masks: SegmentationMask[] = []
   let segmentationAvailable = true
+  const started = performance.now()
+  let stage = 'loading the model'
   try {
-    masks = await (await getSegmenter())(sourceUrl)
+    const segmenter = await getSegmenter()
+    stage = 'reading the photo'
+    masks = await segmenter(sourceUrl)
   } catch (error) {
     // Don't discard a user's upload if the model fails to load. The original
     // photo remains available for manual tagging and can be retried later.
     segmentationAvailable = false
     console.warn('[wardrobe] garment segmentation unavailable; keeping source photo', error)
+    // Tell the server log what broke and on what device (phones especially).
+    reportIssue('splitter', error, { stage, seconds: Math.round((performance.now() - started) / 100) / 10, width: image.naturalWidth, height: image.naturalHeight })
   } finally {
     URL.revokeObjectURL(sourceUrl)
   }
@@ -272,10 +281,12 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
     const right = Math.min(inputWidth, Math.ceil((x2 / 1000) * inputWidth))
     const bottom = Math.min(inputHeight, Math.ceil((y2 / 1000) * inputHeight))
     if (right - left < 8 || bottom - top < 8) return null
-    return cutoutOnWhite(image, (x, y) => clothingMasks.some(({ mask }) => maskAt(mask, x, y, inputWidth, inputHeight)), left, top, right - left, bottom - top)
+    // A box from cloud detection must really hold clothing (a fifth of it at
+    // least); boxes that landed on the wall or floor are dropped.
+    return cutoutOnWhite(image, (x, y) => clothingMasks.some(({ mask }) => maskAt(mask, x, y, inputWidth, inputHeight)), left, top, right - left, bottom - top, 0.2)
   }
 
-  return { garments: pieces, containsPerson: segmentationAvailable && containsPerson, segmentationAvailable, sourceFallback: source, cutoutForBox }
+  return { garments: pieces, containsPerson: segmentationAvailable && containsPerson, segmentationAvailable, sourceFallback: source, cutoutForBox, foundLabels: masks.map((mask) => mask.label) }
 }
 
 /** Crop a detected garment from the original photo using normalized 0–1000 boxes. */

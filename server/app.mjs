@@ -113,10 +113,24 @@ async function requireUser(req, res, next) {
   next()
 }
 app.use(
-  ['/api/search-images', '/api/product-image', '/api/discover-feed', '/api/analyze-image', '/api/detect-outfit-pieces', '/api/analyze-image-url', '/api/refine-garment-image', '/api/remove-background', '/api/web-shop-search', '/api/chat'],
+  ['/api/search-images', '/api/product-image', '/api/discover-feed', '/api/analyze-image', '/api/detect-outfit-pieces', '/api/analyze-image-url', '/api/refine-garment-image', '/api/remove-background', '/api/web-shop-search', '/api/chat', '/api/client-report'],
   requireUser,
 )
 
+
+// ─── Client reports ───────────────────────────────────────────────────────────
+// A short note from the app when something fails on the person's device (the
+// on-device clothing splitter on a phone), so it shows up in the server logs.
+// Signed-in only, capped, plain text; never photos or personal details.
+const clip = (value, max) => String(value ?? '').replace(/[\r\n]+/g, ' ').slice(0, max)
+app.post('/api/client-report', (req, res) => {
+  const { where, message, details } = req.body ?? {}
+  if (typeof where !== 'string' || !where.trim()) return res.status(400).json({ error: 'Missing report.' })
+  let detailText = ''
+  try { detailText = clip(JSON.stringify(details ?? {}), 600) } catch { detailText = '' }
+  console.warn(`[client-report] ${clip(where, 40)}: ${clip(message, 400)} | ${detailText} | ${clip(req.headers['user-agent'], 200)}`)
+  return res.json({ ok: true })
+})
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 

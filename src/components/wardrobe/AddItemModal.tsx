@@ -18,7 +18,8 @@ import { getPhotoUrl } from '@/lib/wardrobeService'
 import { analyzeImage, analyzeImageFromUrl, detectOutfitPieces } from '@/lib/analyzeImage'
 import { apiFetch, apiUrl } from '@/lib/apiUrl'
 import { imageSearchSuggestions } from '@/lib/searchSuggestions'
-import { cropPhotoToBounds, parseOutfitPhoto } from '@/lib/fashionParsing'
+import { reportIssue } from '@/lib/clientReport'
+import { parseOutfitPhoto } from '@/lib/fashionParsing'
 import { deleteWithUndo, finalizeScope } from '@/store/undoStore'
 import type { ClothingAnalysis } from '@/lib/analyzeImage'
 import type { ClothingItem, ClothingCategory, Pattern, Season, Occasion } from '@/types'
@@ -298,19 +299,26 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
         // Ask vision to find separate pieces when local detection found fewer
         // than two garments, and prefer its crops only when it found more.
         if (parsed.garments.length < 2) {
+          // Ran but found fewer than two pieces: note what it saw, to compare phones with computers.
+          if (parsed.segmentationAvailable) reportIssue('splitter-few', `found ${parsed.garments.length}`, { labels: parsed.foundLabels.join(',').slice(0, 200) })
           setImageProcessingStep('Finding separate clothing pieces…')
           try {
             const detected = await detectOutfitPieces(compressed, (seconds) => {
               setImageProcessingStep(`Photo scanning is busy. Trying again in ${seconds}s…`)
             })
             if (detected.length > parsed.garments.length) {
-              const crops = await Promise.all(detected.map(async (piece) => ({
-                // Cut out along the clothing outline where there is one; a plain crop otherwise.
-                blob: await parsed.cutoutForBox(piece.box) ?? await cropPhotoToBounds(compressed, piece.box),
-                category: VALID_CATEGORIES.has(piece.category) ? piece.category as ClothingCategory : undefined,
-                name: piece.name,
-              })))
-              if (crops.length) pieces = crops
+              // Keep only boxes the on-device clothing outline confirms, cut out
+              // on white. Cloud boxes can land beside the person (a wall, a
+              // mirror); a plain crop of those is never shown.
+              const confirmed = (await Promise.all(detected.map(async (piece) => {
+                const blob = await parsed.cutoutForBox(piece.box)
+                return blob ? { blob, category: VALID_CATEGORIES.has(piece.category) ? piece.category as ClothingCategory : undefined, name: piece.name } : null
+              }))).filter((piece): piece is NonNullable<typeof piece> => !!piece)
+              if (confirmed.length > parsed.garments.length) pieces = confirmed
+              else {
+                console.warn('[wardrobe] cloud pieces did not line up with the clothing; keeping on-device pieces', { cloud: detected.length, confirmed: confirmed.length, onDevice: parsed.garments.length })
+                reportIssue('splitter-cloud-boxes', 'cloud boxes did not line up', { cloud: detected.length, confirmed: confirmed.length, onDevice: parsed.garments.length, boxes: detected.map((piece) => piece.box.join(' ')).join(' / ').slice(0, 200) })
+              }
             }
           } catch (error) {
             console.warn('[wardrobe] cloud garment detection failed; keeping on-device results', error)
