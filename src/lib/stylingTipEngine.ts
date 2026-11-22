@@ -86,7 +86,12 @@ function namedGarmentsFit(tip: StylingTip, outfit: ClothingItem[]) {
   })
 }
 
+// The outfit's tip box is "how to wear it": styling advice only. Care
+// ("air out juttis"), practical ("break shoes in") and wardrobe-building tips
+// are true but aren't about wearing this outfit.
+const NOT_STYLING = new Set(['care', 'practical', 'wardrobe building'])
 function isOutfitSpecificTip(tip: StylingTip) {
+  if (NOT_STYLING.has(normalize(tip.category))) return false
   if (tip.trigger.startsWith('T_OUTFIT_')) return true
   return tip.trigger === 'T_GARMENT' && normalize(tip.appliesTo) !== 'any'
 }

@@ -52,7 +52,9 @@ export function OutfitResult({
       [suggestion.occasion],
     ))
   }, [userId, outfitItemKey, wardrobe, suggestion.id, suggestion.weather, suggestion.occasion, profile])
-  const displayedTips = workbookTip ? [workbookTip.text] : stylingTips
+  // The engine's tips are about this exact outfit ("Half-tuck the top"), so they
+  // lead; a matching workbook tip adds to them instead of replacing them.
+  const displayedTips = [...new Set([...stylingTips, ...(workbookTip ? [workbookTip.text] : [])])].slice(0, 3)
 
   return (
     <div className="animate-fade-up grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-start">
