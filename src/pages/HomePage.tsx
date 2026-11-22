@@ -12,6 +12,7 @@ import { useRecommendationStore } from '@/store/recommendationStore'
 import { outfitRatingEvents, traitsFromWardrobe } from '@/lib/recommendationFeedback'
 import { MisfitPicker } from '@/components/stylist/MisfitPicker'
 import { useSampleKloset } from '@/hooks/useSampleKloset'
+import { useOutfitStore } from '@/store/outfitStore'
 import { getDailyStylingTip, rateStylingTip, type StylingTip } from '@/lib/stylingTipEngine'
 
 export function HomePage() {
@@ -178,7 +179,7 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
 
     setRecommendationLoading(true)
     const dailyAttempt = stableHash(`${profile?.id ?? profile?.name ?? 'guest'}|${dayKey}|${wardrobeKey}`)
-    void generateOutfit({ occasion: 'casual', weather: weather?.condition ?? 'warm', mood: 'relaxed' }, items, profile, dailyAttempt, undefined, rankingFeedback)
+    void generateOutfit({ occasion: 'casual', weather: weather?.condition ?? 'warm', mood: 'relaxed' }, items, profile, dailyAttempt, undefined, rankingFeedback, [], useOutfitStore.getState().savedOutfits)
       .then(({ suggestion }) => {
         if (cancelled) return
         const itemIds = suggestion?.items.map(({ item }) => item.id) ?? []

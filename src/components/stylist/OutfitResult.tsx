@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { RefreshCw, BookMarked, Check, Shirt, ThumbsUp, ThumbsDown } from 'lucide-react'
+import { RefreshCw, BookMarked, Check, Shirt, ThumbsUp, ThumbsDown, X } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { CompleteTheLook } from '@/components/stylist/CompleteTheLook'
 import { clsx } from 'clsx'
@@ -21,6 +21,8 @@ interface OutfitResultProps {
   suggestion: OutfitSuggestion
   onTryAnother: () => void
   onSave: () => void
+  /** Tapping Saved again takes the outfit out of saved outfits. */
+  onUnsave?: () => void
   isSaved: boolean
   isRegenerating: boolean
   userId: string
@@ -32,6 +34,7 @@ export function OutfitResult({
   suggestion,
   onTryAnother,
   onSave,
+  onUnsave,
   isSaved,
   isRegenerating,
   userId,
@@ -99,15 +102,19 @@ export function OutfitResult({
           <Button
             variant={isSaved ? 'secondary' : 'primary'}
             size="md"
-            onClick={onSave}
-            disabled={isSaved}
+            onClick={isSaved ? onUnsave : onSave}
+            disabled={isSaved && !onUnsave}
             fullWidth
-            className="gap-1 px-2 text-[10px] tracking-normal whitespace-nowrap sm:text-xs"
+            aria-pressed={isSaved}
+            title={isSaved ? 'Saved. Tap to unsave' : undefined}
+            className="group gap-1 px-2 text-[10px] tracking-normal whitespace-nowrap sm:text-xs"
           >
             {isSaved ? (
               <>
-                <Check size={16} />
-                Saved
+                <Check size={16} className="group-hover:hidden" />
+                <X size={16} className="hidden group-hover:block" />
+                <span className="group-hover:hidden">Saved</span>
+                <span className="hidden group-hover:inline">Unsave</span>
               </>
             ) : (
               <>

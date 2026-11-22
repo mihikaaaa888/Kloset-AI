@@ -8,7 +8,7 @@
  * without touching any component code.
  */
 
-import type { ClothingItem, Occasion, StylePreference, Season, UserProfile } from '@/types'
+import type { ClothingItem, Occasion, Outfit, StylePreference, Season, UserProfile } from '@/types'
 import { suggestedGenders } from '@/lib/catalogData'
 import { affinityForLearnedTraits } from '@/lib/styleLearning'
 import { learnStyleFromWardrobe } from '@/lib/styleLearning'
@@ -162,6 +162,39 @@ function recentPenalty(itemId: string): number {
 // while anything else in their category can stand in. Set for one call only.
 let sittingOut = new Set<string>()
 
+// Saved outfits feed What to wear: their pieces get a lift, the pairings in
+// them count as ones that work, and now and then (every third try) a whole
+// saved outfit for the occasion comes back. Set for one call only.
+let savedPieces = new Set<string>()
+let savedPairs = new Set<string>()
+let favoured = new Set<string>()
+const pairOf = (a: string, b: string) => (a < b ? `${a}+${b}` : `${b}+${a}`)
+const SAME_KIND: Partial<Record<Occasion, Occasion[]>> = {
+  casual: ['casual', 'weekend', 'travel'], weekend: ['weekend', 'casual'], travel: ['travel', 'casual'],
+  formal: ['formal', 'special-event'], 'special-event': ['special-event', 'formal'],
+}
+
+function prepareSavedOutfits(saved: Outfit[], wardrobe: ClothingItem[], request: StyleRequest, attempt: number, avoid: Set<string>) {
+  const owned = new Map(wardrobe.map((item) => [item.id, item]))
+  const usable = saved
+    .filter((outfit) => !outfit.trashedAt)
+    .map((outfit) => outfit.items.filter((entry) => !entry.snapshot && owned.has(entry.itemId)).map((entry) => entry.itemId))
+    .filter((ids) => ids.length >= 2)
+  savedPieces = new Set(usable.flat())
+  savedPairs = new Set(usable.flatMap((ids) => ids.flatMap((a, i) => ids.slice(i + 1).map((b) => pairOf(a, b)))))
+  favoured = new Set()
+  if (attempt % 3 !== 2) return
+  // One saved outfit for this kind of occasion that hasn't been on screen lately.
+  const kinds = SAME_KIND[request.occasion] ?? [request.occasion]
+  const fits = saved.filter((outfit) => !outfit.trashedAt && kinds.includes(outfit.occasion))
+    .map((outfit) => outfit.items.filter((entry) => !entry.snapshot && owned.has(entry.itemId)).map((entry) => entry.itemId))
+    .filter((ids) => ids.length >= 2
+      && ids.every((id) => !avoid.has(id) && !unsuitableFor(owned.get(id) as ClothingItem, request.occasion))
+      && !recentOutfits.includes([...ids].sort().join('|')))
+  const choice = fits[attempt % Math.max(1, fits.length)]
+  if (choice) favoured = new Set(choice)
+}
+
 export async function generateOutfit(
   request: StyleRequest,
   wardrobe: ClothingItem[],
@@ -171,6 +204,8 @@ export async function generateOutfit(
   feedback: RecommendationFeedback[] = [],
   /** Pieces to leave out where possible (the outfit "Try another" is replacing). */
   avoidItemIds: string[] = [],
+  /** The person's saved outfits, to draw on (see prepareSavedOutfits). */
+  savedOutfits: Outfit[] = [],
 ): Promise<StylistEngineResult> {
   wardrobe = wardrobe.map(withNamedCategory)
   if (pinnedItem) pinnedItem = withNamedCategory(pinnedItem)
@@ -192,6 +227,7 @@ export async function generateOutfit(
   // Try several closet rotations to find a different combination first.
   // Also skip an exact repeat of an outfit shown recently in this visit.
   sittingOut = new Set(avoidItemIds.filter((id) => id !== pinnedItem?.id))
+  prepareSavedOutfits(savedOutfits, wardrobe, request, attempt, sittingOut)
   try {
   for (let retry = 0; retry < (dislikedTypes.size ? 16 : 6); retry += 1) {
     const result = mockEngine(request, wardrobe, profile, attempt + retry, pinnedItem, colourConfig, allFeedback)
@@ -207,6 +243,9 @@ export async function generateOutfit(
   }
   } finally {
     sittingOut = new Set()
+    savedPieces = new Set()
+    savedPairs = new Set()
+    favoured = new Set()
   }
   if (lastResult?.suggestion) {
     return { suggestion: null, error: 'I could not find a different outfit pairing from your Kloset yet. Add a few more pieces or adjust your preferences.' }
@@ -313,16 +352,17 @@ function unsuitableFor(item: ClothingItem, occasion: Occasion): boolean {
 
 // How much a piece is held back for a casual look. Read from the piece itself,
 // not only its tags: photo tagging can call a tailored waistcoat "casual".
-// A tailored (button, non-knit) vest or waistcoat, evening fabrics and party
-// pieces step well back; formal-tagged pieces a little. Knit vests and
-// blazers stay: they're easy to wear casually.
+// Vests and waistcoats (knit ones too: they're cut like a waistcoat), evening
+// fabrics and party pieces step well back; formal-tagged pieces a little.
+// Puffer, denim and sweater vests and blazers stay: they're easy to wear casually.
 const TAILORED_VEST = /waistcoat|button(ed)?[- ]?(up |down )?vest|tailored vest|suit vest|vest top/
-const CASUAL_VEST = /knit|sweater|puffer|quilted|padded|denim|fleece|gilet|utility|tank|cami|sports?/
+const CASUAL_VEST = /sweater vest|puffer|quilted|padded|denim|fleece|gilet|utility|tank|cami|sports?|running|hoodie/
 const EVENING = /satin|sequin|velvet|organza|chiffon|corset|bustier|bodycon|stiletto|heel|pump|slingback|evening|gown|cocktail|clutch|embellish/
 function tooDressyFor(item: ClothingItem): number {
   const words = `${item.name} ${item.subcategory ?? ''} ${item.material ?? ''} ${item.construction ?? ''}`.toLowerCase()
   let penalty = 0
-  if ((TAILORED_VEST.test(words) || (/\bvest\b/.test(words) && /button|sleeveless|v.?neck/.test(words))) && !CASUAL_VEST.test(words)) penalty += 14
+  // Any vest reads as tailored (a fitted, buttoned waistcoat shape, knit or not) unless it's clearly a casual one.
+  if ((TAILORED_VEST.test(words) || /\bvest\b/.test(words)) && !CASUAL_VEST.test(words)) penalty += 14
   if (EVENING.test(words)) penalty += 7
   if (/formal|black tie|business/.test((item.formality ?? '').toLowerCase())) penalty += 4
   return penalty
@@ -478,6 +518,11 @@ function scoreItem(
   score += Math.max(-8, Math.min(5, scoreRecommendationFeedback(traitsFromWardrobe(item), feedback)))
   // A disliked outfit means its pieces don't go together: keep those pairs apart.
   score += pairingFeedbackScore(item, alreadySelected, outfitPairVerdicts(feedback))
+  // Pieces from saved outfits, and the pairings saved together.
+  if (savedPieces.has(item.id)) score += 3
+  if (alreadySelected.some((piece) => savedPairs.has(pairOf(item.id, piece.id)))) score += 2
+  // This try brings back a saved outfit: its pieces lead.
+  if (favoured.has(item.id)) score += 40
 
   // Gently rotate away from pieces worn very recently or very often, so
   // favourites don't crowd out the rest of the closet.
@@ -901,9 +946,12 @@ function mockEngine(
   const hasPinnedBase = pinnedItem && ['tops', 'bottoms', 'dresses'].includes(pinnedItem.category)
   // Dressy occasions start with a dress most of the time for someone who wears
   // them (two tries in three), and now and then for everyone else.
-  const preferDress = DRESSY_OCCASIONS.includes(request.occasion)
+  // A saved outfit coming back decides it: a dress if it has one, top and bottom if not.
+  const bringingBack = favoured.size > 0
+  const favouredDress = wardrobe.some((item) => favoured.has(item.id) && item.category === 'dresses')
+  const preferDress = bringingBack ? favouredDress : DRESSY_OCCASIONS.includes(request.occasion)
   const wearsDresses = suggestedGenders(profile?.genderStylePreference).includes('women')
-  const dressTurn = wearsDresses ? attempt % 3 !== 2 : Math.random() < 0.3
+  const dressTurn = bringingBack ? favouredDress : wearsDresses ? attempt % 3 !== 2 : Math.random() < 0.3
   if (!hasPinnedBase && preferDress && dressTurn) {
     const dress = pickBest(wardrobe, 'dresses', request, profile, selected, attempt, colourConfig, feedback)
     if (dress) addItem(dress, 'dress')

@@ -12,6 +12,7 @@ import { generateOutfit } from '@/lib/stylist'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useUserStore } from '@/store/userStore'
 import { useOutfitStore } from '@/store/outfitStore'
+import { offerUndo } from '@/store/undoStore'
 import { useRecommendationStore } from '@/store/recommendationStore'
 import { useItemImage } from '@/hooks/useItemImage'
 import { useSampleKloset } from '@/hooks/useSampleKloset'
@@ -30,7 +31,7 @@ export function StylistPage() {
   const items = useWardrobeStore((s) => s.items)
   const profile = useUserStore((s) => s.profile)
   const feedback = useRecommendationStore((state) => profile?.id ? state.feedbackByUser[profile.id] ?? [] : [])
-  const { saveOutfit, isOutfitSaved } = useOutfitStore()
+  const { saveOutfit, isOutfitSaved, savedOutfits, trashOutfit, restoreOutfit } = useOutfitStore()
 
   // "What to wear" (the outfit engine: instant, unlimited) is the default; the
   // chat with Kaia (a few messages a day) opens when asked for.
@@ -79,7 +80,7 @@ export function StylistPage() {
     setError(null)
     setIsSaved(false)
     try {
-      const result = await generateOutfit(request, items, profile, currentAttempt, pinnedItem ?? undefined, feedback, avoidItemIds)
+      const result = await generateOutfit(request, items, profile, currentAttempt, pinnedItem ?? undefined, feedback, avoidItemIds, savedOutfits)
       if (result.suggestion) {
         setSuggestion(result.suggestion)
         setPageState('result')
@@ -129,6 +130,16 @@ export function StylistPage() {
     }
     saveOutfit(outfit)
     setIsSaved(true)
+  }
+
+  // Tapping Saved again: out of saved outfits and into the recycle bin (kept
+  // 30 days), with Undo right away.
+  const handleUnsave = () => {
+    if (!suggestion) return
+    const id = suggestion.id
+    trashOutfit(id)
+    setIsSaved(false)
+    offerUndo('Removed from saved outfits', () => { restoreOutfit(id); setIsSaved(true) })
   }
 
   const resetToForm = () => {
@@ -245,6 +256,7 @@ export function StylistPage() {
                   suggestion={suggestion}
                   onTryAnother={handleTryAnother}
                   onSave={handleSave}
+                  onUnsave={handleUnsave}
                   isSaved={isSaved}
                   isRegenerating={false}
                   userId={profile?.id ?? 'guest'}
