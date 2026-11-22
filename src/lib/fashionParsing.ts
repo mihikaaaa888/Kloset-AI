@@ -44,7 +44,9 @@ export interface ParsedPhoto {
   foundLabels: string[]
 }
 
-type Segmenter = (image: string) => Promise<SegmentationMask[]>
+// Takes the photo as a canvas, not a blob: URL: the live site's security rules
+// (connect-src) block fetching blob: links, which broke splitting there.
+type Segmenter = (image: HTMLCanvasElement) => Promise<SegmentationMask[]>
 let segmenterPromise: Promise<Segmenter> | null = null
 
 function getSegmenter(): Promise<Segmenter> {
@@ -57,7 +59,7 @@ function getSegmenter(): Promise<Segmenter> {
         wasm: '/onnx-runtime/ort-wasm-simd-threaded.asyncify.wasm',
       }
       const segmenter = await pipeline('image-segmentation', 'Xenova/segformer_b2_clothes', { dtype: 'q8', device: 'wasm' })
-      return (image: string) => segmenter(image) as Promise<SegmentationMask[]>
+      return (image: HTMLCanvasElement) => segmenter(image) as Promise<SegmentationMask[]>
     }).catch((error) => {
       segmenterPromise = null
       throw error
@@ -186,7 +188,6 @@ function connectedGarments(masks: SegmentationMask[]): SegmentationMask['mask'][
 /** Segment locally and crop each garment while preserving the original photo pixels. */
 export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
   const image = await decodeImage(source)
-  const sourceUrl = URL.createObjectURL(source)
   let masks: SegmentationMask[] = []
   let segmentationAvailable = true
   const started = performance.now()
@@ -194,7 +195,11 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
   try {
     const segmenter = await getSegmenter()
     stage = 'reading the photo'
-    masks = await segmenter(sourceUrl)
+    const photo = document.createElement('canvas')
+    photo.width = image.naturalWidth
+    photo.height = image.naturalHeight
+    photo.getContext('2d')?.drawImage(image, 0, 0)
+    masks = await segmenter(photo)
   } catch (error) {
     // Don't discard a user's upload if the model fails to load. The original
     // photo remains available for manual tagging and can be retried later.
@@ -202,8 +207,6 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
     console.warn('[wardrobe] garment segmentation unavailable; keeping source photo', error)
     // Tell the server log what broke and on what device (phones especially).
     reportIssue('splitter', error, { stage, seconds: Math.round((performance.now() - started) / 100) / 10, width: image.naturalWidth, height: image.naturalHeight })
-  } finally {
-    URL.revokeObjectURL(sourceUrl)
   }
 
   const byLabel = new Map(masks.map((mask) => [mask.label.toLowerCase(), mask]))
