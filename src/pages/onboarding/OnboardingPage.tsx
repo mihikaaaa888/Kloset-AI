@@ -10,9 +10,9 @@ import {
   frequencyOptions,
   genderStyleOptions,
 } from './onboardingData'
-import { buildOnboardingQueries, buildSimilarQueries } from '@/lib/discoverFeed'
-import { fetchLiveProducts, useLiveProducts, type LiveProduct } from '@/lib/liveShop'
-import { ALL_BRANDS, brandKey, canonicalBrand, relatedBrands, searchBrands, suggestedBrandsFor } from '@/lib/brands'
+import { buildOnboardingQueries, buildSimilarQueries, isForAdults } from '@/lib/discoverFeed'
+import { fetchLiveProducts, smallImage, useLiveProducts, type LiveProduct } from '@/lib/liveShop'
+import { ALL_BRANDS, brandKey, canonicalBrand, moreBrandsFor, relatedBrands, searchBrands, suggestedBrandsFor } from '@/lib/brands'
 import { useRecommendationStore } from '@/store/recommendationStore'
 import { SelectChip } from '@/components/ui/SelectChip'
 import { AgeRuler } from '@/components/ui/AgeRuler'
@@ -577,8 +577,20 @@ function Step4Catalogue({
     })
   }
 
-  // Base pieces with each pick's "more like this" right after it.
-  const grid = items.flatMap((item) => [item, ...(moreLike[item.id] ?? [])]).filter((item) => !hidden.has(item.id))
+  const [loaded, setLoaded] = useState<Set<string>>(new Set())
+  // Base pieces with each pick's "more like this" right after it; only clothes for adults, each once.
+  const grid = items.flatMap((item) => [item, ...(moreLike[item.id] ?? [])])
+    .filter((item, i, all) => !hidden.has(item.id) && !!item.imageUrl && isForAdults(item) && all.findIndex((other) => other.id === item.id) === i)
+
+  // Every photo in a batch failed or was filtered out: fetch the next batch
+  // rather than leave the grid empty (at most twice).
+  const refills = useRef(0)
+  useEffect(() => {
+    if (loading || status !== 'ok' || !items.length || grid.length || refills.current >= 2) return
+    refills.current += 1
+    void loadMore()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadMore is recreated each render
+  }, [loading, status, items.length, grid.length])
 
   return (
     <div>
@@ -593,8 +605,9 @@ function Step4Catalogue({
       )}
 
       <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 lg:grid-cols-5">
-        {grid.map((item) => {
+        {grid.map((item, index) => {
           const isSelected = selected.includes(pickKey(item))
+          const isLoaded = loaded.has(item.id)
           return (
             <button
               key={item.id}
@@ -603,19 +616,32 @@ function Step4Catalogue({
               aria-pressed={isSelected}
               aria-label={item.title}
               className={clsx(
-                'relative aspect-[3/4] overflow-hidden rounded-2xl bg-white transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow animate-fade-in',
+                'relative aspect-[3/4] overflow-hidden rounded-2xl transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow',
+                // A soft placeholder until the photo arrives, so the grid never looks empty.
+                isLoaded ? 'bg-white' : 'animate-pulse bg-text-primary/10',
                 isSelected ? 'scale-[0.95] ring-2 ring-[#355E3B] ring-offset-2 ring-offset-warm-cream' : 'hover:scale-[0.98]'
               )}
             >
               <img
-                src={item.imageUrl}
+                src={smallImage(item.imageUrl)}
                 alt=""
                 referrerPolicy="no-referrer"
-                loading="lazy"
-                className="h-full w-full object-cover object-top"
-                onError={() => setHidden((current) => new Set(current).add(item.id))}
+                // The first rows load straight away; the rest as they scroll in.
+                loading={index < 10 ? 'eager' : 'lazy'}
+                decoding="async"
+                className={clsx('h-full w-full object-cover object-top transition-opacity duration-300', isLoaded ? 'opacity-100' : 'opacity-0')}
+                onError={(e) => {
+                  // The smaller copy didn't work: try the original once, then give up on this piece.
+                  const original = item.imageUrl ?? ''
+                  if (original && e.currentTarget.src !== original) { e.currentTarget.src = original; return }
+                  setHidden((current) => new Set(current).add(item.id))
+                }}
                 // Logos and banners load tiny or very wide; product photos don't.
-                onLoad={(e) => { const { naturalWidth: w, naturalHeight: h } = e.currentTarget; if (w < 160 || h < 160 || w / h > 1.6) setHidden((current) => new Set(current).add(item.id)) }}
+                onLoad={(e) => {
+                  const { naturalWidth: w, naturalHeight: h } = e.currentTarget
+                  if (w < 160 || h < 160 || w / h > 1.6) setHidden((current) => new Set(current).add(item.id))
+                  else setLoaded((current) => new Set(current).add(item.id))
+                }}
               />
               {isSelected && (
                 <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[#355E3B] shadow-soft">
@@ -625,7 +651,7 @@ function Step4Catalogue({
             </button>
           )
         })}
-        {loading && Array.from({ length: grid.length ? 5 : 10 }).map((_, i) => <div key={`skeleton-${i}`} className="aspect-[3/4] animate-pulse rounded-2xl bg-text-primary/8" />)}
+        {(loading || (!grid.length && status === 'ok')) && Array.from({ length: grid.length ? 5 : 10 }).map((_, i) => <div key={`skeleton-${i}`} className="aspect-[3/4] animate-pulse rounded-2xl bg-text-primary/8" />)}
       </div>
 
       {!loading && grid.length > 0 && (
@@ -675,7 +701,15 @@ function StepBrands({
   const [query, setQuery] = useState('')
   // Brands brought in by tapping another, keyed by the brand that was tapped.
   const [revealed, setRevealed] = useState<Record<string, string[]>>({})
-  const suggested = useMemo(() => suggestedBrandsFor(ageRange, audience), [ageRange, audience])
+  // A first field of brands for their age; "Show more brands" keeps adding
+  // (the rest of their age's list, then other ages', then every brand we know).
+  const BRAND_STEP = 24
+  const [shownCount, setShownCount] = useState(BRAND_STEP)
+  const allSuggested = useMemo(() => {
+    const base = suggestedBrandsFor(ageRange, audience)
+    return [...base, ...moreBrandsFor(ageRange, audience, base)]
+  }, [ageRange, audience])
+  const suggested = allSuggested.slice(0, shownCount)
   const typed = query.trim()
   const field = useMemo(() => {
     const out: string[] = []
@@ -734,6 +768,11 @@ function StepBrands({
           )
         })}
       </div>
+      {!typed && shownCount < allSuggested.length && (
+        <div className="mt-4 flex justify-center">
+          <button type="button" onClick={() => setShownCount((count) => count + BRAND_STEP)} className="rounded-full border border-text-primary/20 px-5 py-2 text-xs text-text-primary hover:bg-text-primary/5">Show more brands</button>
+        </div>
+      )}
       <div className="mt-8 flex flex-col sm:flex-row items-start gap-4">
         <Button size="lg" onClick={onNext} className="group">
           {selected.length > 0 ? `Continue with ${selected.length} ${selected.length === 1 ? 'brand' : 'brands'}` : 'Continue'}

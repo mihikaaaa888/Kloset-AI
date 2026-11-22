@@ -285,7 +285,31 @@ function isPrint(item: ClothingItem) {
 // is sporty or streetwear gets a softer version of this.
 const DRESSY_OCCASIONS: Occasion[] = ['date-night', 'formal', 'special-event']
 const DRESSY_WORDS = /dress|skirt|heel|pump|stiletto|kitten|slingback|strappy sandal|satin|silk|lace|velvet|sequin|organza|chiffon|crepe|corset|bustier|halter|slip|wrap|peplum|blouse|bodysuit|tailored|blazer|waistcoat|vest|loafer|oxford|derby|ankle boot|clutch|earring|necklace|jewel|saree|lehenga|anarkali|embroider|evening|elegant|formal/
-const TOO_SIMPLE = /t-?shirt|\btee\b|hoodie|sweatshirt|jogger|track ?pant|sweatpant|cargo|shorts|sneaker|trainer|flip.?flop|slides|crocs|legging|gym|sports?\b|running|graphic|basic/
+const TOO_SIMPLE = /t-?shirt|\btee\b|hoodie|sweatshirt|jogger|track ?pant|sweatpant|cargo|shorts|sneaker|trainer|samba|gazelle|converse|flip.?flop|slides|crocs|legging|gym|sports?\b|running|graphic|basic/
+
+// Pieces that never belong in some looks, whatever their tags say (photo
+// tagging sometimes marks jeans or a hoodie as "formal"):
+// - formal and special events: shorts, joggers and track pants, leggings,
+//   hoodies and sweatshirts, tees, casual knits (a plain turtleneck or fine
+//   knit is fine), jeans, cargos, sneakers, flip-flops and slides, gym wear;
+// - date night: gym and lounge wear, flip-flops and slides.
+const NEVER_DRESSY = /\bshorts?\b|jogger|track ?pant|sweatpant|legging|hoodie|sweatshirt|gym|athletic|sports?\b|running|flip.?flop|\bslides?\b|crocs/
+const SNEAKERS = /sneaker|trainer|samba|gazelle|chuck|converse|air force|jordan|\bdunks?\b|canvas shoe|running shoe|tennis shoe/
+const NOT_FORMAL = /t-?shirt|\btee\b|graphic|polo|jeans|denim|cargo|distressed|ripped|quarter.?zip|half.?zip|fleece|crop top/
+const CASUAL_KNIT = /sweater|jumper|pullover|cardigan|\bknit/
+const FINE_KNIT = /turtleneck|roll.?neck|mock.?neck|cashmere|merino|fine.?knit|fine.?gauge/
+function unsuitableFor(item: ClothingItem, occasion: Occasion): boolean {
+  const words = `${item.name} ${item.subcategory ?? ''} ${item.material ?? ''} ${item.construction ?? ''}`.toLowerCase()
+  if (occasion === 'date-night') return /jogger|track ?pant|sweatpant|gym|athletic|running|flip.?flop|\bslides?\b|crocs/.test(words)
+  if (occasion !== 'formal' && occasion !== 'special-event') return false
+  if (NEVER_DRESSY.test(words) || SNEAKERS.test(words)) return true
+  // Special events allow a crop top; formal doesn't.
+  if (NOT_FORMAL.test(occasion === 'special-event' ? words.replace(/crop top/g, '') : words)) return true
+  // Leopard, graphics and other loud prints, and chunky everyday knits, aren't formal.
+  if (occasion === 'formal' && /leopard|animal|graphic|tie.?dye|camo/.test(`${words} ${item.pattern}`)) return true
+  if (CASUAL_KNIT.test(words) && !FINE_KNIT.test(words) && (occasion === 'formal' || item.pattern !== 'solid')) return true
+  return false
+}
 
 function dressinessScore(item: ClothingItem, occasion: Occasion, profile: UserProfile | null): number {
   const words = `${item.name} ${item.subcategory ?? ''} ${item.material ?? ''} ${item.formality ?? ''} ${item.construction ?? ''}`.toLowerCase()
@@ -540,6 +564,11 @@ function pickBest(
   const candidates = items.filter((i) => {
     if (i.category !== category) return false
     if (isBusinessMeetingRequest(request) && isUnsuitableForBusinessMeeting(i)) return false
+    if (unsuitableFor(i, request.occasion)) return false
+    // A kurta or kurti goes with palazzos, straight pants, jeans or a long skirt, not a mini.
+    const isKurta = (piece: ClothingItem) => /kurt[ai]|tunic/.test(`${piece.name} ${piece.subcategory ?? ''}`.toLowerCase())
+    const isMini = (piece: ClothingItem) => /\bmini\b|short skirt|skort|shorts?\b/.test(`${piece.name} ${piece.subcategory ?? ''}`.toLowerCase())
+    if ((isKurta(i) && selected.some(isMini)) || (isMini(i) && selected.some(isKurta))) return false
     if (isPrint(i) && selected.some(isPrint)) return false
     const details = `${i.name} ${i.subcategory ?? ''} ${i.material ?? ''} ${i.construction ?? ''}`.toLowerCase()
     // Keep linen out of cold-weather outfit recommendations.
@@ -919,7 +948,10 @@ function mockEngine(
   if (!hasBase || !hasCompleteBase) {
     return {
       suggestion: null,
-      error: "We couldn't find enough items for this occasion. Try adding more clothes or adjusting the filters.",
+      error: request.occasion === 'formal' || request.occasion === 'special-event'
+        // Casual pieces are left out of dressy looks, so say what's missing.
+        ? `Your Kloset doesn't have enough dressy pieces for ${request.occasion === 'formal' ? 'a formal look' : 'a special event'} yet. Add ${resultItems.some((r) => r.role === 'top') ? 'smart trousers, a skirt or a dress' : resultItems.some((r) => r.role === 'bottom') ? 'a shirt or blouse' : 'a dress, or a shirt with smart trousers'}, and Kloset will style it.`
+        : "We couldn't find enough items for this occasion. Try adding more clothes or adjusting the filters.",
     }
   }
 

@@ -181,3 +181,32 @@ export function liveToItem(product: LiveProduct): ClothingItem {
     updatedAt: '',
   }
 }
+
+/**
+ * A smaller copy of a product photo, where the store's image server can make
+ * one (Shopify, Myntra, H&M, Zara and a few others); otherwise the photo as is.
+ * Full-size retailer photos are often 2000px and slow to arrive.
+ */
+export function smallImage(url: string | null | undefined, width = 480): string {
+  if (!url) return ''
+  try {
+    const parsed = new URL(url)
+    const host = parsed.hostname
+    if (host.includes('cdn.shopify.com') || parsed.pathname.includes('/cdn/shop/')) {
+      parsed.searchParams.set('width', String(width))
+      return parsed.toString()
+    }
+    if (host.includes('myntassets.com')) {
+      return url.replace(/h_\d+,q_\d+,w_\d+/, `h_${Math.round(width * 4 / 3)},q_80,w_${width}`)
+    }
+    if (host.includes('image.hm.com') || host.includes('lp2.hm.com')) {
+      parsed.searchParams.set('imwidth', String(width))
+      return parsed.toString()
+    }
+    if (host.includes('static.zara.net') || host.includes('static.bershka.net') || host.includes('static.pullandbear.net') || host.includes('static.massimodutti.net')) {
+      parsed.searchParams.set('w', String(width))
+      return parsed.toString()
+    }
+  } catch { /* not a URL: use as is */ }
+  return url
+}

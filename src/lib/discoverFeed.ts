@@ -392,7 +392,39 @@ const ONBOARDING_MIX: Record<Audience, ClothingCategory[]> = {
   women: ['tops', 'bottoms', 'dresses', 'tops', 'outerwear', 'shoes'],
   men: ['tops', 'bottoms', 'outerwear', 'tops', 'bottoms', 'shoes'],
 }
-const LOOK_WORDS = ['', 'everyday', 'weekend', 'party', 'office', 'festive']
+
+// What people of each age tend to wear, for onboarding's first picks: the
+// look words and the pieces. Young: trend-led; twenties and thirties: modern
+// and polished; forties up: elegant, classic, comfortable. A lean, not a rule:
+// their chosen styles still go into half the searches.
+type AgeBand = 'young' | 'adult' | 'mid' | 'mature'
+const AGE_BAND: Record<string, AgeBand> = {
+  'under-18': 'young', '18-24': 'young', 'under-25': 'young', '25-34': 'adult', '35-44': 'mid', '45-54': 'mature', '55+': 'mature',
+}
+const AGE_LOOKS: Record<AgeBand, string[]> = {
+  young: ['trendy', 'gen z', 'streetwear', 'college', 'aesthetic', 'y2k'],
+  adult: ['chic', 'modern', 'minimal', 'workwear', 'date night', 'contemporary'],
+  mid: ['elegant', 'tailored', 'smart casual', 'classic', 'premium', 'chic'],
+  mature: ['elegant', 'classic', 'graceful', 'comfortable', 'timeless', 'tailored'],
+}
+const AGE_PIECES: Record<AgeBand, Record<Audience, Partial<Record<ClothingCategory, string[]>>>> = {
+  young: {
+    women: { tops: ['crop top', 'baby tee', 'corset top', 'graphic tee', 'oversized shirt'], bottoms: ['wide-leg jeans', 'cargo pants', 'mini skirt', 'parachute pants'], dresses: ['slip dress', 'co-ord set', 'mini dress'], outerwear: ['cropped jacket', 'oversized denim jacket', 'shacket'], shoes: ['chunky sneakers', 'platform sneakers', 'mary janes'] },
+    men: { tops: ['oversized t-shirt', 'graphic tee', 'cuban collar shirt', 'polo'], bottoms: ['baggy jeans', 'cargo pants', 'parachute pants'], outerwear: ['varsity jacket', 'oversized hoodie', 'bomber jacket'], shoes: ['chunky sneakers', 'high top sneakers'] },
+  },
+  adult: {
+    women: { tops: ['satin blouse', 'fitted top', 'linen shirt', 'knit top'], bottoms: ['wide-leg trousers', 'straight jeans', 'midi skirt'], dresses: ['midi dress', 'shirt dress', 'wrap dress'], outerwear: ['blazer', 'trench coat', 'cardigan'], shoes: ['loafers', 'block heels', 'white sneakers'] },
+    men: { tops: ['linen shirt', 'oxford shirt', 'knit polo', 'henley'], bottoms: ['chinos', 'straight jeans', 'pleated trousers'], outerwear: ['blazer', 'overshirt', 'bomber jacket'], shoes: ['loafers', 'white sneakers', 'chelsea boots'] },
+  },
+  mid: {
+    women: { tops: ['silk blouse', 'tunic top', 'linen shirt', 'kurta'], bottoms: ['tailored trousers', 'straight pants', 'palazzo'], dresses: ['midi dress', 'wrap dress', 'kurta set'], outerwear: ['tailored blazer', 'long cardigan', 'trench coat'], shoes: ['block heels', 'loafers', 'kolhapuris'] },
+    men: { tops: ['formal shirt', 'linen shirt', 'polo shirt', 'kurta'], bottoms: ['tailored trousers', 'chinos', 'dark jeans'], outerwear: ['blazer', 'nehru jacket', 'quilted jacket'], shoes: ['loafers', 'derby shoes', 'suede shoes'] },
+  },
+  mature: {
+    women: { tops: ['kurta', 'tunic top', 'silk blouse', 'linen shirt'], bottoms: ['straight pants', 'palazzo', 'tailored trousers'], dresses: ['kurta set', 'saree', 'midi dress'], outerwear: ['shawl', 'long cardigan', 'tailored blazer'], shoes: ['block heels', 'comfortable flats', 'loafers'] },
+    men: { tops: ['formal shirt', 'kurta', 'polo shirt', 'linen shirt'], bottoms: ['formal trousers', 'chinos', 'kurta pyjama'], outerwear: ['blazer', 'nehru jacket', 'cardigan'], shoes: ['loafers', 'derby shoes', 'comfortable sneakers'] },
+  },
+}
 
 export function buildOnboardingQueries(
   styles: string[],
@@ -402,23 +434,33 @@ export function buildOnboardingQueries(
 ): DiscoverQuery[] {
   const styleWords = lower(styles.map((s) => STYLE_WORDS[s] ?? s))
   const ageProfile = { ageRange } as UserProfile
-  const fit = ageFit(ageProfile)
+  const band = AGE_BAND[ageRange ?? ''] ?? 'adult'
   const region = regionWord()
   return Array.from({ length: 6 }, (_, i) => {
     const n = page * 6 + i
     const who: Audience = audience === 'all' ? (n % 2 === 0 ? 'women' : 'men') : audience
     // Every few pages a bag stands in for the shoes, for some variety.
     const cat = i === 5 && page % 3 === 2 ? 'accessories' : ONBOARDING_MIX[who][i]
+    // Pieces people their age wear, most of the time; the general list now and then.
+    const agePieces = AGE_PIECES[band][who][cat] ?? []
     const item = cat === 'accessories'
       ? (who === 'women' ? pick(['tote bag', 'shoulder bag', 'crossbody bag'], page) : pick(['backpack', 'crossbody bag'], page))
-      : pick(itemsFor(cat, who, ageProfile), n + page)
-    const look = pick(styleWords, n) ?? (n % 2 === 0 ? fit.word : pick(LOOK_WORDS, n + page))
+      // From 35 up, always their age's pieces; younger people get the general list now and then too.
+      : ((band === 'mid' || band === 'mature' || n % 3 !== 2) && agePieces.length ? pick(agePieces, n + page) : pick(itemsFor(cat, who, ageProfile), n + page))
+    // Every search carries either their style or a look for their age (both when there's no style).
+    const look = n % 2 === 0 && styleWords.length ? pick(styleWords, n / 2) : pick(AGE_LOOKS[band], n + page)
     return {
       text: [genderWord(who), item, look, region].filter(Boolean).join(' '),
       category: cat,
       traits: { category: cat, subcategory: item ?? cat, colours: [], occasions: [] },
     }
   })
+}
+
+/** Results that aren't clothes for an adult: kids' wear, costumes, beauty, home, gift cards. */
+const NOT_FOR_THEM = /\b(kids?|baby|babies|infant|toddler|newborn|boys?'?|girls?'?|junior|school uniform|costume|fancy dress|perfume|fragrance|lipstick|makeup|cushion|bedsheet|curtain|gift card|voucher|mannequin|hanger)\b/i
+export function isForAdults(product: { title: string }): boolean {
+  return !NOT_FOR_THEM.test(product.title)
 }
 
 /** "More like this" after a pick: the same kind of piece, in a few different looks. */
