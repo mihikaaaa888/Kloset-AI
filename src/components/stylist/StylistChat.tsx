@@ -4,7 +4,7 @@ import { Send, RotateCcw, Plus, Check, ExternalLink, ImagePlus, Camera, X, Histo
 import { ChatHistory } from '@/components/stylist/ChatHistory'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { clsx } from 'clsx'
-import { sendChatMessage, type ChatMessage } from '@/lib/chatService'
+import { KAIA_DAILY_MESSAGES, KaiaLimitError, fetchKaiaRemaining, sendChatMessage, type ChatMessage } from '@/lib/chatService'
 import { getLocalWeather } from '@/lib/weather'
 import { searchWebShopCached, cleanProductTitle, type Retailer } from '@/lib/webShopService'
 import { useWardrobeStore } from '@/store/wardrobeStore'
@@ -169,7 +169,12 @@ function shoppingItemKey(query: string, slot: string | null): string {
   return `${slot ?? ''}|${colour}|${singular}`
 }
 
-export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initialPrompt?: string; initialImageItemIds?: string[] }) {
+export function StylistChat({ initialPrompt, initialImageItemIds = [], onWhatToWear }: {
+  initialPrompt?: string
+  initialImageItemIds?: string[]
+  /** Open "What to wear" (the outfit engine), which doesn't use Kaia's daily messages. */
+  onWhatToWear?: () => void
+}) {
   const items = useWardrobeStore((s) => s.items)
   const addItem = useWardrobeStore((s) => s.addItem)
   const profile = useUserStore((s) => s.profile)
@@ -202,6 +207,8 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
   const [attachedPreviews, setAttachedPreviews] = useState<string[]>([])
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null)
   const [awaitingDailyOccasion, setAwaitingDailyOccasion] = useState(false)
+  // Kaia messages left today (null until known, or if it can't be read).
+  const [kaiaRemaining, setKaiaRemaining] = useState<number | null>(null)
   const [pendingFollowUp, setPendingFollowUp] = useState<FollowUp | null>(null)
   const [otherFollowUp, setOtherFollowUp] = useState(false)
   const [otherFollowUpText, setOtherFollowUpText] = useState('')
@@ -277,13 +284,21 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
     }
   }, [initialImageItemIdsKey, items])
 
+  useEffect(() => {
+    if (!profile?.id) return
+    let cancelled = false
+    void fetchKaiaRemaining(profile.id).then((left) => { if (!cancelled && left !== null) setKaiaRemaining(left) })
+    return () => { cancelled = true }
+  }, [profile?.id])
+  const outOfMessages = kaiaRemaining === 0
+
   const send = async (text?: string) => {
     const typedContent = (text ?? input).trim()
     const imageFiles = attachedImages
     // Photos are sent as their own attachments. Keep the text empty when the
     // user only shares images so they render without a text-message bubble.
     const content = typedContent
-    if ((!content && !imageFiles.length) || loading) return
+    if ((!content && !imageFiles.length) || loading || outOfMessages) return
     if (imageFiles.length) {
       const wait = Math.ceil((lastPhotoSentAt.current + PHOTO_COOLDOWN_MS - Date.now()) / 1000)
       if (wait > 0) {
@@ -339,8 +354,14 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
         const signals = feedbackFromOutfitPhoto(response.styleSignals, crypto.randomUUID())
         if (signals.length) recordFeedbackBatch(profile.id, signals)
       }
+      if (response.remaining !== undefined) setKaiaRemaining(response.remaining)
       setMessages((prev) => [...prev, { role: 'assistant', content: response.reply }])
     } catch (e) {
+      if (e instanceof KaiaLimitError) {
+        setKaiaRemaining(0)
+        setMessages((prev) => [...prev, { role: 'assistant', content: `That's all ${KAIA_DAILY_MESSAGES} of today's messages — we can pick this up tomorrow! For an outfit right now, use What to wear: it's instant and unlimited.` }])
+        return
+      }
       console.error('[chat] send failed', e)
       setMessages((prev) => [...prev, {
         role: 'assistant',
@@ -354,6 +375,8 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
   }
 
   const startDailyOutfitPrompt = () => {
+    // "What should I wear?" is the outfit engine's job (instant, no daily limit).
+    if (onWhatToWear) { onWhatToWear(); return }
     setMessages([
       ...messages,
       { role: 'user', content: 'What should I wear today?' },
@@ -533,6 +556,13 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
           </div>)}
         </div>}
           {attachmentNotice && <p className="px-1 pb-2 text-xs text-amber-700">{attachmentNotice}</p>}
+          {kaiaRemaining !== null && !outOfMessages && <p className="px-1 pb-1.5 text-2xs text-text-muted">{kaiaRemaining} of {KAIA_DAILY_MESSAGES} messages left today · for photo reviews and personal shopping</p>}
+          {outOfMessages ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 px-1 py-2">
+              <p className="text-sm text-text-muted">You’ve used today’s {KAIA_DAILY_MESSAGES} messages with Kaia. They reset at midnight.</p>
+              {onWhatToWear && <button type="button" onClick={onWhatToWear} className="rounded-full bg-dark-purple px-4 py-2 text-xs text-butter-yellow hover:bg-deep-purple">What to wear</button>}
+            </div>
+          ) : (
           <div className="flex items-end gap-2">
             <div className="flex flex-shrink-0 items-center gap-1">
               <button type="button" onClick={() => imageInputRef.current?.click()} disabled={loading || attachedImages.length >= 3} aria-label="Upload outfit photos" title="Upload image" className="flex h-10 w-10 items-center justify-center rounded-xl text-text-muted transition-colors hover:bg-text-primary/5 hover:text-text-primary disabled:opacity-40"><ImagePlus size={17} /></button>
@@ -563,6 +593,7 @@ export function StylistChat({ initialPrompt, initialImageItemIds = [] }: { initi
               <Send size={16} />
             </button>
           </div>
+          )}
         </div>
       </div>
     </div>
@@ -1142,7 +1173,7 @@ function EmptyState({ onPrompt }: { onPrompt: (p: string) => void }) {
       </div>
       <h3 className="font-display text-xl font-medium text-text-primary mb-1">Meet Kaia</h3>
       <p className="text-text-muted text-sm text-center max-w-xs mb-8">
-        Your personal stylist. Ask anything about what to wear, how to style your pieces, or what to add to your wardrobe.
+        Your personal stylist. Send a photo of your look for her take, or ask her to shop for what you need. {KAIA_DAILY_MESSAGES} messages a day.
       </p>
       <div className="w-full space-y-2">
         {SUGGESTED_PROMPTS.map((p) => (

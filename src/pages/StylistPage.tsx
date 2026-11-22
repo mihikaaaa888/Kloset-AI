@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, MessageCircle, Shirt, Check } from 'lucide-react'
+import { ArrowLeft, Shirt, Check } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { clsx } from 'clsx'
 
@@ -31,7 +31,9 @@ export function StylistPage() {
   const feedback = useRecommendationStore((state) => profile?.id ? state.feedbackByUser[profile.id] ?? [] : [])
   const { saveOutfit, isOutfitSaved } = useOutfitStore()
 
-  const [mode, setMode] = useState<StylistMode>(navState.mode ?? 'chat')
+  // "What to wear" (the outfit engine: instant, unlimited) is the default; the
+  // chat with Kaia (a few messages a day) opens when asked for.
+  const [mode, setMode] = useState<StylistMode>(navState.mode ?? 'wardrobe')
   const [pageState, setPageState] = useState<PageState>(() => {
     if (navState.mode === 'chat') return 'mode-select'
     if (navState.mode === 'item') return 'item-pick'
@@ -151,27 +153,26 @@ export function StylistPage() {
       )}>
 
         {/* ── Mode tabs ── */}
-        {mode !== 'chat' && <div className="mb-8 flex items-start justify-between gap-4">
+        <div className="mb-8 flex items-start justify-between gap-4">
           <nav className="flex min-w-0 items-center gap-6 overflow-x-auto" role="tablist" aria-label="Stylist mode">
             {([
-              { id: 'wardrobe', label: 'Style my wardrobe' },
+              { id: 'wardrobe', label: 'What to wear' },
               { id: 'item', label: 'Style an item' },
-            ] as { id: 'wardrobe' | 'item'; label: string }[]).map((tab) => (
+              { id: 'chat', label: 'Ask Kaia' },
+            ] as { id: StylistMode; label: string }[]).map((tab) => (
               <button key={tab.id} role="tab" aria-selected={mode === tab.id} onClick={() => selectMode(tab.id)} className={clsx('relative shrink-0 pb-2 text-sm transition-colors sm:text-base', mode === tab.id ? 'font-medium text-text-primary after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-text-primary' : 'text-text-muted hover:text-text-primary')}>
                 {tab.label}
               </button>
             ))}
           </nav>
-          <button type="button" onClick={() => selectMode('chat')} aria-label="Ask Kaia" title="Ask Kaia" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-text-primary/5 hover:text-text-primary">
-            <MessageCircle size={18} strokeWidth={1.7} />
-          </button>
-        </div>}
+        </div>
 
         {/* ── Mode: Chat ── */}
         {mode === 'chat' && (
           <StylistChat
             initialPrompt={navState.initialPrompt}
             initialImageItemIds={navState.outfitItemIds}
+            onWhatToWear={() => selectMode('wardrobe')}
           />
         )}
 

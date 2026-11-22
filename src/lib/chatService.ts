@@ -1,4 +1,5 @@
 import { apiFetch, apiUrl } from '@/lib/apiUrl'
+import { supabase } from '@/lib/supabase'
 import type { ClothingCategory, ClothingItem, UserProfile } from '@/types'
 import { rankWardrobeColourPairings } from '@/lib/colourHarmony'
 import { getColourHarmonyConfig } from '@/lib/colourHarmonyService'
@@ -13,7 +14,31 @@ export interface ChatMessage {
   imagePreviewUrls?: string[]
 }
 
-export interface KaiaChatResponse { reply: string; styleSignals?: OutfitPhotoStyleSignal }
+export interface KaiaChatResponse {
+  reply: string
+  styleSignals?: OutfitPhotoStyleSignal
+  /** Messages left with Kaia today, when the server counted this one. */
+  remaining?: number
+}
+
+// ─── Daily allowance ──────────────────────────────────────────────────────────
+// Kaia's chat allows a few messages a day per person (counted by the server in
+// kaia_usage; supabase/kaia_usage.sql). "What to wear" doesn't use it.
+export const KAIA_DAILY_MESSAGES = 5
+
+/** Thrown when today's Kaia messages are used up. */
+export class KaiaLimitError extends Error {}
+
+/** Messages left today, read from the person's own kaia_usage row; null if it can't be read. */
+export async function fetchKaiaRemaining(userId: string): Promise<number | null> {
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date())
+  const { data, error } = await supabase.from('kaia_usage').select('messages').eq('user_id', userId).eq('day', day).maybeSingle()
+  if (error) {
+    console.warn('[chat] could not read today\'s Kaia allowance — run supabase/kaia_usage.sql', error.message)
+    return null
+  }
+  return Math.max(0, KAIA_DAILY_MESSAGES - Number(data?.messages ?? 0))
+}
 
 
 // Grouped under the outfit slot each piece fills, so Kaia can see at a
@@ -182,6 +207,7 @@ export async function sendChatMessage(
   // The server sends an in-character `reply` even with its errors, so show that when there is one.
   const data = await response.json().catch(() => null)
   if (!response.ok) {
+    if (response.status === 429 && data?.code === 'KAIA_DAILY_LIMIT') throw new KaiaLimitError(data.error ?? 'Today\'s Kaia messages are used up.')
     console.error('[chat] request failed', response.status, data)
     if (data?.reply) return { reply: data.reply }
     throw new Error(`Chat request failed (${response.status})`)
@@ -190,6 +216,7 @@ export async function sendChatMessage(
   return {
     reply: data?.reply ?? "I'm not sure what to say — try asking again.",
     ...(data?.styleSignals ? { styleSignals: data.styleSignals as OutfitPhotoStyleSignal } : {}),
+    ...(typeof data?.remaining === 'number' ? { remaining: data.remaining } : {}),
   }
 }
 

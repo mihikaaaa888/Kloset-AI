@@ -90,7 +90,11 @@ const verifiedTokens = new Map()
 async function requireUser(req, res, next) {
   const token = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1]
   if (!token) return res.status(401).json({ error: 'Please sign in to use this feature.' })
-  if ((verifiedTokens.get(token) ?? 0) > Date.now()) return next()
+  const cached = verifiedTokens.get(token)
+  if (cached && cached.expiresAt > Date.now()) {
+    req.userId = cached.userId
+    return next()
+  }
 
   const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '')
   const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY
@@ -98,11 +102,14 @@ async function requireUser(req, res, next) {
   try {
     const r = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: anonKey, Authorization: `Bearer ${token}` } })
     if (!r.ok) return res.status(401).json({ error: 'Your session has expired. Please sign in again.' })
+    // Who is asking, for per-person limits (Kaia's daily messages).
+    const user = await r.json().catch(() => null)
+    req.userId = typeof user?.id === 'string' ? user.id : null
   } catch {
     return res.status(503).json({ error: 'Could not verify your session.' })
   }
   if (verifiedTokens.size > 1000) verifiedTokens.clear()
-  verifiedTokens.set(token, Date.now() + 60_000)
+  verifiedTokens.set(token, { expiresAt: Date.now() + 60_000, userId: req.userId })
   next()
 }
 app.use(
@@ -1500,6 +1507,52 @@ function extractOutfitStyleSignals(reply) {
   }
 }
 
+// ─── Kaia's daily allowance ───────────────────────────────────────────────────
+// Each person can send Kaia 5 messages a day (India time), counted in
+// kaia_usage (supabase/kaia_usage.sql) through two server-only functions. "What
+// to wear" uses the outfit engine on the device and doesn't count. If the
+// count can't be reached (table not created yet, no service key), chat still
+// works rather than locking everyone out.
+const KAIA_DAILY_MESSAGES = 5
+const kaiaDay = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date())
+
+async function kaiaRpc(fn, args) {
+  const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '')
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceKey) throw new Error('allowance not configured')
+  const r = await fetch(`${supabaseUrl}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(args),
+    signal: AbortSignal.timeout(4000),
+  })
+  if (!r.ok) throw new Error(`${fn} ${r.status}: ${(await r.text()).slice(0, 160)}`)
+  return r.json()
+}
+
+/** { limited } when today's messages are used up; otherwise how many are left after this one. */
+async function takeKaiaMessage(userId) {
+  if (!userId) return { limited: false, remaining: undefined, day: null }
+  const day = kaiaDay()
+  try {
+    const used = await kaiaRpc('kaia_take_message', { p_user: userId, p_day: day, p_limit: KAIA_DAILY_MESSAGES })
+    if (used === null) return { limited: true, remaining: 0, day }
+    return { limited: false, remaining: Math.max(0, KAIA_DAILY_MESSAGES - Number(used)), day }
+  } catch (error) {
+    console.warn('[chat] daily allowance unavailable, not counting:', error?.message ?? error)
+    return { limited: false, remaining: undefined, day: null }
+  }
+}
+
+async function returnKaiaMessage(userId, allowance) {
+  if (!userId || !allowance?.day) return
+  try {
+    await kaiaRpc('kaia_return_message', { p_user: userId, p_day: allowance.day })
+  } catch (error) {
+    console.warn('[chat] could not give back a failed message:', error?.message ?? error)
+  }
+}
+
 app.post('/api/chat', async (req, res) => {
   const rawBody = req.body ?? {}
   const messages = Array.isArray(rawBody.messages)
@@ -1539,10 +1592,22 @@ app.post('/api/chat', async (req, res) => {
     return res.status(400).json({ error: 'messages array is required' })
   }
 
+  const allowance = await takeKaiaMessage(req.userId)
+  if (allowance.limited) {
+    console.log('[chat] daily Kaia limit reached')
+    return res.status(429).json({
+      code: 'KAIA_DAILY_LIMIT',
+      remaining: 0,
+      limit: KAIA_DAILY_MESSAGES,
+      error: `You've used today's ${KAIA_DAILY_MESSAGES} messages with Kaia. They reset at midnight.`,
+    })
+  }
+
   const groqKey = process.env.GROQ_API_KEY
   const claudeKey = process.env.CLAUDE_API_KEY
 
   if (!groqKey && !claudeKey) {
+    await returnKaiaMessage(req.userId, allowance)
     return res.json({
       reply: "I'd love to help you style your wardrobe! Add a Groq or Claude API key to enable chat.",
       source: 'stub',
@@ -1723,8 +1788,11 @@ CRITICAL RULES:
     }
     const hasShopTag = /\[\[SHOP:/i.test(reply)
     console.log(`[chat] ${messages.length} messages in → reply ${reply.length} chars via ${source}${hasShopTag ? ' (includes [[SHOP]] tag)' : ''}`)
-    return res.json({ reply, source, ...(styleSignals ? { styleSignals } : {}) })
+    return res.json({ reply, source, ...(styleSignals ? { styleSignals } : {}), ...(allowance.remaining !== undefined ? { remaining: allowance.remaining, limit: KAIA_DAILY_MESSAGES } : {}) })
   }
+
+  // No reply: this message shouldn't count against today's allowance.
+  await returnKaiaMessage(req.userId, allowance)
 
   // Both providers unavailable or failed. A pure capacity issue (and no
   // Claude key to fall back to) still gets the friendly in-character
