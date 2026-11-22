@@ -74,12 +74,12 @@ export function StylistPage() {
     else setPageState('form')
   }
 
-  const runGeneration = async (request: StyleRequest, currentAttempt: number) => {
+  const runGeneration = async (request: StyleRequest, currentAttempt: number, avoidItemIds: string[] = []) => {
     setPageState('loading')
     setError(null)
     setIsSaved(false)
     try {
-      const result = await generateOutfit(request, items, profile, currentAttempt, pinnedItem ?? undefined, feedback)
+      const result = await generateOutfit(request, items, profile, currentAttempt, pinnedItem ?? undefined, feedback, avoidItemIds)
       if (result.suggestion) {
         setSuggestion(result.suggestion)
         setPageState('result')
@@ -107,7 +107,8 @@ export function StylistPage() {
     if (!currentRequest) return
     const next = attempt + 1
     setAttempt(next)
-    runGeneration(currentRequest, next)
+    // A whole new outfit: the pieces on screen sit out where something else can stand in.
+    runGeneration(currentRequest, next, suggestion?.items.map(({ item }) => item.id) ?? [])
   }
 
   const handleSave = () => {

@@ -170,9 +170,11 @@ interface AddItemModalProps {
   editItem?: ClothingItem
   initialTab?: 'upload' | 'browse'
   initialFiles?: File[] | null
+  /** A photo (or several) held two or more pieces: they're cut out and handed over to review together. */
+  onSplitPieces?: (pieces: Array<{ blob: Blob; category?: ClothingCategory; name?: string }>) => void
 }
 
-export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'upload', initialFiles = null }: AddItemModalProps) {
+export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'upload', initialFiles = null, onSplitPieces }: AddItemModalProps) {
   const [draft, setDraft] = useState<ItemDraft>(() =>
     editItem ? itemToDraft(editItem) : blankDraft()
   )
@@ -282,6 +284,9 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
 
     try {
       const processed: QueuedImage[] = []
+      // Every piece from every photo, collected first: two or more go to the
+      // sorted review (onSplitPieces) instead of one at a time here.
+      const found: Array<{ blob: Blob; category?: ClothingCategory; name?: string }> = []
       for (const file of valid) {
         setImageProcessingStep('Loading the on-device clothing scanner…')
         const compressed = await compressImage(file)
@@ -300,7 +305,8 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
             })
             if (detected.length > parsed.garments.length) {
               const crops = await Promise.all(detected.map(async (piece) => ({
-                blob: await cropPhotoToBounds(compressed, piece.box),
+                // Cut out along the clothing outline where there is one; a plain crop otherwise.
+                blob: await parsed.cutoutForBox(piece.box) ?? await cropPhotoToBounds(compressed, piece.box),
                 category: VALID_CATEGORIES.has(piece.category) ? piece.category as ClothingCategory : undefined,
                 name: piece.name,
               })))
@@ -313,16 +319,23 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
         if (editItem && pieces.length > 1) {
           pieces = [pieces.find((piece) => piece.category === editItem.category) ?? pieces[0]]
         }
-        for (const piece of pieces) {
-          setImageProcessingStep('Saving garment…')
-          // Save and preview the garment crop so each wardrobe item is framed
-          // around the detected piece. If detection falls back, piece.blob is
-          // the original compressed photo.
-          const imageId = await saveImage(piece.blob)
-          const url = URL.createObjectURL(piece.blob)
-          processed.push({ imageId, previewUrl: url, blob: piece.blob, detectedCategory: piece.category, detectedName: piece.name })
-          pendingMap.current.set(imageId, url)
-        }
+        found.push(...pieces)
+      }
+
+      if (!editItem && onSplitPieces && found.length > 1) {
+        console.log('[wardrobe] photo split into pieces', { photos: valid.length, pieces: found.length })
+        onSplitPieces(found)
+        return
+      }
+
+      for (const piece of found) {
+        setImageProcessingStep('Saving garment…')
+        // Save and preview the garment cutout so each wardrobe item shows just
+        // the piece. If detection falls back, piece.blob is the original photo.
+        const imageId = await saveImage(piece.blob)
+        const url = URL.createObjectURL(piece.blob)
+        processed.push({ imageId, previewUrl: url, blob: piece.blob, detectedCategory: piece.category, detectedName: piece.name })
+        pendingMap.current.set(imageId, url)
       }
 
       // If there was already a pending (just-uploaded, not from editItem) image, clean it up

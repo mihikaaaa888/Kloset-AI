@@ -21,7 +21,12 @@ interface ScanPiece {
   analysis: ClothingAnalysis | null
   name: string
   category: ClothingCategory | null
+  /** Name and type came from cutting up a photo: tagging may improve them. */
+  guessed?: boolean
 }
+
+/** A piece cut out of an uploaded photo, to review with the others. */
+export interface PhotoPiece { blob: Blob; category?: ClothingCategory; name?: string }
 
 // Auto-capture tuning, on a tiny 48×64 greyscale copy of the camera image.
 const SAMPLE_W = 48
@@ -62,11 +67,23 @@ function detail(a: Uint8Array): number {
   return Math.sqrt(variance / a.length)
 }
 
-export function WardrobeScanner({ open, onClose, onSaveItems }: {
+/** Pieces grouped by type in Kloset's usual order; untyped ones first, as "Needs a type". */
+function groupsFor(pieces: ScanPiece[]): { key: string; label: string; pieces: ScanPiece[] }[] {
+  const untyped = pieces.filter((piece) => !piece.category)
+  return [
+    ...(untyped.length ? [{ key: 'none', label: untyped.some((piece) => piece.status === 'queued' || piece.status === 'tagging') ? 'Sorting' : 'Needs a type', pieces: untyped }] : []),
+    ...SCAN_CATEGORIES.map((category) => ({ key: category.value, label: category.label, pieces: pieces.filter((piece) => piece.category === category.value) })).filter((group) => group.pieces.length),
+  ]
+}
+
+export function WardrobeScanner({ open, onClose, onSaveItems, photoPieces }: {
   open: boolean
   onClose: () => void
   onSaveItems: (items: ClothingItem[]) => void
+  /** Pieces cut out of uploaded photos: opens straight on the review, sorted by type. */
+  photoPieces?: PhotoPiece[] | null
 }) {
+  const fromPhoto = !!photoPieces?.length
   const videoRef = useRef<HTMLVideoElement>(null)
   const sampleCanvas = useRef<HTMLCanvasElement | null>(null)
   const [phase, setPhase] = useState<'camera' | 'review'>('camera')
@@ -83,7 +100,7 @@ export function WardrobeScanner({ open, onClose, onSaveItems }: {
 
   // ── Camera on/off ──
   useEffect(() => {
-    if (!open || phase !== 'camera') return
+    if (!open || phase !== 'camera' || fromPhoto) return
     let stream: MediaStream | null = null
     let cancelled = false
     setCameraError(null)
@@ -108,17 +125,26 @@ export function WardrobeScanner({ open, onClose, onSaveItems }: {
       cancelled = true
       stream?.getTracks().forEach((track) => track.stop())
     }
-  }, [open, phase])
+  }, [open, phase, fromPhoto])
 
   // Fresh state each time the scanner opens; photo previews freed when it closes.
   useEffect(() => {
     if (!open) return
-    setPhase('camera')
-    setPieces([])
+    setPhase(photoPieces?.length ? 'review' : 'camera')
+    setPieces((photoPieces ?? []).map((piece) => ({
+      key: crypto.randomUUID(),
+      blob: piece.blob,
+      previewUrl: URL.createObjectURL(piece.blob),
+      status: 'queued',
+      analysis: null,
+      name: piece.name ?? '',
+      category: piece.category ?? null,
+      guessed: true,
+    })))
     lastCaptured.current = null
     previousFrame.current = null
     stillFor.current = 0
-  }, [open])
+  }, [open, photoPieces])
   useEffect(() => () => { pieces.forEach((piece) => URL.revokeObjectURL(piece.previewUrl)) }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Capture ──
@@ -159,7 +185,7 @@ export function WardrobeScanner({ open, onClose, onSaveItems }: {
 
   // ── Automatic capture: a new view, held still ──
   useEffect(() => {
-    if (!open || phase !== 'camera' || cameraError) return
+    if (!open || phase !== 'camera' || cameraError || fromPhoto) return
     const timer = window.setInterval(() => {
       const frame = sampleFrame()
       if (!frame) return
@@ -172,7 +198,7 @@ export function WardrobeScanner({ open, onClose, onSaveItems }: {
       if (stillFor.current >= HOLD_MS) capture(frame)
     }, TICK_MS)
     return () => window.clearInterval(timer)
-  }, [open, phase, cameraError, sampleFrame, capture])
+  }, [open, phase, cameraError, sampleFrame, capture, fromPhoto])
 
   // ── Tagging, one piece at a time ──
   useEffect(() => {
@@ -186,8 +212,10 @@ export function WardrobeScanner({ open, onClose, onSaveItems }: {
           ...piece,
           status: 'tagged',
           analysis,
-          name: piece.name || analysis.name || '',
-          category: piece.category ?? categoryFromAnalysis(analysis),
+          // A photo's rough guess ("Top") gives way to what tagging found ("Cream Knit Cardigan").
+          name: piece.guessed ? analysis.name || piece.name : piece.name || analysis.name || '',
+          category: piece.guessed ? categoryFromAnalysis(analysis) ?? piece.category : piece.category ?? categoryFromAnalysis(analysis),
+          guessed: false,
         } : piece))
       })
       .catch((error) => {
@@ -197,7 +225,7 @@ export function WardrobeScanner({ open, onClose, onSaveItems }: {
       .finally(() => setWaitSeconds(null))
   }, [open, pieces])
 
-  const updatePiece = (key: string, change: Partial<ScanPiece>) => setPieces((current) => current.map((piece) => piece.key === key ? { ...piece, ...change } : piece))
+  const updatePiece = (key: string, change: Partial<ScanPiece>) => setPieces((current) => current.map((piece) => piece.key === key ? { ...piece, ...change, guessed: false } : piece))
   const removePiece = (key: string) => setPieces((current) => {
     const gone = current.find((piece) => piece.key === key)
     if (gone) URL.revokeObjectURL(gone.previewUrl)
@@ -268,31 +296,37 @@ export function WardrobeScanner({ open, onClose, onSaveItems }: {
         // ── Review: fix names and types, remove misses, save all ──
         <div className="flex h-full flex-col bg-warm-cream text-text-primary">
           <div className="flex items-center justify-between border-b border-text-primary/10 px-4 py-3">
-            <button type="button" onClick={() => setPhase('camera')} className="text-sm text-text-muted hover:text-text-primary">Scan more</button>
-            <h2 className="font-display text-lg">Review {pieces.length} {pieces.length === 1 ? 'piece' : 'pieces'}</h2>
+            {fromPhoto ? <span className="w-16" /> : <button type="button" onClick={() => setPhase('camera')} className="text-sm text-text-muted hover:text-text-primary">Scan more</button>}
+            <h2 className="font-display text-lg">{fromPhoto ? `${pieces.length} ${pieces.length === 1 ? 'piece' : 'pieces'} found` : `Review ${pieces.length} ${pieces.length === 1 ? 'piece' : 'pieces'}`}</h2>
             <button type="button" onClick={onClose} aria-label="Close scanner" className="p-1 text-text-muted hover:text-text-primary"><X size={20} /></button>
           </div>
           <div className="flex-1 overflow-y-auto p-4">
             {tagging > 0 && <p className="mb-3 flex items-center gap-2 text-xs text-text-muted"><Loader2 size={13} className="animate-spin" /> Still tagging {tagging} {tagging === 1 ? 'piece' : 'pieces'}{waitSeconds ? ` (busy, retrying in ${waitSeconds}s)` : ''}. You can edit while it works.</p>}
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-              {pieces.map((piece) => (
-                <div key={piece.key} className="overflow-hidden rounded-2xl border border-text-primary/10 bg-surface">
-                  <div className="relative aspect-[3/4]">
-                    <img src={piece.previewUrl} alt="" className="h-full w-full object-cover" />
-                    <button type="button" onClick={() => removePiece(piece.key)} aria-label="Remove this piece" className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white"><Trash2 size={14} /></button>
-                    {(piece.status === 'queued' || piece.status === 'tagging') && <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[10px] text-white"><Loader2 size={11} className="animate-spin" /> Tagging</span>}
-                    {piece.status === 'tagged' && <span className="absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[#355E3B] text-white"><Check size={13} /></span>}
+            {/* Sorted by type; pieces still waiting for one come first */}
+            {groupsFor(pieces).map((group) => (
+              <section key={group.key} className="mb-6">
+                <h3 className="mb-2 text-2xs uppercase tracking-ultra-wide text-text-muted">{group.label} · {group.pieces.length}</h3>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                  {group.pieces.map((piece) => (
+                  <div key={piece.key} className="overflow-hidden rounded-2xl border border-text-primary/10 bg-surface">
+                    <div className="relative aspect-[3/4]">
+                      <img src={piece.previewUrl} alt="" className={clsx('h-full w-full', fromPhoto ? 'bg-white object-contain' : 'object-cover')} />
+                      <button type="button" onClick={() => removePiece(piece.key)} aria-label="Remove this piece" className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white"><Trash2 size={14} /></button>
+                      {(piece.status === 'queued' || piece.status === 'tagging') && <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[10px] text-white"><Loader2 size={11} className="animate-spin" /> Tagging</span>}
+                      {piece.status === 'tagged' && <span className="absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[#355E3B] text-white"><Check size={13} /></span>}
+                    </div>
+                    <div className="space-y-2 p-2.5">
+                      <input value={piece.name} onChange={(event) => updatePiece(piece.key, { name: event.target.value })} placeholder={piece.status === 'tagged' || piece.status === 'failed' ? 'Name this piece' : 'Naming…'} aria-label="Piece name" maxLength={80} className="w-full border-b border-text-primary/15 bg-transparent py-1 text-sm focus:border-text-primary/50 focus:outline-none" />
+                      <select value={piece.category ?? ''} onChange={(event) => updatePiece(piece.key, { category: (event.target.value || null) as ClothingCategory | null })} aria-label="Piece type" className={clsx('w-full rounded-lg border bg-transparent px-2 py-1.5 text-xs', piece.category ? 'border-text-primary/15' : 'border-amber-600/60 text-amber-700')}>
+                        <option value="">Choose type…</option>
+                        {SCAN_CATEGORIES.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}
+                      </select>
+                    </div>
                   </div>
-                  <div className="space-y-2 p-2.5">
-                    <input value={piece.name} onChange={(event) => updatePiece(piece.key, { name: event.target.value })} placeholder={piece.status === 'tagged' || piece.status === 'failed' ? 'Name this piece' : 'Naming…'} aria-label="Piece name" maxLength={80} className="w-full border-b border-text-primary/15 bg-transparent py-1 text-sm focus:border-text-primary/50 focus:outline-none" />
-                    <select value={piece.category ?? ''} onChange={(event) => updatePiece(piece.key, { category: (event.target.value || null) as ClothingCategory | null })} aria-label="Piece type" className={clsx('w-full rounded-lg border bg-transparent px-2 py-1.5 text-xs', piece.category ? 'border-text-primary/15' : 'border-amber-600/60 text-amber-700')}>
-                      <option value="">Choose type…</option>
-                      {SCAN_CATEGORIES.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}
-                    </select>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </section>
+            ))}
           </div>
           <div className="border-t border-text-primary/10 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
             {readyToSave.length < pieces.length && <p className="mb-2 text-center text-xs text-text-muted">{pieces.length - readyToSave.length} without a type won’t be saved. Choose a type, or wait for tagging.</p>}

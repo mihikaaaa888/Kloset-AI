@@ -9,6 +9,7 @@
  */
 
 import type { ClothingItem, Occasion, StylePreference, Season, UserProfile } from '@/types'
+import { suggestedGenders } from '@/lib/catalogData'
 import { affinityForLearnedTraits } from '@/lib/styleLearning'
 import { learnStyleFromWardrobe } from '@/lib/styleLearning'
 import { scoreColourSets } from '@/lib/colourHarmony'
@@ -153,8 +154,13 @@ function rememberShown(items: ClothingItem[]) {
 function recentPenalty(itemId: string): number {
   let penalty = 0
   recentPieces.forEach((id, index) => { if (id === itemId) penalty += 3 + (index / RECENT_PIECES) * 3 })
-  return penalty
+  // Capped: rotating shouldn't outweigh fit (heels shown twice still beat sneakers for a date).
+  return Math.min(8, penalty)
 }
+
+// "Try another" wants a whole new outfit: the pieces it just showed sit out
+// while anything else in their category can stand in. Set for one call only.
+let sittingOut = new Set<string>()
 
 export async function generateOutfit(
   request: StyleRequest,
@@ -163,6 +169,8 @@ export async function generateOutfit(
   attempt = 0,
   pinnedItem?: ClothingItem,
   feedback: RecommendationFeedback[] = [],
+  /** Pieces to leave out where possible (the outfit "Try another" is replacing). */
+  avoidItemIds: string[] = [],
 ): Promise<StylistEngineResult> {
   wardrobe = wardrobe.map(withNamedCategory)
   if (pinnedItem) pinnedItem = withNamedCategory(pinnedItem)
@@ -183,6 +191,8 @@ export async function generateOutfit(
   // A disliked daily outfit teaches Kloset to avoid that garment-type pairing.
   // Try several closet rotations to find a different combination first.
   // Also skip an exact repeat of an outfit shown recently in this visit.
+  sittingOut = new Set(avoidItemIds.filter((id) => id !== pinnedItem?.id))
+  try {
   for (let retry = 0; retry < (dislikedTypes.size ? 16 : 6); retry += 1) {
     const result = mockEngine(request, wardrobe, profile, attempt + retry, pinnedItem, colourConfig, allFeedback)
     lastResult = result
@@ -194,6 +204,9 @@ export async function generateOutfit(
       rememberShown(pieces)
       return result
     }
+  }
+  } finally {
+    sittingOut = new Set()
   }
   if (lastResult?.suggestion) {
     return { suggestion: null, error: 'I could not find a different outfit pairing from your Kloset yet. Add a few more pieces or adjust your preferences.' }
@@ -263,6 +276,32 @@ function isPrint(item: ClothingItem) {
 }
 
 // ─── Item scoring ─────────────────────────────────────────────────────────────
+
+// ─── Dressing up ──────────────────────────────────────────────────────────────
+// Date nights, formal events and special occasions lean dressy: dresses,
+// skirts, heels, silk and satin, tailoring and statement pieces rise, and the
+// plainest everyday pieces (tees, hoodies, joggers, sneakers) step back.
+// Trousers and jeans are fine; they just aren't favoured. Someone whose style
+// is sporty or streetwear gets a softer version of this.
+const DRESSY_OCCASIONS: Occasion[] = ['date-night', 'formal', 'special-event']
+const DRESSY_WORDS = /dress|skirt|heel|pump|stiletto|kitten|slingback|strappy sandal|satin|silk|lace|velvet|sequin|organza|chiffon|crepe|corset|bustier|halter|slip|wrap|peplum|blouse|bodysuit|tailored|blazer|waistcoat|vest|loafer|oxford|derby|ankle boot|clutch|earring|necklace|jewel|saree|lehenga|anarkali|embroider|evening|elegant|formal/
+const TOO_SIMPLE = /t-?shirt|\btee\b|hoodie|sweatshirt|jogger|track ?pant|sweatpant|cargo|shorts|sneaker|trainer|flip.?flop|slides|crocs|legging|gym|sports?\b|running|graphic|basic/
+
+function dressinessScore(item: ClothingItem, occasion: Occasion, profile: UserProfile | null): number {
+  const words = `${item.name} ${item.subcategory ?? ''} ${item.material ?? ''} ${item.formality ?? ''} ${item.construction ?? ''}`.toLowerCase()
+  const relaxedStyle = (profile?.stylePreferences ?? []).some((style) => style === 'athleisure' || style === 'streetwear')
+  const strength = (relaxedStyle ? 0.5 : 1) * (occasion === 'date-night' ? 1 : 1.3)
+  const forWomen = suggestedGenders(profile?.genderStylePreference).includes('women')
+  let score = 0
+  if (DRESSY_WORDS.test(words)) score += 7
+  if (/formal|black tie|business/.test((item.formality ?? '').toLowerCase())) score += 3
+  // Bigger than the most a piece loses for being shown recently, so rotating never pulls the plain pieces in.
+  if (TOO_SIMPLE.test(words) && !DRESSY_WORDS.test(words)) score -= 16
+  if (forWomen && item.category === 'bottoms' && /skirt/.test(words)) score += 3
+  if (forWomen && item.category === 'shoes' && /heel|pump|stiletto|mule|strappy|kitten|slingback/.test(words)) score += 4
+  if (occasion !== 'date-night' && /jeans|denim/.test(words)) score -= 3
+  return score * strength
+}
 
 function scoreItem(
   item: ClothingItem,
@@ -343,9 +382,8 @@ function scoreItem(
     if (item.category === 'tops' && /turtleneck|roll.?neck|high.?neck|sweater|knit|wool|fleece/.test(garmentDetails)) score += 4
     if (item.category === 'bottoms' && /trouser|pants|jeans|wool|corduroy/.test(garmentDetails)) score += 4
   }
-  if (['date-night', 'formal', 'special-event'].includes(request.occasion)) {
-    if (dressy) score += 5
-    if (relaxed && !dressy) score -= 2
+  if (DRESSY_OCCASIONS.includes(request.occasion)) {
+    score += dressinessScore(item, request.occasion, profile)
     if (/\b(vest|waistcoat)\b/.test(garmentDetails) && profile?.genderStylePreference === 'feminine') score += 5
   } else if (['casual', 'weekend', 'travel'].includes(request.occasion)) {
     if (relaxed) score += 4
@@ -538,11 +576,19 @@ function pickBest(
   // rotation, unless nothing else is left.
   const verdicts = outfitPairVerdicts(feedback)
   const pairable = scored.filter((candidate) => !clashesWithPicked(candidate.item.id, selected, verdicts))
-  const pool = pairable.length ? pairable : scored
-  const closeFits = pool.filter((candidate) => bestScore - candidate.score <= 8)
+  const fresh = pairable.filter((candidate) => !sittingOut.has(candidate.item.id))
+  const pool = fresh.length ? fresh : pairable.length ? pairable : scored
+  const poolBest = pool[0]?.score ?? bestScore
+  // Dressy occasions keep a tighter shortlist: rotate among the dressy pieces,
+  // not down to the plain ones.
+  const gap = DRESSY_OCCASIONS.includes(request.occasion) ? 6 : 8
+  const padGap = DRESSY_OCCASIONS.includes(request.occasion) ? 6 : 12
+  const closeFits = pool.filter((candidate) => poolBest - candidate.score <= gap)
+  // Padded to four for variety, but never with a piece far behind (sneakers
+  // shouldn't make a date-night shortlist just to fill it).
   const contenders = closeFits.length >= 4
     ? closeFits
-    : pool.filter((candidate) => candidate.score > -100).slice(0, Math.max(closeFits.length, 4))
+    : pool.filter((candidate) => candidate.score > -100 && poolBest - candidate.score <= padGap).slice(0, Math.max(closeFits.length, 4))
   if (category === 'accessories' && contenders.length > 1) {
     return contenders[Math.floor(Math.random() * contenders.length)].item
   }
@@ -808,8 +854,12 @@ function mockEngine(
 
   // 1. Try a dress first for certain occasions (skip if pinned item is a dress or top/bottom)
   const hasPinnedBase = pinnedItem && ['tops', 'bottoms', 'dresses'].includes(pinnedItem.category)
-  const preferDress = ['date-night', 'formal', 'special-event'].includes(request.occasion)
-  if (!hasPinnedBase && preferDress && Math.random() + attempt * 0.2 < 0.6) {
+  // Dressy occasions start with a dress most of the time for someone who wears
+  // them (two tries in three), and now and then for everyone else.
+  const preferDress = DRESSY_OCCASIONS.includes(request.occasion)
+  const wearsDresses = suggestedGenders(profile?.genderStylePreference).includes('women')
+  const dressTurn = wearsDresses ? attempt % 3 !== 2 : Math.random() < 0.3
+  if (!hasPinnedBase && preferDress && dressTurn) {
     const dress = pickBest(wardrobe, 'dresses', request, profile, selected, attempt, colourConfig, feedback)
     if (dress) addItem(dress, 'dress')
   }

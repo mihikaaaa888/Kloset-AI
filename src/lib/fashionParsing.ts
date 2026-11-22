@@ -33,6 +33,12 @@ export interface ParsedPhoto {
   segmentationAvailable: boolean
   /** Original photo, kept intact if segmentation cannot identify a garment. */
   sourceFallback: Blob
+  /**
+   * The clothing inside a 0–1000 box (from cloud detection) cut out onto
+   * white, using this photo's clothing outline; null when there's too little
+   * clothing in the box to cut out.
+   */
+  cutoutForBox: (box: [number, number, number, number]) => Promise<Blob | null>
 }
 
 type Segmenter = (image: string) => Promise<SegmentationMask[]>
@@ -75,6 +81,56 @@ function maskAt(mask: SegmentationMask['mask'], x: number, y: number, width: num
   const mx = Math.min(mask.width - 1, Math.floor(x / width * mask.width))
   const my = Math.min(mask.height - 1, Math.floor(y / height * mask.height))
   return mask.data[(my * mask.width + mx) * mask.channels] > 127
+}
+
+// ─── Cutouts ──────────────────────────────────────────────────────────────────
+// Each piece is lifted out along its own outline (no face, arms, room or
+// phone) and centred on a white square, so it reads like a product photo.
+
+type Inside = (x: number, y: number) => boolean
+
+function jpegBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Could not create garment image.')), 'image/jpeg', 0.92))
+}
+
+/** The pixels of `image` within [left, top, width, height] where `inside` holds, on white. Null if almost nothing is inside. */
+async function cutoutOnWhite(image: HTMLImageElement, inside: Inside, left: number, top: number, width: number, height: number): Promise<Blob | null> {
+  const mask = document.createElement('canvas')
+  mask.width = width
+  mask.height = height
+  const maskContext = mask.getContext('2d')
+  if (!maskContext) return null
+  const pixels = maskContext.createImageData(width, height)
+  let count = 0
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    if (!inside(left + x, top + y)) continue
+    pixels.data[(y * width + x) * 4 + 3] = 255
+    count++
+  }
+  if (count < width * height * 0.05) return null
+  maskContext.putImageData(pixels, 0, 0)
+
+  // Soften the outline a touch so edges don't look cut with scissors.
+  const piece = document.createElement('canvas')
+  piece.width = width
+  piece.height = height
+  const pieceContext = piece.getContext('2d')
+  if (!pieceContext) return null
+  pieceContext.drawImage(image, left, top, width, height, 0, 0, width, height)
+  pieceContext.globalCompositeOperation = 'destination-in'
+  pieceContext.filter = 'blur(1.2px)'
+  pieceContext.drawImage(mask, 0, 0)
+
+  const side = Math.round(Math.max(width, height) * 1.12)
+  const out = document.createElement('canvas')
+  out.width = side
+  out.height = side
+  const outContext = out.getContext('2d')
+  if (!outContext) return null
+  outContext.fillStyle = '#ffffff'
+  outContext.fillRect(0, 0, side, side)
+  outContext.drawImage(piece, Math.round((side - width) / 2), Math.round((side - height) / 2))
+  return jpegBlob(out)
 }
 
 /** Split disconnected pieces of the same semantic class into separate items. */
@@ -155,7 +211,7 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
     else garmentGroups.set(key, { masks: [mask], category: info.category, name: info.name })
   }
 
-  const garments: ParsedGarment[] = []
+  const garments: Array<ParsedGarment & { pixels: number }> = []
   for (const group of garmentGroups.values()) {
     // On a person, the model can fragment sleeves and panels into separate
     // islands. Keep each worn garment whole; split disconnected items in
@@ -172,7 +228,10 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
           maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); pixelCount++
         }
       }
-      const minGarmentPixels = Math.max(64, Math.round(inputWidth * inputHeight * 0.0003))
+      // Too small to be a real piece: slivers where the model half-saw something
+      // (a bag mostly read as part of the top). Bags, hats and belts need a bit more.
+      const minShare = group.category === 'accessories' ? 0.008 : group.category === 'shoes' ? 0.002 : 0.004
+      const minGarmentPixels = Math.max(64, Math.round(inputWidth * inputHeight * minShare))
       if (maxX < minX || maxY < minY || pixelCount < minGarmentPixels) continue
       // Keep enough surrounding scene to preserve the item's true appearance;
       // this is a zoomed crop, not a background-removal cutout.
@@ -180,16 +239,43 @@ export async function parseOutfitPhoto(source: Blob): Promise<ParsedPhoto> {
       const padY = Math.round((maxY - minY + 1) * 0.1)
       const left = Math.max(0, minX - padX), top = Math.max(0, minY - padY)
       const right = Math.min(inputWidth, maxX + padX + 1), bottom = Math.min(inputHeight, maxY + padY + 1)
+      // The piece on its own, on white; the plain crop if the outline is too thin to use.
+      const cutout = await cutoutOnWhite(image, (x, y) => masksForItem.some(({ mask }) => maskAt(mask, x, y, inputWidth, inputHeight)), left, top, right - left, bottom - top)
+      if (cutout) {
+        garments.push({ blob: cutout, category: group.category, name: group.name, pixels: pixelCount })
+        continue
+      }
       const crop = document.createElement('canvas')
       crop.width = right - left
       crop.height = bottom - top
       const context = crop.getContext('2d', { willReadFrequently: true })!
       context.drawImage(image, left, top, crop.width, crop.height, 0, 0, crop.width, crop.height)
-      garments.push({ blob: await canvasBlob(crop), category: group.category, name: group.name })
+      garments.push({ blob: await canvasBlob(crop), category: group.category, name: group.name, pixels: pixelCount })
     }
   }
 
-  return { garments, containsPerson: segmentationAvailable && containsPerson, segmentationAvailable, sourceFallback: source }
+  // A top, bottom or dress tiny next to the main garment is a scrap the model
+  // split off it (a kurti's shoulder read as a separate "top"), not a piece.
+  const CLOTHES = new Set<ClothingCategory>(['tops', 'bottoms', 'dresses', 'outerwear'])
+  const largest = Math.max(0, ...garments.filter((g) => CLOTHES.has(g.category)).map((g) => g.pixels))
+  const pieces: ParsedGarment[] = garments
+    .filter((g) => !CLOTHES.has(g.category) || g.pixels >= largest * 0.2)
+    .map(({ blob, category, name }) => ({ blob, category, name }))
+
+  // For boxes found by cloud detection: cut out whatever clothing the outline
+  // shows inside the box.
+  const clothingMasks = masks.filter((mask) => CLOTHING[mask.label.toLowerCase()])
+  const cutoutForBox = async ([x1, y1, x2, y2]: [number, number, number, number]): Promise<Blob | null> => {
+    if (!clothingMasks.length) return null
+    const left = Math.max(0, Math.floor((x1 / 1000) * inputWidth))
+    const top = Math.max(0, Math.floor((y1 / 1000) * inputHeight))
+    const right = Math.min(inputWidth, Math.ceil((x2 / 1000) * inputWidth))
+    const bottom = Math.min(inputHeight, Math.ceil((y2 / 1000) * inputHeight))
+    if (right - left < 8 || bottom - top < 8) return null
+    return cutoutOnWhite(image, (x, y) => clothingMasks.some(({ mask }) => maskAt(mask, x, y, inputWidth, inputHeight)), left, top, right - left, bottom - top)
+  }
+
+  return { garments: pieces, containsPerson: segmentationAvailable && containsPerson, segmentationAvailable, sourceFallback: source, cutoutForBox }
 }
 
 /** Crop a detected garment from the original photo using normalized 0–1000 boxes. */

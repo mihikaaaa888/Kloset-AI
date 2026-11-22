@@ -6,7 +6,7 @@ import { clsx } from 'clsx'
 import { ClothingCard } from '@/components/wardrobe/ClothingCard'
 import { useItemImage } from '@/hooks/useItemImage'
 import { AddItemModal } from '@/components/wardrobe/AddItemModal'
-import { WardrobeScanner } from '@/components/wardrobe/WardrobeScanner'
+import { WardrobeScanner, type PhotoPiece } from '@/components/wardrobe/WardrobeScanner'
 import { ItemDetailModal } from '@/components/wardrobe/ItemDetailModal'
 import { MyOutfits } from '@/components/saved/MyOutfits'
 import { BuildBoard } from '@/components/build/BuildBoard'
@@ -53,6 +53,8 @@ export function WardrobePage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [showAddMenu, setShowAddMenu] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
+  // Pieces cut out of an uploaded photo, shown together to review and save.
+  const [photoPieces, setPhotoPieces] = useState<PhotoPiece[] | null>(null)
   const [addPhotoTab, setAddPhotoTab] = useState<'upload' | 'browse'>('upload')
   const [selectedUploadFiles, setSelectedUploadFiles] = useState<File[] | null>(null)
   const [editItem, setEditItem] = useState<ClothingItem | undefined>()
@@ -425,8 +427,9 @@ export function WardrobePage() {
       </div>
 
       <WardrobeScanner
-        open={showScanner}
-        onClose={() => setShowScanner(false)}
+        open={showScanner || !!photoPieces}
+        photoPieces={photoPieces}
+        onClose={() => { setShowScanner(false); setPhotoPieces(null) }}
         onSaveItems={(scanned) => {
           // Same as saving one new piece, for each scanned piece.
           scanned.forEach((item) => {
@@ -444,6 +447,12 @@ export function WardrobePage() {
         editItem={editItem}
         initialTab={addPhotoTab}
         initialFiles={selectedUploadFiles}
+        onSplitPieces={(pieces) => {
+          // Several pieces in the photo: review them all together, sorted by type.
+          setShowAddModal(false)
+          setSelectedUploadFiles(null)
+          setPhotoPieces(pieces)
+        }}
       />
       <input
         ref={uploadInputRef}
