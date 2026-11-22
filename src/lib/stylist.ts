@@ -311,6 +311,23 @@ function unsuitableFor(item: ClothingItem, occasion: Occasion): boolean {
   return false
 }
 
+// How much a piece is held back for a casual look. Read from the piece itself,
+// not only its tags: photo tagging can call a tailored waistcoat "casual".
+// A tailored (button, non-knit) vest or waistcoat, evening fabrics and party
+// pieces step well back; formal-tagged pieces a little. Knit vests and
+// blazers stay: they're easy to wear casually.
+const TAILORED_VEST = /waistcoat|button(ed)?[- ]?(up |down )?vest|tailored vest|suit vest|vest top/
+const CASUAL_VEST = /knit|sweater|puffer|quilted|padded|denim|fleece|gilet|utility|tank|cami|sports?/
+const EVENING = /satin|sequin|velvet|organza|chiffon|corset|bustier|bodycon|stiletto|heel|pump|slingback|evening|gown|cocktail|clutch|embellish/
+function tooDressyFor(item: ClothingItem): number {
+  const words = `${item.name} ${item.subcategory ?? ''} ${item.material ?? ''} ${item.construction ?? ''}`.toLowerCase()
+  let penalty = 0
+  if ((TAILORED_VEST.test(words) || (/\bvest\b/.test(words) && /button|sleeveless|v.?neck/.test(words))) && !CASUAL_VEST.test(words)) penalty += 14
+  if (EVENING.test(words)) penalty += 7
+  if (/formal|black tie|business/.test((item.formality ?? '').toLowerCase())) penalty += 4
+  return penalty
+}
+
 function dressinessScore(item: ClothingItem, occasion: Occasion, profile: UserProfile | null): number {
   const words = `${item.name} ${item.subcategory ?? ''} ${item.material ?? ''} ${item.formality ?? ''} ${item.construction ?? ''}`.toLowerCase()
   const relaxedStyle = (profile?.stylePreferences ?? []).some((style) => style === 'athleisure' || style === 'streetwear')
@@ -399,7 +416,6 @@ function scoreItem(
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
-  const dressy = /formal|dress|evening|occasion|elegant|satin|silk|heel|blazer|tailored|vest|waistcoat/.test(garmentDetails)
   const relaxed = /casual|relaxed|cozy|cosy|soft|knit|sweat|sneaker|loose|comfortable/.test(garmentDetails)
   if (['cold', 'cool'].includes(request.weather)) {
     if (item.category === 'outerwear') score += 10
@@ -409,9 +425,9 @@ function scoreItem(
   if (DRESSY_OCCASIONS.includes(request.occasion)) {
     score += dressinessScore(item, request.occasion, profile)
     if (/\b(vest|waistcoat)\b/.test(garmentDetails) && profile?.genderStylePreference === 'feminine') score += 5
-  } else if (['casual', 'weekend', 'travel'].includes(request.occasion)) {
+  } else if (['casual', 'weekend', 'travel', 'gym'].includes(request.occasion)) {
     if (relaxed) score += 4
-    if (dressy) score -= 2
+    score -= tooDressyFor(item)
   } else if (request.occasion === 'work' && /professional|business|tailored|blazer/.test(garmentDetails)) {
     score += 4
   }
