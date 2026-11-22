@@ -93,6 +93,41 @@ export function OutfitResult({
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           {items.map((result) => <OutfitItemTile key={result.item.id} result={result} />)}
         </div>
+
+        {/* ── Actions, right under the pieces ── */}
+        <div className="grid max-w-xl grid-cols-2 gap-2">
+          <Button
+            variant={isSaved ? 'secondary' : 'primary'}
+            size="md"
+            onClick={onSave}
+            disabled={isSaved}
+            fullWidth
+            className="gap-1 px-2 text-[10px] tracking-normal whitespace-nowrap sm:text-xs"
+          >
+            {isSaved ? (
+              <>
+                <Check size={16} />
+                Saved
+              </>
+            ) : (
+              <>
+                <BookMarked size={16} />
+                Save outfit
+              </>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="md"
+            onClick={onTryAnother}
+            loading={isRegenerating}
+            fullWidth
+            className="gap-1 px-2 text-[10px] tracking-normal whitespace-nowrap sm:text-xs"
+          >
+            <RefreshCw size={16} className={isRegenerating ? 'animate-spin' : ''} />
+            Try another
+          </Button>
+        </div>
       </div>
 
       {/* ══ Right: tips, reasoning, actions — sticks alongside on desktop ═════ */}
@@ -148,40 +183,6 @@ export function OutfitResult({
         {/* ── Pieces to buy for whatever the Kloset couldn't supply ── */}
         <CompleteTheLook suggestion={suggestion} />
 
-        {/* ── Actions ── */}
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            variant={isSaved ? 'secondary' : 'primary'}
-            size="md"
-            onClick={onSave}
-            disabled={isSaved}
-            fullWidth
-            className="gap-1 px-2 text-[10px] tracking-normal whitespace-nowrap sm:text-xs"
-          >
-            {isSaved ? (
-              <>
-                <Check size={16} />
-                Saved
-              </>
-            ) : (
-              <>
-                <BookMarked size={16} />
-                Save outfit
-              </>
-            )}
-          </Button>
-          <Button
-            variant="outline"
-            size="md"
-            onClick={onTryAnother}
-            loading={isRegenerating}
-            fullWidth
-            className="gap-1 px-2 text-[10px] tracking-normal whitespace-nowrap sm:text-xs"
-          >
-            <RefreshCw size={16} className={isRegenerating ? 'animate-spin' : ''} />
-            Try another
-          </Button>
-        </div>
       </aside>
     </div>
   )

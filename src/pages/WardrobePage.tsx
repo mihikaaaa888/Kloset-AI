@@ -225,12 +225,6 @@ export function WardrobePage() {
     setShowAddModal(true)
   }
 
-  const takePhoto = () => {
-    setShowAddMenu(false)
-    cameraInputRef.current?.click()
-  }
-
-  const cameraInputRef = useRef<HTMLInputElement>(null)
   const uploadInputRef = useRef<HTMLInputElement>(null)
 
   const openCompletePiece = (item: ClothingItem) => {
@@ -322,7 +316,6 @@ export function WardrobePage() {
               </div>
               {showAddMenu && <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-48 border border-text-primary/10 bg-surface p-1 shadow-lifted">
                 <button role="menuitem" onClick={() => { setShowAddMenu(false); setShowScanner(true) }} className="block w-full px-3 py-2.5 text-left text-sm font-medium text-text-primary hover:bg-text-primary/5">Scan wardrobe</button>
-                <button role="menuitem" onClick={takePhoto} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Take photo</button>
                 <button role="menuitem" onClick={() => { setShowAddMenu(false); uploadInputRef.current?.click() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Upload</button>
                 <button role="menuitem" onClick={() => { setShowAddMenu(false); openAddBrowse() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Browse</button>
                 <div className="my-1 border-t border-text-primary/10" />
@@ -464,23 +457,6 @@ export function WardrobePage() {
           event.target.value = ''
           if (!files.length) return
           setSelectedUploadFiles(files)
-          setAddPhotoTab('upload')
-          setEditItem(undefined)
-          setShowAddModal(true)
-        }}
-      />
-      <input
-        ref={cameraInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        aria-label="Take a clothing photo"
-        onChange={(event) => {
-          const file = event.target.files?.[0] ?? null
-          event.target.value = ''
-          if (!file) return
-          setSelectedUploadFiles([file])
           setAddPhotoTab('upload')
           setEditItem(undefined)
           setShowAddModal(true)
