@@ -300,10 +300,21 @@ function isStandaloneWoolen(item: ClothingItem) {
 
 function canBeCollaredLayer(item: ClothingItem) {
   const details = `${item.name} ${item.subcategory ?? ''} ${item.neckline_closure ?? ''}`
-  // Only an explicitly collared piece is an intentional layer under knitwear.
-  // Regular shirts, long-sleeve tops and crop tops are complete top layers.
-  if (/\b(t-?shirt|tee|crew.?neck|crop(?:ped)? top|long[ -]?sleeve|twist(?:ed)? shirt|vest|waistcoat)\b/i.test(details)) return false
-  return /\b(collared|polo|button[ -]?up)\b/i.test(details)
+  // Only a proper button-up shirt goes under a pullover sweater (its collar
+  // showing). Polos, tees, long-sleeve and crop tops are complete tops.
+  if (/\b(t-?shirt|tee|polo|crew.?neck|crop(?:ped)? top|long[ -]?sleeve|twist(?:ed)? shirt|vest|waistcoat|knit)\b/i.test(details)) return false
+  return /\b(button[ -]?(up|down)|oxford|dress shirt|formal shirt|collared shirt)\b/i.test(details)
+}
+
+/** A warm top worn on its own (a sweater top, knit top, sweatshirt, hoodie): nothing goes under it, only a jacket or coat over it. */
+function isWarmTop(item: ClothingItem) {
+  return /\b(knit(ted)? top|sweater top|top|sweatshirt|hoodie|turtleneck|roll.?neck|mock.?neck)\b/i.test(`${item.name} ${item.subcategory ?? ''}`)
+}
+
+/** A jacket or coat: what goes over a warm top. */
+function isJacketOrCoat(item: ClothingItem) {
+  const words = `${item.name} ${item.subcategory ?? ''}`.toLowerCase()
+  return /jacket|coat|blazer|trench|parka|puffer|shacket|overshirt|bomber|anorak|raincoat/.test(words) && !isStandaloneWoolen(item)
 }
 
 function canBeVestCoverage(item: ClothingItem) {
@@ -969,6 +980,15 @@ function mockEngine(
     }
   }
 
+  // When a sweater becomes the top on a cold day, a jacket or coat (not
+  // another knit) can go over it.
+  const addJacketOver = (warmTop: ClothingItem) => {
+    if (request.weather !== 'cold' && request.weather !== 'cool' && request.weather !== 'rainy') return
+    const jackets = wardrobe.filter((item) => item.id !== warmTop.id && item.category === 'outerwear' && isJacketOrCoat(item))
+    const jacket = pickBest(jackets, 'outerwear', request, profile, selected, attempt, colourConfig, feedback)
+    if (jacket) addItem(jacket, 'outerwear')
+  }
+
   // 3. Outerwear if weather warrants
   const needsOuterwear = ['cold', 'cool', 'rainy'].includes(request.weather)
   if (needsOuterwear && pinnedItem?.category !== 'outerwear') {
@@ -977,7 +997,8 @@ function mockEngine(
       const existingTopIndex = resultItems.findIndex((result) => result.role === 'top')
       const existingTop = existingTopIndex >= 0 ? resultItems[existingTopIndex].item : undefined
       const isVest = /\b(vest|waistcoat)\b/i.test(`${outer.name} ${outer.subcategory ?? ''}`)
-      const canLayerTop = existingTop && (isVest ? canBeVestCoverage(existingTop) : canBeCollaredLayer(existingTop))
+      // A warm top (sweater top, knit top) never goes over another top.
+      const canLayerTop = existingTop && !isWarmTop(outer) && (isVest ? canBeVestCoverage(existingTop) : canBeCollaredLayer(existingTop))
 
       if (isStandaloneWoolen(outer) && existingTop && !canLayerTop && pinnedItem) {
         // Keep the user's pinned starting item; don't add an incompatible inner layer.
@@ -985,8 +1006,10 @@ function mockEngine(
         selected.splice(selected.indexOf(existingTop), 1)
         resultItems.splice(existingTopIndex, 1)
         addItem(outer, 'top')
+        addJacketOver(outer)
       } else if (isStandaloneWoolen(outer) && !existingTop) {
         addItem(outer, 'top')
+        addJacketOver(outer)
       } else {
         addItem(outer, 'outerwear')
       }
