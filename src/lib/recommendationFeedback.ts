@@ -24,7 +24,9 @@ export interface RecommendationFeedback {
   combinationId?: string
   /** Garment-type signature used to avoid repeating a disliked pairing. */
   combinationType?: string
-  source?: 'daily-outfit' | 'outfit-photo'
+  // 'daily-outfit': Home's outfit of the day; 'stylist-outfit': a What to wear result.
+  // Both are rated whole outfits and weigh the same.
+  source?: 'daily-outfit' | 'stylist-outfit' | 'outfit-photo'
   createdAt: string
 }
 
@@ -48,9 +50,11 @@ export function outfitCombinationType(items: ClothingItem[]): string {
   return items.map((item) => `${item.category}:${normalizeGarmentType(item.subcategory || item.name)}`).sort().join('|')
 }
 
+const isOutfitRating = (event: RecommendationFeedback) => event.source === 'daily-outfit' || event.source === 'stylist-outfit'
+
 export function dislikedOutfitCombinationTypes(feedback: RecommendationFeedback[]): Set<string> {
   return new Set(feedback
-    .filter((event) => event.action === 'dislike' && event.source === 'daily-outfit' && event.combinationType)
+    .filter((event) => event.action === 'dislike' && isOutfitRating(event) && event.combinationType)
     .map((event) => event.combinationType as string))
 }
 
@@ -131,9 +135,9 @@ export function scoreRecommendationFeedback(
     if (similarity === 0) continue
 
     const weight = event.action === 'like'
-      ? (event.source === 'daily-outfit' ? 1.5 : event.source === 'outfit-photo' ? 0.65 : 1)
+      ? (isOutfitRating(event) ? 1.5 : event.source === 'outfit-photo' ? 0.65 : 1)
       : event.action === 'dislike'
-        ? (event.source === 'daily-outfit' ? -3 : -1.25)
+        ? (isOutfitRating(event) ? -3 : -1.25)
         : Math.min(0.35, Math.max(0, (event.dwellSeconds ?? 0) - 3) * 0.07)
     score += similarity * weight * decay
   }
@@ -210,8 +214,8 @@ export function learnTasteProfile(feedback: RecommendationFeedback[]): TasteProf
     const ageDays = Math.max(0, (Date.now() - new Date(event.createdAt).getTime()) / 86_400_000)
     const decay = Math.exp(-ageDays / 120)
     const base = event.action === 'like'
-      ? (event.source === 'daily-outfit' ? 1.5 : event.source === 'outfit-photo' ? 0.65 : 1)
-      : (event.source === 'daily-outfit' ? -1.5 : -1)
+      ? (isOutfitRating(event) ? 1.5 : event.source === 'outfit-photo' ? 0.65 : 1)
+      : (isOutfitRating(event) ? -1.5 : -1)
     const weight = base * decay
     const { traits } = event
     for (const colour of traits.colours.slice(0, 2)) add('colours', colour, weight)

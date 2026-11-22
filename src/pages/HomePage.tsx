@@ -96,7 +96,7 @@ function DailyOutfitCard({ items, profile, onAskStylist }: {
   // replace the outfit the user is looking at (liking it used to swap it out).
   // A thumbs-down does take effect now: today's look is replaced with another.
   const rankingFeedback = feedback.filter((event) => event.createdAt.slice(0, 10) !== todayKey
-    || (event.action !== 'dwell' && !(event.action === 'like' && event.source === 'daily-outfit')))
+    || (event.action !== 'dwell' && !(event.action === 'like' && (event.source === 'daily-outfit' || event.source === 'stylist-outfit'))))
   const rankingFeedbackKey = stableHash(rankingFeedback.map((event) => `${event.id}:${event.action}`).join('|')).toString(36)
   const useRecommendationGrid = recommendedItems.length > 3
   const userId = profile?.id ?? 'guest'
