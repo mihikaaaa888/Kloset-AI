@@ -79,8 +79,8 @@ function recallResults(key: string): LiveProduct[] | null {
  * loads when `enabled`, loadMore() fetches the next page. Searches again only
  * when the search words change, not on every re-render of profile or wardrobe.
  */
-export function useLiveProducts(queriesFor: (page: number) => DiscoverQuery[], options: { enabled?: boolean; brand?: string | null } = {}) {
-  const { enabled = true, brand = null } = options
+export function useLiveProducts(queriesFor: (page: number) => DiscoverQuery[], options: { enabled?: boolean; brand?: string | null; shuffle?: boolean } = {}) {
+  const { enabled = true, brand = null, shuffle = false } = options
   const [items, setItems] = useState<LiveProduct[]>([])
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -118,7 +118,10 @@ export function useLiveProducts(queriesFor: (page: number) => DiscoverQuery[], o
     if (result.status === 'ok') {
       setItems((current) => {
         const seen = new Set(replace ? [] : current.map((item) => item.id))
-        return [...(replace ? [] : current), ...result.items.filter((item) => !seen.has(item.id))]
+        const fresh = result.items.filter((item) => !seen.has(item.id))
+        // Shuffle each batch on its own, so loading more never reorders cards already shown.
+        if (shuffle) for (let i = fresh.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [fresh[i], fresh[j]] = [fresh[j], fresh[i]] }
+        return [...(replace ? [] : current), ...fresh]
       })
       setPage(nextPage)
     }

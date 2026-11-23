@@ -54,3 +54,52 @@ revoke all on function public.kaia_take_message(uuid, date, int) from public, an
 revoke all on function public.kaia_return_message(uuid, date) from public, anon, authenticated;
 grant execute on function public.kaia_take_message(uuid, date, int) to service_role;
 grant execute on function public.kaia_return_message(uuid, date) to service_role;
+
+-- ─── Answers to Kaia's questions are free ───────────────────────────────────
+-- When Kaia's reply asks the person a question, their next message is the
+-- answer and doesn't use up a message. At most 10 free answers a day, so a
+-- chat that keeps asking can't become unlimited.
+alter table public.kaia_usage add column if not exists awaiting_answer boolean not null default false;
+alter table public.kaia_usage add column if not exists free_answers int not null default 0 check (free_answers >= 0);
+
+-- Kaia just asked a question: the next message is free.
+create or replace function public.kaia_mark_question(p_user uuid, p_day date)
+returns void
+language sql
+set search_path = public
+as $$
+  insert into public.kaia_usage (user_id, day, messages, awaiting_answer)
+  values (p_user, p_day, 0, true)
+  on conflict (user_id, day) do update set awaiting_answer = true;
+$$;
+
+-- Use a pending free answer. Returns today's message count (unchanged), or
+-- null when there's no question waiting or today's free answers are used up.
+create or replace function public.kaia_take_answer(p_user uuid, p_day date)
+returns int
+language sql
+set search_path = public
+as $$
+  update public.kaia_usage
+  set awaiting_answer = false, free_answers = free_answers + 1
+  where user_id = p_user and day = p_day and awaiting_answer and free_answers < 10
+  returning messages;
+$$;
+
+-- Give a free answer back (the AI failed, so the question is still waiting).
+create or replace function public.kaia_return_answer(p_user uuid, p_day date)
+returns void
+language sql
+set search_path = public
+as $$
+  update public.kaia_usage
+  set awaiting_answer = true, free_answers = greatest(free_answers - 1, 0)
+  where user_id = p_user and day = p_day;
+$$;
+
+revoke all on function public.kaia_mark_question(uuid, date) from public, anon, authenticated;
+revoke all on function public.kaia_take_answer(uuid, date) from public, anon, authenticated;
+revoke all on function public.kaia_return_answer(uuid, date) from public, anon, authenticated;
+grant execute on function public.kaia_mark_question(uuid, date) to service_role;
+grant execute on function public.kaia_take_answer(uuid, date) to service_role;
+grant execute on function public.kaia_return_answer(uuid, date) to service_role;

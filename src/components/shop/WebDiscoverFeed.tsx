@@ -12,6 +12,16 @@ type FeedItem = LiveProduct
 // Suggested for you shows a short row first; Show more reveals more, then searches again.
 const SUGGESTED_STEP = 12
 
+// Each Shop visit starts its searches one page further on, so a reload brings other products.
+const VISIT_KEY = 'kloset:shop:visit'
+function nextVisit(): number {
+  try {
+    const visit = (Number(localStorage.getItem(VISIT_KEY)) || 0) + 1
+    localStorage.setItem(VISIT_KEY, String(visit))
+    return visit
+  } catch { return Math.floor(Math.random() * 1000) }
+}
+
 /**
  * Shop's live products. Every product on Shop comes from here:
  * - 'suggested': picks for the person's Kloset (what they own and need), first under All;
@@ -55,12 +65,14 @@ export function WebDiscoverFeed({
     return () => observer.disconnect()
   }, [inView])
 
+  const [visit] = useState(nextVisit)
   const queriesFor = useCallback((page: number) => {
-    if (suggested) return buildKlosetQueries(profile, wardrobe, tasteAtOpen.current, page)
+    if (suggested) return buildKlosetQueries(profile, wardrobe, tasteAtOpen.current, page + visit)
+    // A typed search keeps its most relevant results first.
     if (searching) return buildSearchQueries(profile, search, { category, colours, styles, avoid: tasteAtOpen.current.avoids.colours }, page)
-    return buildDiscoverQueries(profile, tasteAtOpen.current, category, page, wardrobe)
-  }, [suggested, searching, profile, wardrobe, search, category, colours, styles])
-  const { items, loading, status, loadMore, retry } = useLiveProducts(queriesFor, { enabled: inView, brand })
+    return buildDiscoverQueries(profile, tasteAtOpen.current, category, page + visit, wardrobe)
+  }, [suggested, searching, profile, wardrobe, search, category, colours, styles, visit])
+  const { items, loading, status, loadMore, retry } = useLiveProducts(queriesFor, { enabled: inView, brand, shuffle: !searching })
   useEffect(() => { setShown(SUGGESTED_STEP) }, [items.length === 0])
 
   const ratedIds = useMemo(() => new Set(feedback.filter((e) => e.action === 'dislike').map((e) => e.itemId)), [feedback])

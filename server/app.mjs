@@ -1427,6 +1427,8 @@ async function callClaude(apiKey, systemPrompt, recentMessages, imageDataUrls = 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-5',
     max_tokens: 600,
+    // Sonnet 5 thinks by default; a fallback has ~4.5s, so answer straight away.
+    thinking: { type: 'disabled' },
     system: systemPrompt,
     messages: claudeMessages,
   }, { timeout: 4500, maxRetries: 0 })
@@ -1511,6 +1513,14 @@ async function kaiaRpc(fn, args) {
 async function takeKaiaMessage(userId) {
   if (!userId) return { limited: false, remaining: undefined, day: null }
   const day = kaiaDay()
+  // An answer to Kaia's last question is free. If that part of kaia_usage.sql
+  // hasn't been run yet, fall through and count the message as before.
+  try {
+    const used = await kaiaRpc('kaia_take_answer', { p_user: userId, p_day: day })
+    if (used !== null) return { limited: false, remaining: Math.max(0, KAIA_DAILY_MESSAGES - Number(used)), day, freeAnswer: true }
+  } catch (error) {
+    console.warn('[chat] free answers unavailable:', error?.message ?? error)
+  }
   try {
     const used = await kaiaRpc('kaia_take_message', { p_user: userId, p_day: day, p_limit: KAIA_DAILY_MESSAGES })
     if (used === null) return { limited: true, remaining: 0, day }
@@ -1524,9 +1534,27 @@ async function takeKaiaMessage(userId) {
 async function returnKaiaMessage(userId, allowance) {
   if (!userId || !allowance?.day) return
   try {
-    await kaiaRpc('kaia_return_message', { p_user: userId, p_day: allowance.day })
+    if (allowance.freeAnswer) await kaiaRpc('kaia_return_answer', { p_user: userId, p_day: allowance.day })
+    else await kaiaRpc('kaia_return_message', { p_user: userId, p_day: allowance.day })
   } catch (error) {
     console.warn('[chat] could not give back a failed message:', error?.message ?? error)
+  }
+}
+
+// A reply that ends by asking the person something (and isn't an outfit or a
+// shop pick) is a question: their answer shouldn't use up a message.
+function isKaiaQuestion(reply) {
+  if (/\[\[SHOP:/i.test(reply) || /^\s*-?\s*(Top|Bottom|Dress|Shoes)\s*:/im.test(reply)) return false
+  const lastLine = reply.trim().split('\n').filter((line) => line.trim()).pop() ?? ''
+  return /\?\s*\**\s*$/.test(lastLine)
+}
+
+async function markKaiaQuestion(userId, allowance) {
+  if (!userId || !allowance?.day) return
+  try {
+    await kaiaRpc('kaia_mark_question', { p_user: userId, p_day: allowance.day })
+  } catch (error) {
+    console.warn('[chat] could not mark a question as answerable for free:', error?.message ?? error)
   }
 }
 
@@ -1764,6 +1792,7 @@ CRITICAL RULES:
       reply = extracted.reply
       styleSignals = extracted.styleSignals
     }
+    if (isKaiaQuestion(reply)) await markKaiaQuestion(req.userId, allowance)
     const hasShopTag = /\[\[SHOP:/i.test(reply)
     console.log(`[chat] ${messages.length} messages in → reply ${reply.length} chars via ${source}${hasShopTag ? ' (includes [[SHOP]] tag)' : ''}`)
     return res.json({ reply, source, ...(styleSignals ? { styleSignals } : {}), ...(allowance.remaining !== undefined ? { remaining: allowance.remaining, limit: KAIA_DAILY_MESSAGES } : {}) })
