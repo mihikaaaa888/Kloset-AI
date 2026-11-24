@@ -17,14 +17,15 @@ export async function fetchFeedback(userId: string): Promise<RecommendationFeedb
     .from('recommendation_feedback')
     .select('payload')
     .eq('user_id', userId)
-    .order('created_at', { ascending: true })
-    .limit(2000)
+    // Newest first so a long history keeps its recent votes (the store keeps the last 800).
+    .order('created_at', { ascending: false })
+    .limit(800)
   if (error) {
     // Most likely the table hasn't been created yet; keep working from local data.
     console.warn('[feedback] could not load saved ratings:', error.message)
     return null
   }
-  return (data ?? []).map((row) => row.payload as RecommendationFeedback)
+  return (data ?? []).map((row) => row.payload as RecommendationFeedback).reverse()
 }
 
 export async function saveFeedback(userId: string, events: RecommendationFeedback[]): Promise<void> {
