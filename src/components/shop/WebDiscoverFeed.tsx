@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Heart, X } from 'lucide-react'
 import { clsx } from 'clsx'
 import { buildDiscoverQueries, buildKlosetQueries, buildSearchQueries, filterForUser } from '@/lib/discoverFeed'
-import { parsePrice, useLiveProducts, type LiveProduct } from '@/lib/liveShop'
+import { parsePrice, prefetchLiveProducts, useLiveProducts, type LiveProduct } from '@/lib/liveShop'
 import { learnTasteProfile, type RecommendationFeedback } from '@/lib/recommendationFeedback'
 import { useRecommendationStore } from '@/store/recommendationStore'
 import type { ClothingCategory, ClothingItem, UserProfile } from '@/types'
@@ -12,14 +12,16 @@ type FeedItem = LiveProduct
 // Suggested for you shows a short row first; Show more reveals more, then searches again.
 const SUGGESTED_STEP = 12
 
-// Each Shop visit starts its searches one page further on, so a reload brings other products.
+// Each Shop visit starts its searches one page further on, so a reload brings
+// other products. Once a visit loads, the next visit's products are fetched in
+// the background and kept on the device, so the next open is instant.
+// Read on open, moved on only after a load (opening twice in dev's StrictMode doesn't skip one).
 const VISIT_KEY = 'kloset:shop:visit'
-function nextVisit(): number {
-  try {
-    const visit = (Number(localStorage.getItem(VISIT_KEY)) || 0) + 1
-    localStorage.setItem(VISIT_KEY, String(visit))
-    return visit
-  } catch { return Math.floor(Math.random() * 1000) }
+function currentVisit(): number {
+  try { return Number(localStorage.getItem(VISIT_KEY)) || 1 } catch { return Math.floor(Math.random() * 1000) }
+}
+function advanceVisit(to: number) {
+  try { localStorage.setItem(VISIT_KEY, String(to)) } catch { /* storage blocked: next visit picks at random */ }
 }
 
 /**
@@ -65,14 +67,23 @@ export function WebDiscoverFeed({
     return () => observer.disconnect()
   }, [inView])
 
-  const [visit] = useState(nextVisit)
-  const queriesFor = useCallback((page: number) => {
-    if (suggested) return buildKlosetQueries(profile, wardrobe, tasteAtOpen.current, page + visit)
+  const [visit] = useState(currentVisit)
+  const queriesAt = useCallback((page: number, atVisit: number) => {
+    if (suggested) return buildKlosetQueries(profile, wardrobe, tasteAtOpen.current, page + atVisit)
     // A typed search keeps its most relevant results first.
     if (searching) return buildSearchQueries(profile, search, { category, colours, styles, avoid: tasteAtOpen.current.avoids.colours }, page)
-    return buildDiscoverQueries(profile, tasteAtOpen.current, category, page + visit, wardrobe)
-  }, [suggested, searching, profile, wardrobe, search, category, colours, styles, visit])
-  const { items, loading, status, loadMore, retry } = useLiveProducts(queriesFor, { enabled: inView, brand, shuffle: !searching })
+    return buildDiscoverQueries(profile, tasteAtOpen.current, category, page + atVisit, wardrobe)
+  }, [suggested, searching, profile, wardrobe, search, category, colours, styles])
+  const queriesFor = useCallback((page: number) => queriesAt(page, visit), [queriesAt, visit])
+  const { items, loading, status, loadMore, retry } = useLiveProducts(queriesFor, { enabled: inView, brand, shuffle: !searching, instant: !searching })
+  // This visit has products: get the next visit's ready in the background.
+  const prefetched = useRef(false)
+  useEffect(() => {
+    if (searching || prefetched.current || !items.length) return
+    prefetched.current = true
+    advanceVisit(visit + 1)
+    void prefetchLiveProducts(queriesAt(0, visit + 1), { brand })
+  }, [searching, items.length, visit, queriesAt, brand])
   useEffect(() => { setShown(SUGGESTED_STEP) }, [items.length === 0])
 
   const ratedIds = useMemo(() => new Set(feedback.filter((e) => e.action === 'dislike').map((e) => e.itemId)), [feedback])
