@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Heart, X } from 'lucide-react'
+import { Check, Heart, Plus, X } from 'lucide-react'
 import { clsx } from 'clsx'
 import { buildDiscoverQueries, buildKlosetQueries, buildSearchQueries, filterForUser } from '@/lib/discoverFeed'
-import { parsePrice, prefetchLiveProducts, useLiveProducts, type LiveProduct } from '@/lib/liveShop'
+import { liveToItem, parsePrice, prefetchLiveProducts, useLiveProducts, type LiveProduct } from '@/lib/liveShop'
+import { insertItem } from '@/lib/wardrobeService'
+import { useAuth } from '@/contexts/AuthContext'
+import { useWardrobeStore } from '@/store/wardrobeStore'
 import { learnTasteProfile, type RecommendationFeedback } from '@/lib/recommendationFeedback'
 import { useRecommendationStore } from '@/store/recommendationStore'
 import type { ClothingCategory, ClothingItem, UserProfile } from '@/types'
@@ -125,16 +128,17 @@ export function WebDiscoverFeed({
   }
 
   return (
-    <section ref={sectionRef} aria-label={suggested ? 'Suggested for you' : 'From around the web'} className={suggested ? 'pt-4' : 'mt-12 border-t border-text-primary/10 pt-6'}>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
+    <section ref={sectionRef} aria-label={suggested ? 'Suggested for you' : 'From around the web'} className={suggested ? 'pt-6' : 'mt-10 pt-6'}>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-2">
         {suggested ? (
           <div>
-            <h2 className="font-display text-2xl text-text-primary">Suggested for you</h2>
+            <h2 className="font-display text-2xl font-medium text-text-primary">Suggested for you</h2>
+            <p className="mt-1 text-xs text-text-muted">Picked to go with what’s already in your Kloset.</p>
           </div>
         ) : (
           <div>
-            <h2 className="font-display text-2xl text-text-primary">{brand ? `From ${brand}` : search.trim() ? `Results for “${search.trim()}”` : searching ? 'Your filtered picks' : 'From around the web'}</h2>
-            <p className="mt-1 text-xs text-text-muted">
+            <h2 className="font-display text-2xl font-medium text-text-primary">{brand ? `From ${brand}` : search.trim() ? `Results for “${search.trim()}”` : searching ? 'Your filtered picks' : 'From around the web'}</h2>
+            <p className="mt-1 max-w-[65ch] text-xs text-text-muted">
               {brand ? `Live from ${brand}’s site` : searching ? 'Searched live across stores' : wardrobe.length ? 'Live picks for what your Kloset is missing, what goes with your pieces, and what you’ve hearted' : 'Live picks from stores everywhere, tuned to your taste as you heart and skip'}.
             </p>
           </div>
@@ -150,10 +154,10 @@ export function WebDiscoverFeed({
       ) : status === 'error' && !visible.length ? (
         <p className="py-10 text-center text-sm text-text-muted">Couldn’t load live picks right now. <button onClick={() => void retry()} className="underline underline-offset-4 hover:text-text-primary">Try again</button></p>
       ) : (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-10 sm:grid-cols-3 sm:gap-x-5 lg:grid-cols-4 xl:grid-cols-5">
           {visible.map((item) => <WebProductCard key={item.id} item={item} vote={votes[item.id]} onVote={(action) => vote(item, action)} reason={searching ? undefined : item.search.reason} />)}
           {loading && Array.from({ length: visible.length ? 5 : (suggested ? 6 : 10) }).map((_, i) => (
-            <div key={`skeleton-${i}`} className="animate-pulse"><div className="aspect-[3/4] bg-text-primary/8" /><div className="mt-2 h-3 w-3/4 bg-text-primary/8" /><div className="mt-1.5 h-3 w-1/3 bg-text-primary/8" /></div>
+            <div key={`skeleton-${i}`} className="animate-pulse"><div className="aspect-[3/4] bg-tile" /><div className="mt-3 h-3 w-3/4 bg-text-primary/8" /><div className="mt-2 h-3 w-1/3 bg-text-primary/8" /><div className="mt-3 h-7 w-28 rounded-full bg-text-primary/8" /></div>
           ))}
         </div>
       )}
@@ -165,17 +169,29 @@ export function WebDiscoverFeed({
           </button>
         </div>
       )}
-      {!suggested && <p className="mt-4 text-center text-[10px] text-text-muted">Prices and stock are set by each store and may change.</p>}
+      {!suggested && <p className="mt-6 text-center text-xs text-text-muted">Prices and stock are set by each store and may change.</p>}
     </section>
   )
 }
 
 function WebProductCard({ item, vote, onVote, reason }: { item: FeedItem; vote?: 'like' | 'dislike'; onVote: (action: 'like' | 'dislike') => void; reason?: string }) {
   const [hidden, setHidden] = useState(false)
+  const { user } = useAuth()
+  const addItem = useWardrobeStore((s) => s.addItem)
+  // Matched by photo, so it still shows as added after a reload.
+  const inKloset = useWardrobeStore((s) => !!item.imageUrl && s.items.some((owned) => owned.imageUrl === item.imageUrl))
   if (hidden || vote === 'dislike') return null
+
+  const addToKloset = () => {
+    const now = new Date().toISOString()
+    const newItem: ClothingItem = { ...liveToItem(item), id: crypto.randomUUID(), createdAt: now, updatedAt: now }
+    addItem(newItem)
+    if (user) insertItem(user.id, newItem).catch((error) => console.warn('[shop] could not save to Kloset', error))
+  }
+
   return (
     <article className="group min-w-0">
-      <div className="relative aspect-[3/4] overflow-hidden bg-white">
+      <div className="relative aspect-[3/4] overflow-hidden bg-tile">
         <a href={item.url} target="_blank" rel="noopener noreferrer" aria-label={`View ${item.title} on ${item.retailer}`} className="absolute inset-0">
           <img
             src={item.imageUrl}
@@ -185,23 +201,35 @@ function WebProductCard({ item, vote, onVote, reason }: { item: FeedItem; vote?:
             onError={() => setHidden(true)}
             // Logos and banners load tiny or very wide; product photos don't.
             onLoad={(e) => { const { naturalWidth: w, naturalHeight: h } = e.currentTarget; if (w < 160 || h < 160 || w / h > 1.6) setHidden(true) }}
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+            // Multiply blends store photos' white backdrops into the warm tile.
+            className="h-full w-full object-cover mix-blend-multiply transition-transform duration-700 ease-editorial group-hover:scale-[1.015] dark:mix-blend-normal"
           />
         </a>
         <div className="absolute right-2 top-2 flex flex-col gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
-          <button onClick={() => onVote('like')} aria-pressed={vote === 'like'} aria-label="More like this" className={clsx('flex h-8 w-8 items-center justify-center rounded-full shadow-sm transition-colors', vote === 'like' ? 'bg-text-primary text-warm-cream' : 'bg-warm-cream/90 text-text-primary hover:bg-warm-cream')}>
+          <button onClick={() => onVote('like')} aria-pressed={vote === 'like'} aria-label="More like this" className={clsx('flex h-8 w-8 items-center justify-center rounded-full shadow-soft transition-colors', vote === 'like' ? 'bg-text-primary text-warm-cream' : 'bg-warm-cream/90 text-text-primary hover:bg-warm-cream')}>
             <Heart size={14} fill={vote === 'like' ? 'currentColor' : 'none'} />
           </button>
-          <button onClick={() => onVote('dislike')} aria-label="Not for me" className="flex h-8 w-8 items-center justify-center rounded-full bg-warm-cream/90 text-text-primary shadow-sm hover:bg-warm-cream">
+          <button onClick={() => onVote('dislike')} aria-label="Not for me" className="flex h-8 w-8 items-center justify-center rounded-full bg-warm-cream/90 text-text-primary shadow-soft hover:bg-warm-cream">
             <X size={14} />
           </button>
         </div>
       </div>
-      <a href={item.url} target="_blank" rel="noopener noreferrer" className="mt-2 block">
-        <p className="line-clamp-2 text-xs leading-snug text-text-primary" title={item.title}>{item.title}</p>
-        <p className="mt-1 truncate text-2xs text-text-muted">{item.retailer}{item.price ? ` · ${item.price}` : ''}</p>
-        {reason && <p className="mt-0.5 truncate text-2xs text-[#355E3B]" title={reason}>{reason}</p>}
+      <a href={item.url} target="_blank" rel="noopener noreferrer" className="mt-3 block">
+        <p className="truncate text-xs text-text-muted">{item.retailer}</p>
+        <p className="mt-0.5 line-clamp-2 text-sm leading-snug text-text-primary group-hover:underline decoration-text-primary/30 underline-offset-2" title={item.title}>{item.title}</p>
+        {item.price && <p className="mt-1 text-sm font-medium tabular-nums text-text-primary">{item.price}</p>}
+        {reason && <p className="mt-1 truncate text-xs text-butter-yellow" title={reason}>{reason}</p>}
       </a>
+      <button
+        type="button"
+        onClick={addToKloset}
+        disabled={inKloset}
+        aria-label={inKloset ? `${item.title} is in your Kloset` : `Add ${item.title} to Kloset`}
+        className="mt-3 inline-flex h-7 items-center gap-1 rounded-full border border-text-primary/20 px-3 text-xs text-text-primary transition-colors hover:border-text-primary/45 hover:bg-text-primary/5 disabled:cursor-default disabled:border-transparent disabled:bg-text-primary/5 disabled:text-text-muted"
+      >
+        {inKloset ? <Check size={12} /> : <Plus size={12} />}
+        {inKloset ? 'In your Kloset' : 'Add to Kloset'}
+      </button>
     </article>
   )
 }

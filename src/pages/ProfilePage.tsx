@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import {
-  Archive, Camera, ChevronRight, Cog, ImagePlus, LogOut, Pencil, Shirt, Trash2,
-  X, type LucideIcon,
-} from 'lucide-react'
+import { Archive, Camera, ChevronRight, LogOut, Pencil, Shirt, Trash2, type LucideIcon } from 'lucide-react'
 import { clsx } from 'clsx'
 
 import { ThemePicker } from '@/components/ui/ThemeToggle'
@@ -18,9 +15,10 @@ import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useOutfitStore } from '@/store/outfitStore'
 import { deleteAccount } from '@/lib/accountService'
 import { supabase } from '@/lib/supabase'
+import { CATALOG_STYLE_LABELS } from '@/lib/catalogData'
+import { colourNameToHex } from '@/lib/colourUtils'
+import { CategoryGlyph } from '@/components/wardrobe/categoryVisuals'
 import type { ClothingItem } from '@/types'
-
-const CARD = 'rounded-2xl bg-surface ring-1 ring-inset ring-text-primary/10 shadow-card transition-colors duration-500'
 
 function getInitials(name: string) {
   return name.split(' ').map((word) => word[0]).join('').toUpperCase().slice(0, 2)
@@ -35,11 +33,10 @@ export function ProfilePage() {
   const clearOutfits = useOutfitStore((state) => state.clearOutfits)
   const { user, signOut } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [settingsOpen, setSettingsOpen] = useState(false)
   // The nav menu's "Settings" links here with ?settings=1.
   useEffect(() => {
     if (searchParams.get('settings') !== '1') return
-    setSettingsOpen(true)
+    requestAnimationFrame(() => document.getElementById('settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
     setSearchParams((params) => { params.delete('settings'); return params }, { replace: true })
   }, [searchParams, setSearchParams])
   const [dangerOpen, setDangerOpen] = useState(false)
@@ -52,7 +49,6 @@ export function ProfilePage() {
 
   const mostWornItems = wardrobeItems.filter((item) => item.timesWorn > 0).sort((a, b) => b.timesWorn - a.timesWorn).slice(0, 4)
   const neverWorn = wardrobeItems.filter((item) => item.timesWorn === 0).slice(0, 5)
-  const coverItems = wardrobeItems.filter((item) => item.imageUrl || item.imageId || item.imageStoragePath).slice(0, 5)
 
   useEffect(() => {
     setCounts({ pieces: wardrobeItems.length, outfits: savedOutfits.length })
@@ -76,7 +72,7 @@ export function ProfilePage() {
     return <div className="flex min-h-screen items-center justify-center bg-warm-cream px-6 pt-20"><div className="text-center"><h1 className="mb-3 font-display text-4xl text-text-primary">Your profile</h1><button onClick={() => navigate('/onboarding')} className="border-b border-text-primary/40 text-sm text-text-primary">Complete onboarding</button></div></div>
   }
 
-  const handleEditProfile = () => { setSettingsOpen(false); navigate('/onboarding?edit=true') }
+  const handleEditProfile = () => navigate('/onboarding?edit=true')
   const handleAvatar = async (file?: File) => {
     if (!file || !profile) return
     try {
@@ -106,113 +102,235 @@ export function ProfilePage() {
     }
   }
   const handleSignOut = async () => {
-    try { await signOut(); setSettingsOpen(false); navigate('/') } catch (error) { console.error('[profile] sign out failed', error) }
+    try { await signOut(); navigate('/') } catch (error) { console.error('[profile] sign out failed', error) }
   }
+  const favouriteCount = wardrobeItems.filter((item) => item.isFavourite).length
+  const subtitle = [profile.occupation, profile.ageRange ? `Age ${profile.ageRange}` : null].filter(Boolean).join(' · ')
+  const shopsFor = profile.genderStylePreference === 'feminine' ? "Women's" : profile.genderStylePreference === 'masculine' ? "Men's" : profile.genderStylePreference === 'androgynous' ? "Women's and men's" : null
+  const styleRows: { label: string; content: React.ReactNode }[] = [
+    ...(profile.stylePreferences.length ? [{ label: 'Style', content: <ChipList values={profile.stylePreferences.map((style) => CATALOG_STYLE_LABELS[style] ?? style)} /> }] : []),
+    ...(profile.typicalOccasions.length ? [{ label: 'Dresses for', content: <ChipList values={profile.typicalOccasions.map((occasion) => occasion.replace(/-/g, ' '))} /> }] : []),
+    ...(profile.favouriteColours.length ? [{ label: 'Colours you love', content: <ColourList colours={profile.favouriteColours} /> }] : []),
+    ...(profile.avoidColours.length ? [{ label: 'Colours you avoid', content: <ColourList colours={profile.avoidColours} /> }] : []),
+    ...(profile.favouriteBrands?.length ? [{ label: 'Favourite brands', content: <ChipList values={profile.favouriteBrands} /> }] : []),
+    ...(shopsFor ? [{ label: 'Shops for', content: <p className="text-sm text-text-primary">{shopsFor}</p> }] : []),
+    ...(profile.lifestyle ? [{ label: 'Lifestyle', content: <p className="max-w-[65ch] text-sm leading-relaxed text-text-primary">{profile.lifestyle}</p> }] : []),
+  ]
+
+  const hasPhoto = (item: ClothingItem) => !!(item.imageUrl || item.imageId || item.imageStoragePath)
+  // Favourites lead the cover collage, then anything with a photo.
+  const coverItems = [...wardrobeItems].filter(hasPhoto).sort((a, b) => Number(b.isFavourite) - Number(a.isFavourite)).slice(0, 3)
+
   return (
-    <main className="min-h-screen bg-warm-cream pb-28 text-text-primary transition-colors duration-500 md:pb-12">
-      <header className="relative isolate flex min-h-[14rem] items-center overflow-hidden bg-[#355E3B] py-8 text-[#FFFDD0] sm:min-h-[16rem] lg:min-h-[17rem]">
-        {coverItems.length > 0 ? <div className="absolute inset-0 -z-10 grid grid-cols-3 opacity-45 sm:grid-cols-5">{coverItems.map((item) => <CoverImage key={item.id} item={item} />)}</div> : null}
-        <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[#17351f]/90 via-[#24482e]/75 to-[#355E3B]/45" />
-        <div className="mx-auto flex w-full max-w-6xl translate-y-3 items-center gap-5 px-4 sm:translate-y-4 sm:px-6 lg:px-8">
-          <button type="button" onClick={() => avatarInput.current?.click()} aria-label="Upload profile photo" className="group relative h-12 w-12 shrink-0 translate-y-3 overflow-hidden rounded-full border border-[#FFFDD0]/50 bg-[#FFFDD0]/15 shadow-card sm:h-16 sm:w-16 sm:translate-y-4">
-            {avatarUrl ? <img src={avatarUrl} alt="Profile" className="h-full w-full object-cover" /> : <span className="flex h-full w-full items-center justify-center font-display text-lg sm:text-xl">{getInitials(profile.name)}</span>}
-            <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><Camera size={20} /></span>
-          </button>
-          <input ref={avatarInput} type="file" accept="image/*" className="hidden" onChange={(event) => { void handleAvatar(event.target.files?.[0]); event.target.value = '' }} />
-          <div className="min-w-0 flex-1 translate-y-3 sm:translate-y-4">
-            <h1 className="truncate font-display text-4xl leading-none sm:text-6xl">{profile.name}</h1>
+    <main className="min-h-screen bg-warm-cream pt-16 pb-28 text-text-primary lg:pt-20 md:pb-12">
+      <div className="mx-auto grid max-w-6xl gap-10 px-4 pt-6 sm:px-6 lg:grid-cols-[19rem_1fr] lg:gap-14 lg:px-8 lg:pt-8">
+        {/* Profile card: their own pieces as the cover, photo, name and counts. */}
+        <aside className="lg:sticky lg:top-24 lg:self-start">
+          <CoverCollage items={coverItems} />
+          <div className="relative -mt-10 flex items-end justify-between gap-3 px-4">
+            <button type="button" onClick={() => avatarInput.current?.click()} aria-label="Change profile photo" className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-full bg-tile ring-4 ring-warm-cream">
+              {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : <span className="flex h-full w-full items-center justify-center bg-text-primary font-display text-2xl text-warm-cream">{getInitials(profile.name)}</span>}
+              <span className="absolute inset-0 flex items-center justify-center bg-text-primary/45 text-warm-cream opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><Camera size={18} /></span>
+            </button>
+            <input ref={avatarInput} type="file" accept="image/*" className="hidden" onChange={(event) => { void handleAvatar(event.target.files?.[0]); event.target.value = '' }} />
+            <button onClick={handleEditProfile} className="mb-1 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-text-primary/20 bg-warm-cream px-4 text-xs text-text-primary transition-colors hover:border-text-primary/45 hover:bg-text-primary/5">
+              <Pencil size={13} /> Edit profile
+            </button>
           </div>
-          <button onClick={handleEditProfile} aria-label="Edit profile" title="Edit profile" className="flex h-10 w-10 shrink-0 translate-y-3 items-center justify-center rounded-full border border-[#FFFDD0]/40 text-[#FFFDD0] transition-colors hover:bg-[#FFFDD0] hover:text-[#355E3B] sm:translate-y-4"><Pencil size={16} /></button>
+          <div className="mt-3 px-1">
+            <h1 className="break-words font-display text-3xl font-medium leading-tight">{profile.name}</h1>
+            {(subtitle || user?.email) && <p className="mt-1 truncate text-sm text-text-muted">{subtitle || user?.email}</p>}
+          </div>
+          <div className="mt-5 grid grid-cols-3 border-y border-text-primary/10">
+            <Stat value={counts.pieces} label={counts.pieces === 1 ? 'piece' : 'pieces'} onClick={() => navigate('/wardrobe')} />
+            <Stat value={counts.outfits} label={counts.outfits === 1 ? 'outfit' : 'outfits'} onClick={() => navigate('/wardrobe?view=outfits')} />
+            <Stat value={favouriteCount} label={favouriteCount === 1 ? 'favourite' : 'favourites'} onClick={() => navigate('/wardrobe')} />
+          </div>
+        </aside>
+
+        <div className="min-w-0 space-y-12">
+          {wardrobeItems.length > 0 && (
+            <Section id="colour-heading" title="Your Kloset in colour">
+              <ColourBreakdown items={wardrobeItems} />
+            </Section>
+          )}
+
+          {wardrobeItems.length > 0 && (
+            <Section id="category-heading" title="What’s inside">
+              <CategoryBreakdown items={wardrobeItems} onOpen={() => navigate('/wardrobe')} />
+            </Section>
+          )}
+
+          <Section id="style-heading" title="Your style" action={<button onClick={handleEditProfile} className="text-xs text-text-muted underline-offset-4 hover:text-text-primary hover:underline">Edit</button>}>
+            {styleRows.length ? (
+              <dl className="grid gap-x-8 gap-y-6 bg-surface p-5 ring-1 ring-inset ring-text-primary/10 sm:grid-cols-2 sm:p-6">
+                {styleRows.map((row) => (
+                  <div key={row.label} className={clsx('min-w-0', row.label === 'Lifestyle' && 'sm:col-span-2')}>
+                    <dt className="mb-2 text-xs text-text-muted">{row.label}</dt>
+                    <dd>{row.content}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="text-sm text-text-muted">Tell Kloset what you like to wear and your picks get better. <button onClick={handleEditProfile} className="text-text-primary underline underline-offset-4">Set up your style</button></p>
+            )}
+          </Section>
+
+          <Section id="worn-heading" title="Most worn">
+            {mostWornItems.length > 0
+              ? <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-4">{mostWornItems.map((item, index) => <PieceTile key={item.id} item={item} badge={index === 0 ? 'Top pick' : undefined} note={`Worn ${item.timesWorn} ${item.timesWorn === 1 ? 'time' : 'times'}`} onOpen={() => navigate('/wardrobe')} />)}</div>
+              : <p className="text-sm text-text-muted">Log when you wear a piece in your Kloset and your go-tos show up here.</p>}
+          </Section>
+
+          <Section id="never-heading" title="Waiting for a first outing">
+            {neverWorn.length
+              ? <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-1 no-scrollbar sm:mx-0 sm:grid sm:grid-cols-5 sm:overflow-visible sm:px-0">{neverWorn.map((item) => <PieceTile key={item.id} item={item} className="w-32 shrink-0 sm:w-auto" onOpen={() => navigate('/wardrobe')} />)}</div>
+              : wardrobeItems.length === 0
+                ? <p className="text-sm text-text-muted">Your Kloset is empty for now. <button onClick={() => navigate('/wardrobe')} className="text-text-primary underline underline-offset-4">Add your first piece</button></p>
+                : <p className="text-sm text-text-muted">Everything has had a turn. Nice.</p>}
+          </Section>
+
+          <Section id="settings" title="Settings">
+            <div className="divide-y divide-text-primary/10 border-y border-text-primary/10">
+              <div className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm">Appearance</p><ThemePicker /></div>
+              <SettingsRow icon={Archive} title="Recycle bin" subtitle="Restore or permanently delete saved outfits" onClick={() => navigate('/wardrobe?view=outfits&recycle=1')} />
+              <SampleKlosetRow />
+              <SettingsRow icon={LogOut} title="Sign out" subtitle={user?.email ?? 'Sign out of your account'} onClick={() => void handleSignOut()} />
+            </div>
+            <div className="mt-8">
+              <button onClick={() => setDangerOpen(true)} className="text-sm text-red-700 underline-offset-4 hover:underline dark:text-red-400">Delete account</button>
+              <p className="mt-1 text-xs text-text-muted">Permanently deletes your account and everything synced to it.</p>
+            </div>
+          </Section>
         </div>
-      </header>
-
-      <div className="mx-auto max-w-6xl space-y-10 px-4 pt-9 sm:px-6 lg:px-8 lg:pt-12">
-        <section aria-labelledby="closet-stats-heading">
-          <SectionHeading id="closet-stats-heading" title="Your Kloset" />
-          <section className={clsx(CARD, 'relative overflow-hidden p-5 sm:p-6')}>
-              <h3 className="mb-4 font-sans text-base font-medium sm:text-lg">Most Worn</h3>
-              {mostWornItems.length > 0 ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">{mostWornItems.map((item, index) => <MostWornPiece key={item.id} item={item} className={index === 3 ? 'sm:hidden' : undefined} onOpen={() => navigate('/wardrobe')} />)}</div> : <button onClick={() => navigate('/wardrobe')} className="text-sm underline underline-offset-4">Add a piece</button>}
-          </section>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <StatTile label="Pieces" value={counts.pieces} action={counts.pieces === 0 ? 'Add your first piece' : undefined} onClick={() => navigate('/wardrobe')} />
-            <StatTile label="Outfits" value={counts.outfits} action={counts.outfits === 0 ? 'Create an outfit' : undefined} onClick={() => navigate('/wardrobe?view=outfits')} />
-          </div>
-
-          <section className={clsx(CARD, 'mt-3 p-5 sm:p-6')}>
-            <div className="mb-3"><h3 className="font-sans text-base font-medium sm:text-lg">Never worn</h3></div>
-            {neverWorn.length ? <div className="flex gap-3 overflow-x-auto pb-1">{neverWorn.map((item) => <NeverWornPiece key={item.id} item={item} />)}</div> : wardrobeItems.length === 0 ? <div className="py-4"><p className="mb-3 text-sm text-text-muted">Your closet is empty for now.</p><button onClick={() => navigate('/wardrobe')} className="text-xs underline underline-offset-4">Add your first piece</button></div> : <p className="py-4 text-sm text-text-muted">Everything has had a turn. Keep logging wears to update this list.</p>}
-          </section>
-        </section>
-
-        <div className="flex justify-end pb-3"><button onClick={() => setSettingsOpen(true)} aria-label="Open settings" className="inline-flex items-center gap-2 px-2 py-2 text-sm text-text-muted transition-colors hover:text-text-primary"><Cog size={17} /> Settings</button></div>
       </div>
 
-      {settingsOpen && <SettingsSheet onClose={() => setSettingsOpen(false)} onEdit={handleEditProfile} onRecycle={() => { setSettingsOpen(false); navigate('/wardrobe?view=outfits&recycle=1') }} onSignOut={handleSignOut} onClear={() => setDangerOpen(true)} email={user?.email} />}
       {dangerOpen && <ConfirmDialog onCancel={() => { if (!deleteBusy) setDangerOpen(false) }} onConfirm={() => void handleDeleteAccount()} busy={deleteBusy} error={deleteError} />}
     </main>
   )
 }
 
-function SectionHeading({ id, title }: { id: string; title: string }) {
-  return <div className="mb-4"><h2 id={id} className="font-display text-3xl sm:text-4xl">{title}</h2></div>
+function Section({ id, title, action, children }: { id: string; title: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section aria-labelledby={`${id}-title`} id={id} className="scroll-mt-24">
+      <div className="mb-4 flex items-baseline justify-between gap-4">
+        <h2 id={`${id}-title`} className="font-display text-2xl font-medium">{title}</h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  )
 }
 
-function CountedValue({ value, prefix = '' }: { value: number; prefix?: string }) {
-  const [shown, setShown] = useState(0)
-  useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setShown(value); return }
-    let frame = 0
-    const start = performance.now()
-    const tick = (now: number) => {
-      const progress = Math.min(1, (now - start) / 650)
-      setShown(Math.round(value * (1 - (1 - progress) ** 3)))
-      if (progress < 1) frame = requestAnimationFrame(tick)
-    }
-    frame = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(frame)
-  }, [value])
-  return <>{prefix}{shown.toLocaleString('en-IN')}</>
-}
-
-function StatTile({ label, value, prefix, action, onClick }: { label: string; value: number | null; prefix?: string; action?: string; onClick: () => void }) {
-  return <button onClick={onClick} className={clsx(CARD, 'flex min-h-32 flex-col items-start justify-between p-5 text-left transition-colors hover:bg-text-primary/[0.02]')}>
-    <span className="text-[10px] uppercase tracking-[0.2em] text-text-muted">{label}</span>
-    <span className="font-display text-4xl tabular-nums">{value === null ? '—' : <CountedValue value={value} prefix={prefix} />}</span>
-    {action && <span className="text-xs underline underline-offset-4">{action}</span>}
-  </button>
-}
-
-function CoverImage({ item }: { item: ClothingItem }) {
-  const url = useItemImage(item)
-  return <div className="relative min-h-full overflow-hidden">{url ? <img src={url} alt="" className="h-full w-full object-cover" /> : <div className="h-full w-full bg-[#355E3B]" />}<div className="absolute inset-0 bg-[#355E3B]/35" /></div>
-}
-
-function MostWornPiece({ item, onOpen, className }: { item: ClothingItem; onOpen: () => void; className?: string }) {
-  const url = useItemImage(item)
-  return <article className={clsx('min-w-0 overflow-hidden rounded-xl bg-tile/60', className)}>
-    <button type="button" onClick={onOpen} className="block aspect-[4/3] w-full overflow-hidden bg-tile" aria-label={`Open ${item.name}`}>
-      {url ? <img src={url} alt={item.name} className="h-full w-full object-cover transition-transform duration-300 hover:scale-[1.02]" /> : <div className="h-full w-full bg-tile" />}
+function Stat({ value, label, onClick }: { value: number; label: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="group py-3 text-center transition-colors hover:bg-text-primary/[0.03]">
+      <span className="block font-display text-2xl font-medium tabular-nums leading-none">{value}</span>
+      <span className="mt-1 block text-xs text-text-muted group-hover:text-text-primary">{label}</span>
     </button>
-    <div className="p-3"><p className="truncate text-sm" title={item.name}>{item.name}</p><p className="mt-1 text-xs text-text-muted">Worn {item.timesWorn} {item.timesWorn === 1 ? 'time' : 'times'}</p></div>
-  </article>
+  )
 }
 
-function NeverWornPiece({ item }: { item: ClothingItem }) {
-  const url = useItemImage(item)
-  return <article className="w-36 shrink-0 sm:w-40"><div className="aspect-[4/5] overflow-hidden rounded-2xl bg-tile">{url ? <img src={url} alt={item.name} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center"><ImagePlus className="text-text-muted/50" /></div>}</div><p className="mt-2 truncate text-xs" title={item.name}>{item.name}</p></article>
-}
-
-function SettingsSheet({ onClose, onEdit, onRecycle, onSignOut, onClear, email }: { onClose: () => void; onEdit: () => void; onRecycle: () => void; onSignOut: () => void; onClear: () => void; email?: string }) {
-  return <ModalShell onClose={onClose} label="Profile settings"><div className="max-h-[85dvh] overflow-y-auto p-5 sm:p-7"><div className="mb-5 flex items-center justify-between"><div><h2 className="font-display text-3xl">Settings</h2></div><button onClick={onClose} aria-label="Close settings" className="p-2 text-text-muted hover:text-text-primary"><X size={18} /></button></div>
-    <div className="divide-y divide-text-primary/10 border-y border-text-primary/10">
-      <div className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm">Appearance</p></div><ThemePicker /></div>
-      <SettingsRow icon={Pencil} title="Edit style" subtitle="Update your style preferences" onClick={onEdit} />
-      <SettingsRow icon={Archive} title="Recycle bin" subtitle="Restore or permanently delete saved outfits" onClick={onRecycle} />
-      <SampleKlosetRow />
-      <SettingsRow icon={LogOut} title="Sign out" subtitle={email ?? 'Sign out of your account'} onClick={onSignOut} />
+function CoverCollage({ items }: { items: ClothingItem[] }) {
+  // Same lead-plus-two layout as the Kloset folders.
+  return (
+    <div className="grid aspect-[4/3] grid-cols-[3fr_2fr] grid-rows-2 gap-px overflow-hidden bg-text-primary/10">
+      {[0, 1, 2].map((slot) => <CoverTile key={items[slot]?.id ?? `empty-${slot}`} item={items[slot]} lead={slot === 0} />)}
     </div>
-    <div className="mt-7 border-t border-red-700/20 pt-5"><button onClick={onClear} className="text-sm text-red-700 underline underline-offset-4 dark:text-red-400">Delete account</button><p className="mt-1 text-xs text-text-muted">Permanently delete your account and its synced data.</p></div>
-  </div></ModalShell>
+  )
+}
+
+function CoverTile({ item, lead }: { item?: ClothingItem; lead: boolean }) {
+  const url = useItemImage(item)
+  const cutout = item?.imageSource === 'local'
+  return (
+    <div className={clsx('flex min-h-0 items-center justify-center overflow-hidden bg-tile', lead && 'row-span-2')}>
+      {url
+        ? <img src={url} alt="" className={clsx('h-full w-full mix-blend-multiply dark:mix-blend-normal', cutout ? 'object-contain p-[8%]' : 'object-cover')} />
+        : <CategoryGlyph category={item?.category ?? (lead ? 'dresses' : 'shoes')} size={lead ? 48 : 32} className="text-text-primary/15" />}
+    </div>
+  )
+}
+
+const FOLDER_NAMES: Record<string, string> = { tops: 'Tops', bottoms: 'Bottoms', dresses: 'Dresses', outerwear: 'Woolens', shoes: 'Shoes', accessories: 'Accessories' }
+
+function CategoryBreakdown({ items, onOpen }: { items: ClothingItem[]; onOpen: () => void }) {
+  const counts = Object.keys(FOLDER_NAMES).map((category) => ({ category, count: items.filter((item) => item.category === category).length }))
+  return (
+    <div className="grid grid-cols-3 gap-px bg-text-primary/10 ring-1 ring-text-primary/10 sm:grid-cols-6">
+      {counts.map(({ category, count }) => (
+        <button key={category} onClick={onOpen} className="group flex flex-col items-center gap-2 bg-warm-cream px-2 py-5 transition-colors hover:bg-surface">
+          <CategoryGlyph category={category} size={36} className={clsx('transition-transform duration-300 ease-editorial group-hover:-translate-y-0.5', count ? 'text-text-primary/70' : 'text-text-primary/20')} />
+          <span className={clsx('text-xs', count ? 'text-text-primary' : 'text-text-muted')}>{FOLDER_NAMES[category]}</span>
+          <span className="font-display text-xl font-medium leading-none tabular-nums">{count}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function ColourBreakdown({ items }: { items: ClothingItem[] }) {
+  const tally = new Map<string, number>()
+  for (const item of items) {
+    const colour = item.colour[0]?.toLowerCase()
+    if (colour) tally.set(colour, (tally.get(colour) ?? 0) + 1)
+  }
+  const colours = [...tally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
+  if (!colours.length) return <p className="text-sm text-text-muted">Add colours to your pieces and your palette shows up here.</p>
+  const total = colours.reduce((sum, [, count]) => sum + count, 0)
+  const [top, second] = colours
+  const summary = second && second[1] >= top[1] * 0.6 ? `Mostly ${top[0]} and ${second[0]}.` : `Mostly ${top[0]}.`
+  return (
+    <div>
+      <p className="mb-4 font-display text-xl text-text-primary">{summary}</p>
+      <div role="img" aria-label={`Your Kloset's colours: ${colours.map(([colour, count]) => `${colour} ${count}`).join(', ')}`} className="flex h-12 overflow-hidden ring-1 ring-inset ring-text-primary/10">
+        {colours.map(([colour, count]) => (
+          <span key={colour} title={`${colour}: ${count}`} className="h-full transition-[flex-grow] duration-700 ease-editorial" style={{ flexGrow: count, flexBasis: 0, backgroundColor: colourNameToHex(colour) }} />
+        ))}
+      </div>
+      <ul className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
+        {colours.map(([colour, count]) => (
+          <li key={colour} className="inline-flex items-center gap-2 text-xs capitalize text-text-primary">
+            <span className="h-3 w-3 rounded-full ring-1 ring-inset ring-text-primary/15" style={{ backgroundColor: colourNameToHex(colour) }} aria-hidden="true" />
+            {colour} <span className="tabular-nums text-text-muted">{Math.round((count / total) * 100)}%</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function ChipList({ values }: { values: string[] }) {
+  return <ul className="flex flex-wrap gap-2">{values.map((value) => <li key={value} className="rounded-full border border-text-primary/15 px-3 py-1 text-xs capitalize text-text-primary">{value}</li>)}</ul>
+}
+
+function ColourList({ colours }: { colours: string[] }) {
+  return (
+    <ul className="flex flex-wrap gap-2">
+      {colours.map((colour) => (
+        <li key={colour} className="inline-flex items-center gap-2 rounded-full border border-text-primary/15 py-1 pl-1.5 pr-3 text-xs capitalize text-text-primary">
+          <span className="h-4 w-4 rounded-full ring-1 ring-inset ring-text-primary/15" style={{ backgroundColor: colourNameToHex(colour) }} aria-hidden="true" />
+          {colour}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function PieceTile({ item, note, badge, onOpen, className }: { item: ClothingItem; note?: string; badge?: string; onOpen: () => void; className?: string }) {
+  const url = useItemImage(item)
+  return (
+    <button type="button" onClick={onOpen} aria-label={`Open ${item.name} in your Kloset`} className={clsx('group block min-w-0 text-left', className)}>
+      <div className="relative aspect-[3/4] overflow-hidden bg-tile">
+        {badge && <span className="absolute left-2 top-2 z-10 rounded-full bg-text-primary px-2.5 py-1 text-2xs font-medium text-warm-cream">{badge}</span>}
+        {url
+          ? <img src={url} alt="" loading="lazy" className="h-full w-full object-cover transition-transform duration-700 ease-editorial group-hover:scale-[1.015]" />
+          : <div className="flex h-full items-center justify-center"><CategoryGlyph category={item.category} size={40} className="text-text-primary/20" /></div>}
+      </div>
+      <p className="mt-2.5 truncate font-display text-base leading-snug text-text-primary" title={item.name}>{item.name}</p>
+      {note && <p className="mt-0.5 text-xs text-text-muted">{note}</p>}
+    </button>
+  )
 }
 
 // Load the sample basics, or remove them (only the sample pieces; their own stay).
@@ -238,7 +356,7 @@ function SampleKlosetRow() {
 }
 
 function SettingsRow({ icon: Icon, title, subtitle, onClick }: { icon: LucideIcon; title: string; subtitle: string; onClick: () => void }) {
-  return <button onClick={onClick} className="flex w-full items-center gap-3 py-4 text-left transition-colors hover:text-butter-yellow"><Icon size={17} className="shrink-0 text-butter-yellow" /><span className="min-w-0 flex-1"><span className="block text-sm">{title}</span><span className="block truncate text-xs text-text-muted">{subtitle}</span></span><ChevronRight size={16} className="text-text-muted" /></button>
+  return <button onClick={onClick} className="group flex w-full items-center gap-3 py-4 text-left"><Icon size={17} strokeWidth={1.5} className="shrink-0 text-text-muted transition-colors group-hover:text-text-primary" /><span className="min-w-0 flex-1"><span className="block text-sm">{title}</span><span className="block truncate text-xs text-text-muted">{subtitle}</span></span><ChevronRight size={16} className="text-text-muted transition-transform group-hover:translate-x-0.5" /></button>
 }
 
 function ConfirmDialog({ onCancel, onConfirm, busy, error }: { onCancel: () => void; onConfirm: () => void; busy: boolean; error: string }) {
@@ -251,5 +369,5 @@ function ModalShell({ children, onClose, label }: { children: React.ReactNode; o
     document.addEventListener('keydown', closeOnEscape)
     return () => document.removeEventListener('keydown', closeOnEscape)
   }, [onClose])
-  return <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/45 p-0 backdrop-blur-[2px] sm:items-center sm:p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section role="dialog" aria-modal="true" aria-label={label} className="max-h-[90dvh] w-full max-w-xl overflow-hidden rounded-t-2xl bg-surface text-text-primary shadow-card sm:rounded-2xl">{children}</section></div>
+  return <div className="fixed inset-0 z-[100] flex items-end justify-center bg-scrim/45 p-0 sm:items-center sm:p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section role="dialog" aria-modal="true" aria-label={label} className="max-h-[90dvh] w-full max-w-xl overflow-hidden bg-surface text-text-primary shadow-lifted">{children}</section></div>
 }

@@ -104,6 +104,7 @@ export function WardrobePage() {
     return () => window.removeEventListener('keydown', handleEscape)
   }, [completeSelectionMode])
 
+  const favouriteCount = closetItems.filter((item) => item.isFavourite).length
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const item of closetItems) {
@@ -289,6 +290,7 @@ export function WardrobePage() {
               <span className="truncate">{activeCollectionId === 'main' ? mainKlosetName : (collections.find((collection) => collection.id === activeCollectionId)?.name ?? mainKlosetName)}</span>
               <ChevronDown size={17} className="shrink-0" aria-hidden="true" />
             </button>
+            {view === 'pieces' && closetItems.length > 0 && <p className="mt-0.5 text-xs text-text-muted tabular-nums">{closetItems.length} {closetItems.length === 1 ? 'piece' : 'pieces'}{favouriteCount > 0 ? ` · ${favouriteCount} ${favouriteCount === 1 ? 'favourite' : 'favourites'}` : ''}</p>}
             {showKlosetMenu && <div role="menu" className="absolute left-0 top-full z-40 mt-3 w-64 max-w-[calc(100vw-2rem)] border border-text-primary/10 bg-surface p-2 shadow-lifted">
               {collections.map((collection) => {
                 const label = collection.id === 'main' ? mainKlosetName : collection.name
@@ -311,11 +313,9 @@ export function WardrobePage() {
               {showSearch ? <X size={18} strokeWidth={1.4} /> : <Search size={18} strokeWidth={1.4} />}
             </button>
             <div ref={addMenuRef} className="relative">
-              {/* Both the Add button and arrow open the add options menu. */}
-              <div className="inline-flex h-9 sm:h-10 items-stretch bg-text-primary text-warm-cream">
-                <button type="button" aria-haspopup="menu" aria-expanded={showAddMenu} onClick={() => setShowAddMenu((visible) => !visible)} className="inline-flex items-center gap-1.5 pl-2.5 pr-2 sm:pl-5 sm:pr-3 text-2xs font-medium uppercase tracking-widest transition-colors hover:bg-white/10"><Plus size={14} strokeWidth={1.5} /> Add</button>
-                <button type="button" aria-haspopup="menu" aria-expanded={showAddMenu} aria-label="More ways to add" onClick={() => setShowAddMenu((visible) => !visible)} className="flex items-center border-l border-warm-cream/25 px-2 sm:px-2.5 transition-colors hover:bg-white/10"><ChevronDown size={13} /></button>
-              </div>
+              <button type="button" aria-haspopup="menu" aria-expanded={showAddMenu} onClick={() => setShowAddMenu((visible) => !visible)} className="inline-flex h-10 items-center gap-2 bg-text-primary px-4 text-xs font-medium uppercase tracking-widest text-warm-cream transition-colors hover:bg-text-primary/85 active:scale-[0.98]">
+                <Plus size={14} strokeWidth={1.5} /> Add <ChevronDown size={13} className={clsx('transition-transform', showAddMenu && 'rotate-180')} aria-hidden="true" />
+              </button>
               {showAddMenu && <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-48 border border-text-primary/10 bg-surface p-1 shadow-lifted">
                 <button role="menuitem" onClick={() => { setShowAddMenu(false); setShowScanner(true) }} className="block w-full px-3 py-2.5 text-left text-sm font-medium text-text-primary hover:bg-text-primary/5">Scan wardrobe</button>
                 <button role="menuitem" onClick={() => { setShowAddMenu(false); uploadInputRef.current?.click() }} className="block w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-text-primary/5">Upload</button>
@@ -344,7 +344,7 @@ export function WardrobePage() {
               aria-selected={view === value}
               onClick={() => setView(value)}
               className={clsx(
-                'relative -mb-px pt-3 pb-3 text-[10px] sm:text-xs uppercase tracking-widest transition-colors',
+                'relative -mb-px pt-3 pb-3 text-xs uppercase tracking-widest transition-colors',
                 view === value
                   ? 'text-text-primary font-semibold after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-text-primary'
                   : 'text-text-muted hover:text-text-primary'
@@ -382,7 +382,7 @@ export function WardrobePage() {
           <EmptySubsetState closetName={activeCollection?.name ?? 'this Kloset'} mainKlosetName={mainKlosetName} onAddFromMain={openMainPicker} onAddPiece={openAdd} />
         ) :
         filteredItems.length === 0 ? (
-          <NoResultsState query={searchQuery} category={searchQuery.trim() ? 'all' : activeCategory} onClear={() => {
+          <NoResultsState query={searchQuery.trim()} category={searchQuery.trim() ? 'all' : activeCategory} onClear={() => {
             setSearchQuery('')
             setActiveCategory('all')
             setShowFolders(true)
@@ -503,10 +503,9 @@ function EmptyState({ onAdd, onLoadSamples, onStyleMe }: { onAdd: () => void; on
   const navigate = useNavigate()
   return (
     <div className="flex flex-col items-center justify-center text-center py-20 px-4">
-      <div className="w-20 h-20 rounded-3xl bg-text-primary/8 flex items-center justify-center mb-6">
-        <Shirt size={32} strokeWidth={1} className="text-text-primary/50" />
-      </div>
-      <h2 className="font-display text-2xl font-medium text-text-primary mb-8">Your Kloset is empty</h2>
+      <Shirt size={40} strokeWidth={1} className="mb-5 text-text-primary/40" />
+      <h2 className="font-display text-3xl font-medium text-text-primary mb-2">Your Kloset is empty</h2>
+      <p className="mb-8 max-w-sm text-sm leading-relaxed text-text-muted">Add a photo of something you own and Kloset sorts it into folders for you.</p>
       <div className="flex flex-col items-center gap-4">
         <Button size="lg" onClick={onAdd} className="gap-2">
           <Plus size={16} />
@@ -525,9 +524,7 @@ function EmptyState({ onAdd, onLoadSamples, onStyleMe }: { onAdd: () => void; on
 function EmptySubsetState({ closetName, mainKlosetName, onAddFromMain, onAddPiece }: { closetName: string; mainKlosetName: string; onAddFromMain: () => void; onAddPiece: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center px-4 py-16 text-center">
-      <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-text-primary/8">
-        <Shirt size={28} strokeWidth={1} className="text-text-primary/50" />
-      </div>
+      <Shirt size={36} strokeWidth={1} className="mb-5 text-text-primary/40" />
       <h2 className="mb-2 font-display text-2xl font-medium text-text-primary">{closetName} is empty</h2>
       <p className="mb-6 max-w-md text-sm leading-relaxed text-text-muted">
         Choose pieces from {mainKlosetName} to include here. New pieces you add here will also be saved in {mainKlosetName}.
@@ -603,7 +600,7 @@ function MainClosetPickerRow({ item, selected, onToggle }: { item: ClothingItem;
   return (
     <label className="flex cursor-pointer items-center gap-3 py-3">
       <input type="checkbox" checked={selected} onChange={onToggle} className="h-4 w-4 shrink-0 accent-butter-yellow" />
-      <span className="flex h-24 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-tile">
+      <span className="flex h-24 w-20 shrink-0 items-center justify-center overflow-hidden bg-tile">
         {imageUrl ? <img src={imageUrl} alt="" className="h-full w-full object-cover" /> : <Shirt size={20} strokeWidth={1} className="text-text-muted/60" />}
       </span>
       <span className="min-w-0 flex-1">
@@ -616,20 +613,18 @@ function MainClosetPickerRow({ item, selected, onToggle }: { item: ClothingItem;
 function NoResultsState({ query, category, onClear }: { query: string; category: string; onClear: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center text-center py-16 px-4">
-      <div className="w-16 h-16 rounded-3xl bg-text-primary/8 flex items-center justify-center mb-4">
-        <Search size={24} strokeWidth={1} className="text-text-primary/50" />
-      </div>
-      <h3 className="font-display text-xl font-medium text-text-primary mb-2">No items found</h3>
+      <Search size={28} strokeWidth={1} className="mb-4 text-text-primary/40" />
+      <h3 className="font-display text-2xl font-medium text-text-primary mb-2">Nothing found</h3>
       <p className="text-text-muted text-sm mb-6">
         {query
-          ? `Nothing matched "${query}" in ${category === 'all' ? 'your wardrobe' : category}`
-          : `You don't have anything in ${category} yet`}
+          ? `Nothing in your Kloset matches “${query}”. Try a colour, material or brand.`
+          : `You don't have any ${FOLDER_LABEL[category]?.toLowerCase() ?? 'pieces'} yet.`}
       </p>
       <button
         onClick={onClear}
         className="text-sm text-text-primary underline underline-offset-4 hover:text-text-muted transition-colors"
       >
-        Clear filters
+        {query ? 'Clear search' : 'Show all pieces'}
       </button>
     </div>
   )
@@ -653,12 +648,12 @@ function coverScore(id: string): number {
   return (h ^ (h >>> 16)) >>> 0
 }
 
-/** Four pieces for a folder's cover, preferring ones with photos. */
+/** Three pieces for a folder's cover, preferring ones with photos. */
 function pickCover(items: ClothingItem[]): ClothingItem[] {
   const hasPhoto = (i: ClothingItem) => !!(i.imageUrl || i.imageId || i.imageStoragePath)
   return [...items]
     .sort((a, b) => Number(hasPhoto(b)) - Number(hasPhoto(a)) || coverScore(a.id) - coverScore(b.id))
-    .slice(0, 4)
+    .slice(0, 3)
 }
 
 function FolderGrid({ items, categoryCounts, onOpen }: {
@@ -682,26 +677,29 @@ function FolderCard({ category, items, onClick }: { category: ClothingCategory |
   const label = FOLDER_LABEL[category]
   return (
     <button type="button" onClick={onClick} aria-label={`${label}, ${items.length} ${items.length === 1 ? 'piece' : 'pieces'}`} className="group w-full text-left">
-      <div className="grid aspect-[16/10] w-full grid-cols-2 grid-rows-2 gap-px overflow-hidden bg-text-primary/10 ring-1 ring-inset ring-text-primary/10 transition-shadow group-hover:shadow-lifted">
-        {[0, 1, 2, 3].map((slot) => (
-          <FolderCoverTile key={cover[slot]?.id ?? `empty-${slot}`} item={cover[slot]} category={category === 'all' ? cover[slot]?.category ?? 'tops' : category} />
+      {/* One tall lead piece and two beside it: portrait tiles fit clothing photos without empty bands. */}
+      <div className="grid aspect-[4/3] w-full grid-cols-[3fr_2fr] grid-rows-2 gap-px overflow-hidden bg-text-primary/10 transition-shadow duration-500 group-hover:shadow-soft">
+        {[0, 1, 2].map((slot) => (
+          <FolderCoverTile key={cover[slot]?.id ?? `empty-${slot}`} item={cover[slot]} lead={slot === 0} category={category === 'all' ? cover[slot]?.category ?? 'tops' : category} />
         ))}
       </div>
       <div className="mt-3 flex items-baseline justify-between gap-3">
-        <span className="text-sm font-medium uppercase tracking-widest text-text-primary">{label}</span>
+        <span className="font-display text-xl font-medium leading-tight text-text-primary underline-offset-4 decoration-text-primary/30 group-hover:underline">{label}</span>
         <span className="text-xs text-text-muted tabular-nums">{items.length} {items.length === 1 ? 'piece' : 'pieces'}</span>
       </div>
     </button>
   )
 }
 
-function FolderCoverTile({ item, category }: { item?: ClothingItem; category: string }) {
+function FolderCoverTile({ item, category, lead }: { item?: ClothingItem; category: string; lead: boolean }) {
   const url = useItemImage(item)
+  // Own photos are cutouts, so show them whole; store photos have their own backdrop, so fill the tile.
+  const cutout = item?.imageSource === 'local'
   return (
-    <div className="flex items-center justify-center overflow-hidden bg-surface">
+    <div className={clsx('flex min-h-0 items-center justify-center overflow-hidden bg-tile', lead && 'row-span-2')}>
       {url
-        ? <img src={url} alt="" loading="lazy" className="h-full w-full object-contain p-2 transition-transform duration-500 group-hover:scale-[1.03]" />
-        : <CategoryGlyph category={category} size={36} className={item ? 'text-text-muted' : 'text-text-primary/15'} />}
+        ? <img src={url} alt="" loading="lazy" className={clsx('h-full w-full transition-transform duration-700 ease-editorial group-hover:scale-[1.015] mix-blend-multiply dark:mix-blend-normal', cutout ? 'object-contain p-[8%]' : 'object-cover')} />
+        : <CategoryGlyph category={category} size={lead ? 48 : 32} className={item ? 'text-text-muted' : 'text-text-primary/15'} />}
     </div>
   )
 }
