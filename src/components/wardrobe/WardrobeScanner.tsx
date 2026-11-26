@@ -25,7 +25,7 @@ interface ScanPiece {
   guessed?: boolean
 }
 
-/** A piece cut out of an uploaded photo, to review with the others. */
+/** A piece cropped from an uploaded photo, to review with the others. */
 export interface PhotoPiece { blob: Blob; category?: ClothingCategory; name?: string }
 
 // Auto-capture tuning, on a tiny 48×64 greyscale copy of the camera image.
@@ -80,7 +80,7 @@ export function WardrobeScanner({ open, onClose, onSaveItems, photoPieces }: {
   open: boolean
   onClose: () => void
   onSaveItems: (items: ClothingItem[]) => void
-  /** Pieces cut out of uploaded photos: opens straight on the review, sorted by type. */
+  /** Pieces cropped from uploaded photos: opens straight on the review, sorted by type. */
   photoPieces?: PhotoPiece[] | null
 }) {
   const fromPhoto = !!photoPieces?.length
@@ -310,7 +310,7 @@ export function WardrobeScanner({ open, onClose, onSaveItems, photoPieces }: {
                   {group.pieces.map((piece) => (
                   <div key={piece.key} className="overflow-hidden rounded-2xl border border-text-primary/10 bg-surface">
                     <div className="relative aspect-[3/4]">
-                      <img src={piece.previewUrl} alt="" className={clsx('h-full w-full', fromPhoto ? 'bg-white object-contain' : 'object-cover')} />
+                      <img src={piece.previewUrl} alt="" className="h-full w-full object-cover" />
                       <button type="button" onClick={() => removePiece(piece.key)} aria-label="Remove this piece" className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white"><Trash2 size={14} /></button>
                       {(piece.status === 'queued' || piece.status === 'tagging') && <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[10px] text-white"><Loader2 size={11} className="animate-spin" /> Tagging</span>}
                       {piece.status === 'tagged' && <span className="absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[#355E3B] text-white"><Check size={13} /></span>}
