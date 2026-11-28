@@ -112,7 +112,15 @@ export function coloursFromName(name: string): string[] {
   return found.slice(0, 2)
 }
 
+// A short-sleeved, cap-sleeved or sleeveless cardigan (a knit button-up) is
+// worn buttoned as the top itself, like a sweater top, not open over another.
+const CARDIGAN_AS_TOP = /(short|cap|half)[- ]?sleeve[ds]?\b.*cardigan|sleeveless.*cardigan|cardigan top|knit(ted)? button.?(up|down|front)|button.?(up|down|front) knit/
+function isCardiganTop(item: ClothingItem) {
+  return CARDIGAN_AS_TOP.test(`${item.name} ${item.subcategory ?? ''}`.toLowerCase())
+}
+
 function withNamedCategory(item: ClothingItem): ClothingItem {
+  if (isCardiganTop(item) && item.category !== 'tops') item = { ...item, category: 'tops' }
   if (!item.colour.length) {
     const colour = coloursFromName(item.name)
     if (colour.length) item = { ...item, colour }
@@ -388,6 +396,7 @@ function canBeCollaredLayer(item: ClothingItem) {
 
 /** A warm top worn on its own (a sweater top, knit top, sweatshirt, hoodie): nothing goes under it, only a jacket or coat over it. */
 function isWarmTop(item: ClothingItem) {
+  if (isCardiganTop(item)) return true
   return /\b(knit(ted)? top|sweater top|top|sweatshirt|hoodie|turtleneck|roll.?neck|mock.?neck)\b/i.test(`${item.name} ${item.subcategory ?? ''}`)
 }
 
