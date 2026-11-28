@@ -143,6 +143,14 @@ function freshnessScore(itemId: string): number {
   return times.length ? 2 : 4
 }
 
+/** Not suggested in the last two weeks (or ever), once there's history to tell. */
+function isOverlooked(itemId: string): boolean {
+  const history = loadShownHistory()
+  if (Object.keys(history).length < 4) return false
+  const times = history[itemId] ?? []
+  return !times.some((time) => Date.now() - time < 14 * DAY_MS)
+}
+
 function rememberShown(items: ClothingItem[]) {
   recordShownHistory(items)
   recentPieces.push(...items.map((item) => item.id))
@@ -335,7 +343,7 @@ function isPrint(item: ClothingItem) {
 // is sporty or streetwear gets a softer version of this.
 const DRESSY_OCCASIONS: Occasion[] = ['date-night', 'formal', 'special-event']
 const DRESSY_WORDS = /dress|skirt|heel|pump|stiletto|kitten|slingback|strappy sandal|satin|silk|lace|velvet|sequin|organza|chiffon|crepe|corset|bustier|halter|slip|wrap|peplum|blouse|bodysuit|tailored|blazer|waistcoat|vest|loafer|oxford|derby|ankle boot|clutch|earring|necklace|jewel|saree|lehenga|anarkali|embroider|evening|elegant|formal/
-const TOO_SIMPLE = /t-?shirt|\btee\b|hoodie|sweatshirt|jogger|track ?pant|sweatpant|cargo|shorts|sneaker|trainer|samba|gazelle|converse|flip.?flop|slides|crocs|legging|gym|sports?\b|running|graphic|basic/
+const TOO_SIMPLE = /t-?shirt|\btee\b|hoodie|sweatshirt|jogger|track ?pant|sweat ?pant|\bsweats\b|lounge|cargo|shorts|sneaker|trainer|samba|gazelle|converse|flip.?flop|slides|crocs|legging|gym|sports?\b|running|graphic|basic/
 
 // Pieces that never belong in some looks, whatever their tags say (photo
 // tagging sometimes marks jeans or a hoodie as "formal"):
@@ -343,14 +351,19 @@ const TOO_SIMPLE = /t-?shirt|\btee\b|hoodie|sweatshirt|jogger|track ?pant|sweatp
 //   hoodies and sweatshirts, tees, casual knits (a plain turtleneck or fine
 //   knit is fine), jeans, cargos, sneakers, flip-flops and slides, gym wear;
 // - date night: gym and lounge wear, flip-flops and slides.
-const NEVER_DRESSY = /\bshorts?\b|jogger|track ?pant|sweatpant|legging|hoodie|sweatshirt|gym|athletic|sports?\b|running|flip.?flop|\bslides?\b|crocs/
+const LOUNGE = /jogger|track ?pants?|sweat ?pants?|\bsweats\b|lounge|pyjama|pajama|\bpj\b|night ?wear|sleep ?wear/
+const NEVER_DRESSY = /\bshorts?\b|jogger|track ?pants?|sweat ?pants?|\bsweats\b|lounge|pyjama|pajama|\bpj\b|night ?wear|sleep ?wear|legging|hoodie|sweatshirt|gym|athletic|sports?\b|running|flip.?flop|\bslides?\b|crocs/
 const SNEAKERS = /sneaker|trainer|samba|gazelle|chuck|converse|air force|jordan|\bdunks?\b|canvas shoe|running shoe|tennis shoe/
 const NOT_FORMAL = /t-?shirt|\btee\b|graphic|polo|jeans|denim|cargo|distressed|ripped|quarter.?zip|half.?zip|fleece|crop top/
 const CASUAL_KNIT = /sweater|jumper|pullover|cardigan|\bknit/
 const FINE_KNIT = /turtleneck|roll.?neck|mock.?neck|cashmere|merino|fine.?knit|fine.?gauge/
 function unsuitableFor(item: ClothingItem, occasion: Occasion): boolean {
   const words = `${item.name} ${item.subcategory ?? ''} ${item.material ?? ''} ${item.construction ?? ''}`.toLowerCase()
-  if (occasion === 'date-night') return /jogger|track ?pant|sweatpant|gym|athletic|running|flip.?flop|\bslides?\b|crocs/.test(words)
+  if (occasion === 'date-night') {
+    if (LOUNGE.test(words) || /gym|athletic|running|flip.?flop|\bslides?\b|crocs/.test(words)) return true
+    // Fleece or jersey bottoms are sweats, whatever they're called.
+    return item.category === 'bottoms' && /fleece|french terry|jersey/.test(words) && !/skirt|dress/.test(words)
+  }
   if (occasion !== 'formal' && occasion !== 'special-event') return false
   if (NEVER_DRESSY.test(words) || SNEAKERS.test(words)) return true
   // Special events allow a crop top; formal doesn't.
@@ -687,9 +700,16 @@ function pickBest(
   const closeFits = pool.filter((candidate) => poolBest - candidate.score <= gap)
   // Padded to four for variety, but never with a piece far behind (sneakers
   // shouldn't make a date-night shortlist just to fill it).
-  const contenders = closeFits.length >= 4
+  const shortlist = closeFits.length >= 4
     ? closeFits
     : pool.filter((candidate) => candidate.score > -100 && poolBest - candidate.score <= padGap).slice(0, Math.max(closeFits.length, 4))
+  // "Try another" brings forward pieces that haven't had a turn: anything
+  // overlooked that still suits the occasion (within a wider reach) goes first.
+  const reach = DRESSY_OCCASIONS.includes(request.occasion) ? 8 : 16
+  const overlooked = attempt > 0
+    ? pool.filter((candidate) => candidate.score > -100 && poolBest - candidate.score <= reach && isOverlooked(candidate.item.id))
+    : []
+  const contenders = overlooked.length ? overlooked : shortlist
   if (category === 'accessories' && contenders.length > 1) {
     return contenders[Math.floor(Math.random() * contenders.length)].item
   }
