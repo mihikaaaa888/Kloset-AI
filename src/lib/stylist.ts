@@ -261,6 +261,52 @@ export async function generateOutfit(
   return lastResult ?? { suggestion: null, error: 'Unable to create an outfit right now.' }
 }
 
+/**
+ * Swap one piece of a suggested outfit for another from the Kloset that fits
+ * the occasion and goes with the rest. `triedIds` are pieces already swapped
+ * out of this spot, so tapping Swap again keeps moving on. An accessory or
+ * layer with nothing to replace it is just taken out; a top, bottom, dress or
+ * shoes with nothing else returns null.
+ */
+export async function swapPiece(
+  suggestion: OutfitSuggestion,
+  itemId: string,
+  request: StyleRequest,
+  wardrobe: ClothingItem[],
+  profile: UserProfile | null,
+  feedback: RecommendationFeedback[] = [],
+  triedIds: string[] = [],
+): Promise<OutfitSuggestion | null> {
+  const index = suggestion.items.findIndex((result) => result.item.id === itemId)
+  if (index < 0) return null
+  const { role } = suggestion.items[index]
+  const category = withNamedCategory(suggestion.items[index].item).category
+  const others = suggestion.items.filter((_, i) => i !== index)
+  const kept = others.map((result) => withNamedCategory(result.item))
+  const out = new Set([itemId, ...triedIds, ...kept.map((item) => item.id)])
+  const pool = wardrobe.map(withNamedCategory).filter((item) => !out.has(item.id))
+  const colourConfig = await getColourHarmonyConfig()
+  const allFeedback = [...feedback, ...feedbackFromFavourites(wardrobe)]
+  // A Try-another style turn, so pieces that haven't had a turn come first.
+  const replacement = pickBest(pool, category, request, profile, kept, 1 + triedIds.length, colourConfig, allFeedback)
+  console.log('[stylist] swap', { role, found: !!replacement, tried: triedIds.length })
+  if (!replacement && !['accessory', 'outerwear'].includes(role)) return null
+  const items: OutfitItemResult[] = replacement
+    ? suggestion.items.map((result, i) => i === index ? { item: replacement, role, stylingNote: getStylingNote(replacement, role, request.occasion) } : result)
+    : others
+  if (replacement) rememberShown([replacement])
+  const pieces = items.map((result) => result.item)
+  return {
+    ...suggestion,
+    id: crypto.randomUUID(),
+    items,
+    colourSubtitle: getColourSubtitle(pieces),
+    whyItWorks: generateWhyItWorks(pieces, request),
+    stylingTips: generateStylingTips(items, request),
+    generatedAt: new Date().toISOString(),
+  }
+}
+
 // ─── Colour data ──────────────────────────────────────────────────────────────
 
 const NEUTRALS = new Set([
@@ -355,6 +401,11 @@ const LOUNGE = /jogger|track ?pants?|sweat ?pants?|\bsweats\b|lounge|pyjama|paja
 const NEVER_DRESSY = /\bshorts?\b|jogger|track ?pants?|sweat ?pants?|\bsweats\b|lounge|pyjama|pajama|\bpj\b|night ?wear|sleep ?wear|legging|hoodie|sweatshirt|gym|athletic|sports?\b|running|flip.?flop|\bslides?\b|crocs/
 const SNEAKERS = /sneaker|trainer|samba|gazelle|chuck|converse|air force|jordan|\bdunks?\b|canvas shoe|running shoe|tennis shoe/
 const NOT_FORMAL = /t-?shirt|\btee\b|graphic|polo|jeans|denim|cargo|distressed|ripped|quarter.?zip|half.?zip|fleece|crop top/
+// Semi-formal, not formal: pretty for a date or a party, but not for a formal
+// dress code (lace and camis, cardigans, strapless, peplum and ruffled tops).
+const SEMI_FORMAL = /lace|cami|camisole|cardigan|shrug|tank|strapless|tube top|bandeau|off.?shoulder|bralette|corset|bustier|halter|backless|spaghetti|peplum|ruffle|frill|ribbed|bodysuit|smocked|tie.?front|\bbow\b|\bnet\b|sheer|mesh|kurti\b/
+// What reads as formal: tailoring, proper shirts and blouses, plain smart fabrics.
+const FORMAL_WORDS = /blazer|tailored|suit|trouser|pleated|shirt|blouse|button.?(up|down)|collar|oxford|loafer|pump|court shoe|heel|derby|pencil|sheath|waistcoat|crepe|silk|satin|wool|structured|sari|saree|anarkali|kurta set|lehenga/
 const CASUAL_KNIT = /sweater|jumper|pullover|cardigan|\bknit/
 const FINE_KNIT = /turtleneck|roll.?neck|mock.?neck|cashmere|merino|fine.?knit|fine.?gauge/
 function unsuitableFor(item: ClothingItem, occasion: Occasion): boolean {
@@ -366,10 +417,19 @@ function unsuitableFor(item: ClothingItem, occasion: Occasion): boolean {
   }
   if (occasion !== 'formal' && occasion !== 'special-event') return false
   if (NEVER_DRESSY.test(words) || SNEAKERS.test(words)) return true
+  if (occasion === 'formal' && (item.category === 'tops' || item.category === 'outerwear' || item.category === 'dresses') && SEMI_FORMAL.test(words)) return true
+  // Formal hemlines sit at the knee or below: no mini skirts or mini dresses.
+  if (occasion === 'formal' && (item.category === 'bottoms' || item.category === 'dresses') && /\bmini\b|micro|skort|short skirt|skater|bodycon/.test(words)) return true
   // Special events allow a crop top; formal doesn't.
   if (NOT_FORMAL.test(occasion === 'special-event' ? words.replace(/crop top/g, '') : words)) return true
   // Leopard, graphics and other loud prints, and chunky everyday knits, aren't formal.
   if (occasion === 'formal' && /leopard|animal|graphic|tie.?dye|camo/.test(`${words} ${item.pattern}`)) return true
+  // A print can be formal when the piece is: a silk blouse, printed tailored
+  // trousers, a printed saree. Casual printed pieces (linen or cotton pants, a
+  // casual top) stay out. Only one print goes in an outfit (see isPrint).
+  // Stripes and checks are classic formal patterns and aren't held to this.
+  if (occasion === 'formal' && (['floral', 'abstract', 'animal-print', 'geometric'].includes(item.pattern) || /print|ikat|paisley|aztec|tribal|polka/.test(words))
+    && (!FORMAL_WORDS.test(words) || /^\s*casual\s*$/.test((item.formality ?? '').toLowerCase()) || /linen|jersey|denim|cotton pants/.test(words))) return true
   if (CASUAL_KNIT.test(words) && !FINE_KNIT.test(words) && (occasion === 'formal' || item.pattern !== 'solid')) return true
   return false
 }
@@ -398,7 +458,8 @@ function dressinessScore(item: ClothingItem, occasion: Occasion, profile: UserPr
   const strength = (relaxedStyle ? 0.5 : 1) * (occasion === 'date-night' ? 1 : 1.3)
   const forWomen = suggestedGenders(profile?.genderStylePreference).includes('women')
   let score = 0
-  if (DRESSY_WORDS.test(words)) score += 7
+  // Formal wants tailoring; lace, ruffles and slip shapes are dressy but not formal.
+  if (occasion === 'formal' ? FORMAL_WORDS.test(words) : DRESSY_WORDS.test(words)) score += 7
   if (/formal|black tie|business/.test((item.formality ?? '').toLowerCase())) score += 3
   // Bigger than the most a piece loses for being shown recently, so rotating never pulls the plain pieces in.
   if (TOO_SIMPLE.test(words) && !DRESSY_WORDS.test(words)) score -= 16

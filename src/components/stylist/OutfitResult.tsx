@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { RefreshCw, BookMarked, Check, Shirt, ThumbsUp, ThumbsDown, X } from 'lucide-react'
+import { RefreshCw, BookMarked, Check, Shirt, ThumbsUp, ThumbsDown, X, Shuffle, Minus } from 'lucide-react'
+import { ItemDetailModal } from '@/components/wardrobe/ItemDetailModal'
 import { HangerIcon } from '@/components/ui/HangerIcon'
 import { CompleteTheLook } from '@/components/stylist/CompleteTheLook'
 import { clsx } from 'clsx'
@@ -28,6 +29,18 @@ interface OutfitResultProps {
   userId: string
   profile: UserProfile | null
   wardrobe: ClothingItem[]
+  /** Swap one piece for another that goes with the rest. */
+  onSwap?: (itemId: string) => void
+  /** Take an accessory or layer out of the look. */
+  onRemove?: (itemId: string) => void
+  /** The piece being swapped right now. */
+  swappingId?: string | null
+  /** Shown under the pieces after a swap that found nothing. */
+  swapNote?: string | null
+}
+
+const ROLE_LABEL: Record<OutfitItemResult['role'], string> = {
+  top: 'top', bottom: 'bottom', dress: 'dress', outerwear: 'layer', shoes: 'pair of shoes', accessory: 'accessory',
 }
 
 export function OutfitResult({
@@ -40,8 +53,14 @@ export function OutfitResult({
   userId,
   profile,
   wardrobe,
+  onSwap,
+  onRemove,
+  swappingId = null,
+  swapNote = null,
 }: OutfitResultProps) {
   const { name, items, stylingTips } = suggestion
+  const [openId, setOpenId] = useState<string | null>(null)
+  const opened = items.find((result) => result.item.id === openId) ?? null
   const [workbookTip, setWorkbookTip] = useState<StylingTip | null>(null)
   const outfitItems = items.map((result) => result.item)
   const outfitItemKey = outfitItems.map((item) => item.id).join('|')
@@ -94,8 +113,49 @@ export function OutfitResult({
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          {items.map((result) => <OutfitItemTile key={result.item.id} result={result} />)}
+          {items.map((result) => (
+            <OutfitItemTile
+              key={result.item.id}
+              result={result}
+              onOpen={() => setOpenId(result.item.id)}
+              onSwap={onSwap ? () => onSwap(result.item.id) : undefined}
+              swapping={swappingId === result.item.id}
+            />
+          ))}
         </div>
+        {swapNote && <p className="-mt-2 text-xs text-text-muted">{swapNote}</p>}
+
+        <ItemDetailModal
+          item={opened?.item ?? null}
+          open={!!opened}
+          onClose={() => setOpenId(null)}
+          actions={opened && (onSwap || onRemove) ? (
+            <div className="mb-3 flex gap-2">
+              {onSwap && (
+                <button
+                  type="button"
+                  onClick={() => { onSwap(opened.item.id); setOpenId(null) }}
+                  aria-label={`Swap for another ${ROLE_LABEL[opened.role]}`}
+                  title={`Swap for another ${ROLE_LABEL[opened.role]}`}
+                  className="flex h-11 w-11 items-center justify-center rounded-full ring-1 ring-inset ring-text-primary/20 text-text-primary transition-colors hover:ring-text-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow"
+                >
+                  <Shuffle size={16} strokeWidth={1.5} />
+                </button>
+              )}
+              {onRemove && (opened.role === 'accessory' || opened.role === 'outerwear') && (
+                <button
+                  type="button"
+                  onClick={() => { onRemove(opened.item.id); setOpenId(null) }}
+                  aria-label="Take out of this look"
+                  title="Take out of this look"
+                  className="flex h-11 w-11 items-center justify-center rounded-full ring-1 ring-inset ring-text-primary/20 text-text-primary transition-colors hover:ring-text-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow"
+                >
+                  <Minus size={16} strokeWidth={1.5} />
+                </button>
+              )}
+            </div>
+          ) : undefined}
+        />
 
         {/* ── Actions, right under the pieces ── */}
         <div className="grid max-w-xl grid-cols-2 gap-2">
@@ -135,6 +195,20 @@ export function OutfitResult({
             Try another
           </Button>
         </div>
+
+        {/* ── Rate it: teaches Kloset what this person likes to wear ── */}
+        <div className="max-w-xl rounded-3xl border border-text-primary/10 bg-surface px-5 py-3.5">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm text-text-muted">{rating === 'like' ? 'Glad you like it. Noted for next time.' : rating === 'dislike' ? (misfitIds.length ? 'Got it. The rest goes well together.' : 'Got it. Less like this next time.') : 'Rate this outfit'}</span>
+          <div className="flex gap-2">
+            <button type="button" aria-label="I like this outfit" aria-pressed={rating === 'like'} onClick={() => rateOutfit('like')} className={clsx('rounded-full p-2 transition', rating === 'like' ? 'bg-[#355E3B] text-white' : 'text-text-muted hover:bg-text-primary/5')}><ThumbsUp size={15} /></button>
+            <button type="button" aria-label="I don't like this outfit" aria-pressed={rating === 'dislike'} onClick={() => rateOutfit('dislike')} className={clsx('rounded-full p-2 transition', rating === 'dislike' ? 'bg-text-primary/10 text-text-primary' : 'text-text-muted hover:bg-text-primary/5')}><ThumbsDown size={15} /></button>
+          </div>
+        </div>
+        {rating === 'dislike' && outfitItems.length > 1 && (
+          <MisfitPicker items={outfitItems} misfitIds={misfitIds} onChange={(ids) => rateOutfit('dislike', ids)} />
+        )}
+        </div>
       </div>
 
       {/* ══ Right: tips, reasoning, actions — sticks alongside on desktop ═════ */}
@@ -173,20 +247,6 @@ export function OutfitResult({
           </div>
         )}
 
-        {/* ── Rate it: teaches Kloset what this person likes to wear ── */}
-        <div className="rounded-3xl border border-text-primary/10 bg-surface px-5 py-3.5">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm text-text-muted">{rating === 'like' ? 'Glad you like it. Noted for next time.' : rating === 'dislike' ? (misfitIds.length ? 'Got it. The rest goes well together.' : 'Got it. Less like this next time.') : 'Rate this outfit'}</span>
-          <div className="flex gap-2">
-            <button type="button" aria-label="I like this outfit" aria-pressed={rating === 'like'} onClick={() => rateOutfit('like')} className={clsx('rounded-full p-2 transition', rating === 'like' ? 'bg-[#355E3B] text-white' : 'text-text-muted hover:bg-text-primary/5')}><ThumbsUp size={15} /></button>
-            <button type="button" aria-label="I don't like this outfit" aria-pressed={rating === 'dislike'} onClick={() => rateOutfit('dislike')} className={clsx('rounded-full p-2 transition', rating === 'dislike' ? 'bg-text-primary/10 text-text-primary' : 'text-text-muted hover:bg-text-primary/5')}><ThumbsDown size={15} /></button>
-          </div>
-        </div>
-        {rating === 'dislike' && outfitItems.length > 1 && (
-          <MisfitPicker items={outfitItems} misfitIds={misfitIds} onChange={(ids) => rateOutfit('dislike', ids)} />
-        )}
-        </div>
-
         {/* ── Pieces to buy for whatever the Kloset couldn't supply ── */}
         <CompleteTheLook suggestion={suggestion} />
 
@@ -197,7 +257,7 @@ export function OutfitResult({
 
 // ─── Individual outfit item tile ──────────────────────────────────────────────
 
-function OutfitItemTile({ result }: { result: OutfitItemResult }) {
+function OutfitItemTile({ result, onOpen, onSwap, swapping }: { result: OutfitItemResult; onOpen: () => void; onSwap?: () => void; swapping: boolean }) {
   const { item, stylingNote } = result
   const imageUrl = useItemImage(item)
   const primaryColour = item.colour[0]
@@ -205,7 +265,24 @@ function OutfitItemTile({ result }: { result: OutfitItemResult }) {
   const isLight = isLightColour(bgHex)
 
   return (
-    <div className="rounded-3xl overflow-hidden bg-surface shadow-card">
+    <div className="group/tile relative rounded-3xl overflow-hidden bg-surface shadow-card">
+      {/* Shows on hover; always shown on touch screens, which can't hover. */}
+      {onSwap && (
+        <button
+          type="button"
+          onClick={onSwap}
+          disabled={swapping}
+          aria-label={`Swap ${item.name}`}
+          title="Swap this piece"
+          className={clsx(
+            'absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-surface/90 text-text-primary shadow-card ring-1 ring-text-primary/10 backdrop-blur-sm transition hover:bg-surface',
+            swapping ? 'opacity-100' : 'opacity-0 group-hover/tile:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100',
+          )}
+        >
+          <Shuffle size={12} strokeWidth={1.75} className={swapping ? 'animate-spin' : ''} />
+        </button>
+      )}
+      <button type="button" onClick={onOpen} aria-label={`See ${item.name}`} className="block w-full text-left">
       {/* Image / placeholder */}
       <div className="relative aspect-[4/5]">
         {imageUrl ? (
@@ -235,6 +312,7 @@ function OutfitItemTile({ result }: { result: OutfitItemResult }) {
           <p className="text-2xs text-charcoal-400 mt-0.5 leading-snug">{stylingNote}</p>
         )}
       </div>
+      </button>
     </div>
   )
 }

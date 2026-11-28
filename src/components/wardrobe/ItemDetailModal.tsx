@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Pencil, Trash2, Plus, X, Send } from 'lucide-react'
 import { colourNameToHex, isLightColour } from '@/lib/colourUtils'
@@ -10,12 +10,15 @@ interface ItemDetailModalProps {
   item: ClothingItem | null
   open: boolean
   onClose: () => void
-  onEdit: () => void
-  onStyle: () => void
-  onDelete: () => void
-  onIncrementWorn: (date: string) => void
-  onSend: () => void
+  // Each action shows only when it's given (the stylist's piece card has its own).
+  onEdit?: () => void
+  onStyle?: () => void
+  onDelete?: () => void
+  onIncrementWorn?: (date: string) => void
+  onSend?: () => void
   deleteLabel?: string
+  /** Buttons shown first, above the usual actions. */
+  actions?: ReactNode
 }
 
 /**
@@ -35,6 +38,7 @@ export function ItemDetailModal({
   onIncrementWorn,
   onSend,
   deleteLabel = 'Remove from Kloset',
+  actions,
 }: ItemDetailModalProps) {
   const imageUrl = useItemImage(item)
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null)
@@ -126,27 +130,28 @@ export function ItemDetailModal({
           </h2>
 
           <div className="mt-8">
-            <button
+            {actions}
+            {onStyle && <button
               onClick={onStyle}
               className="mb-3 flex w-full items-center justify-center gap-2 h-12 ring-1 ring-inset ring-text-primary/20 text-text-primary text-xs font-medium uppercase tracking-widest hover:ring-text-primary/50 transition-colors"
             >
               Style this item
-            </button>
-            <button
+            </button>}
+            {onEdit && <button
               onClick={onEdit}
               className="flex w-full items-center justify-center gap-2 h-12 bg-text-primary text-warm-cream text-xs font-medium uppercase tracking-widest hover:bg-text-primary/90 transition-colors"
             >
               <Pencil size={14} strokeWidth={1.5} />
               Edit piece
-            </button>
+            </button>}
           </div>
-          <button
+          {onSend && <button
             onClick={onSend}
             className="mt-3 w-full flex items-center justify-center gap-2 h-12 ring-1 ring-inset ring-text-primary/20 text-text-primary text-xs font-medium uppercase tracking-widest hover:ring-text-primary/50 transition-colors"
           >
             <Send size={14} strokeWidth={1.25} />
             Send to a friend
-          </button>
+          </button>}
 
           <dl className="mt-10 border-t border-text-primary/10">
             {item.colour.length > 0 && (
@@ -176,7 +181,7 @@ export function ItemDetailModal({
             <DetailRow label="Times worn">
               <span className="tabular-nums">{item.timesWorn}</span>
             </DetailRow>
-            <div className="flex justify-start border-b border-text-primary/10 py-3">
+            {onIncrementWorn && <div className="flex justify-start border-b border-text-primary/10 py-3">
               <button
                 onClick={() => { setWearDate(todayDateInput()); setShowWearDate((showing) => !showing) }}
                 className="inline-flex items-center gap-2 border border-text-primary/20 px-4 py-2 text-xs font-medium text-text-primary transition-colors hover:border-text-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow"
@@ -184,8 +189,8 @@ export function ItemDetailModal({
                 <Plus size={14} strokeWidth={1.5} />
                 Log wear
               </button>
-            </div>
-            {showWearDate && (
+            </div>}
+            {showWearDate && onIncrementWorn && (
               <div className="flex flex-wrap items-center justify-end gap-3 border-b border-text-primary/10 py-4">
                 <label htmlFor="wear-date" className="mr-auto text-xs text-text-muted">Date worn</label>
                 <input id="wear-date" type="date" value={wearDate} max={todayDateInput()} onChange={(event) => setWearDate(event.target.value)} className="rounded-lg border border-text-primary/15 bg-surface px-3 py-2 text-sm text-text-primary" />
@@ -210,13 +215,13 @@ export function ItemDetailModal({
             </div>
           )}
 
-          <button
+          {onDelete && <button
             onClick={onDelete}
             aria-label={deleteLabel}
             className="mt-10 flex h-10 w-10 items-center justify-center text-text-muted transition-colors hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-butter-yellow"
           >
             <Trash2 size={13} strokeWidth={1.5} />
-          </button>
+          </button>}
         </div>
       </div>
     </div>,

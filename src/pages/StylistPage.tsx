@@ -8,7 +8,7 @@ import { StyleRequestForm } from '@/components/stylist/StyleRequestForm'
 import { OutfitResult } from '@/components/stylist/OutfitResult'
 import { StylistChat } from '@/components/stylist/StylistChat'
 import { Button } from '@/components/ui/Button'
-import { generateOutfit } from '@/lib/stylist'
+import { generateOutfit, swapPiece } from '@/lib/stylist'
 import { useWardrobeStore } from '@/store/wardrobeStore'
 import { useUserStore } from '@/store/userStore'
 import { useOutfitStore } from '@/store/outfitStore'
@@ -83,6 +83,8 @@ export function StylistPage() {
       const result = await generateOutfit(request, items, profile, currentAttempt, pinnedItem ?? undefined, feedback, avoidItemIds, savedOutfits)
       if (result.suggestion) {
         setSuggestion(result.suggestion)
+        setTriedBySpot({})
+        setSwapNote(null)
         setPageState('result')
         setIsSaved(isOutfitSaved(result.suggestion.id))
       } else {
@@ -102,6 +104,42 @@ export function StylistPage() {
     const initialAttempt = Math.floor(Math.random() * 1_000_000)
     setAttempt(initialAttempt)
     runGeneration(request, initialAttempt)
+  }
+
+  // Swapping one piece: the rest stay, and pieces already swapped out of that
+  // spot don't come back while this look is on screen.
+  const [swappingId, setSwappingId] = useState<string | null>(null)
+  const [swapNote, setSwapNote] = useState<string | null>(null)
+  const [triedBySpot, setTriedBySpot] = useState<Record<string, string[]>>({})
+  const handleSwap = async (itemId: string) => {
+    if (!suggestion || !currentRequest || swappingId) return
+    const spot = suggestion.items.find((result) => result.item.id === itemId)?.role
+    if (!spot) return
+    if (pinnedItem?.id === itemId) { setSwapNote('That\'s the piece you\'re styling. Swap the others, or pick a new starting piece.'); return }
+    const tried = [...(triedBySpot[spot] ?? []), itemId]
+    setSwappingId(itemId)
+    setSwapNote(null)
+    try {
+      const swapped = await swapPiece(suggestion, itemId, currentRequest, items, profile, feedback, tried.slice(0, -1))
+      if (!swapped) {
+        setSwapNote(`Nothing else in your Kloset goes here for this look.${tried.length > 1 ? ' Tap swap again to start over.' : ''}`)
+        setTriedBySpot((current) => ({ ...current, [spot]: [] }))
+        return
+      }
+      setTriedBySpot((current) => ({ ...current, [spot]: tried }))
+      setSuggestion(swapped)
+      setIsSaved(isOutfitSaved(swapped.id))
+    } catch (swapError) {
+      console.error('[stylist] swap failed', swapError)
+      setSwapNote('That swap didn\'t work. Try again.')
+    } finally {
+      setSwappingId(null)
+    }
+  }
+  const handleRemovePiece = (itemId: string) => {
+    if (!suggestion) return
+    setSuggestion({ ...suggestion, id: crypto.randomUUID(), items: suggestion.items.filter((result) => result.item.id !== itemId) })
+    setIsSaved(false)
   }
 
   const handleTryAnother = () => {
@@ -262,6 +300,10 @@ export function StylistPage() {
                   userId={profile?.id ?? 'guest'}
                   profile={profile}
                   wardrobe={items}
+                  onSwap={handleSwap}
+                  onRemove={handleRemovePiece}
+                  swappingId={swappingId}
+                  swapNote={swapNote}
                 />
               </>
             )}
