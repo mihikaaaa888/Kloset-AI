@@ -20,6 +20,8 @@ import { useUserStore } from '@/store/userStore'
 import { deleteImage } from '@/lib/imageStorage'
 import { deleteWithUndo, notify } from '@/store/undoStore'
 import { useSampleKloset } from '@/hooks/useSampleKloset'
+import { useRetagPieces } from '@/hooks/useRetagPieces'
+import { ReviewPieces } from '@/components/wardrobe/ReviewPieces'
 import { useAuth } from '@/contexts/AuthContext'
 import { insertItem, updateItem as dbUpdateItem, deleteItem as dbDeleteItem } from '@/lib/wardrobeService'
 import type { ClothingItem, ClothingCategory } from '@/types'
@@ -132,6 +134,7 @@ export function WardrobePage() {
   }, [closetItems, activeCategory, searchQuery])
 
   const sampleKloset = useSampleKloset()
+  const retag = useRetagPieces()
   const handleAddSamples = async () => {
     const added = await sampleKloset.load()
     if (!isMainCollection) addItems(activeCollectionId, added.map((item) => item.id))
@@ -356,6 +359,8 @@ export function WardrobePage() {
         </div>
 
         {view === 'outfits' ? <MyOutfits /> : <>
+
+        <RetagBanner retag={retag} />
 
         {!isMainCollection && <div className="mb-3 flex justify-end">
           <button onClick={openMainPicker} className="inline-flex items-center gap-2 border border-text-primary/25 px-3 py-2 text-2xs font-medium uppercase tracking-widest text-text-primary transition-colors hover:border-text-primary/50">
@@ -716,5 +721,36 @@ function AddItemCard({ onClick }: { onClick: () => void }) {
         </span>
       </div>
     </button>
+  )
+}
+
+// Pieces saved without details (tagging was down when they were added):
+// outfits can't tell what they are, so offer a quick one-by-one review.
+function RetagBanner({ retag }: { retag: ReturnType<typeof useRetagPieces> }) {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [reviewing, setReviewing] = useState<ClothingItem[] | null>(null)
+  const count = retag.untagged.length
+  // From Home's "Review pieces" note: open the review straight away.
+  useEffect(() => {
+    if (searchParams.get('review') !== '1') return
+    if (retag.untagged.length) setReviewing(retag.untagged)
+    searchParams.delete('review')
+    setSearchParams(searchParams, { replace: true })
+  }, [searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (count === 0 && !reviewing) return null
+  return (
+    <>
+      {count > 0 && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-text-primary/10 bg-surface px-4 py-3">
+          <p className="text-sm text-text-muted">
+            Review {count} {count === 1 ? 'piece' : 'pieces'} for better recommendations. Tags are suggested; just check them.
+          </p>
+          <button type="button" onClick={() => setReviewing(retag.untagged)} className="rounded-full bg-text-primary px-4 py-2 text-xs font-medium uppercase tracking-widest text-warm-cream hover:bg-text-primary/90">
+            Review
+          </button>
+        </div>
+      )}
+      {reviewing && <ReviewPieces pieces={reviewing} onClose={() => setReviewing(null)} />}
+    </>
   )
 }

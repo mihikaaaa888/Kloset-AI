@@ -12,6 +12,7 @@ import { useRecommendationStore } from '@/store/recommendationStore'
 import { outfitRatingEvents, traitsFromWardrobe } from '@/lib/recommendationFeedback'
 import { MisfitPicker } from '@/components/stylist/MisfitPicker'
 import { useSampleKloset } from '@/hooks/useSampleKloset'
+import { isUntagged } from '@/hooks/useRetagPieces'
 import { useOutfitStore } from '@/store/outfitStore'
 import { getDailyStylingTip, rateStylingTip, type StylingTip } from '@/lib/stylingTipEngine'
 
@@ -21,10 +22,26 @@ export function HomePage() {
   const items = useWardrobeStore((s) => s.items)
 
   const favourites = items.filter((i) => i.isFavourite).slice(0, 4)
+  const untaggedCount = items.filter(isUntagged).length
 
   return (
     <div className="min-h-screen bg-warm-cream pt-28 lg:pt-32 pb-24 md:pb-0">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 pb-12 lg:pb-16">
+
+        {/* Pieces saved without details: outfits can't tell what they are until they're tagged. */}
+        {untaggedCount > 0 && (
+          <button
+            type="button"
+            onClick={() => navigate('/wardrobe?review=1')}
+            className="mb-8 flex w-full items-center justify-between gap-3 rounded-2xl border border-text-primary/10 bg-surface px-4 py-3 text-left transition hover:border-text-primary/25"
+          >
+            <span className="text-sm text-text-primary">
+              Review {untaggedCount} {untaggedCount === 1 ? 'piece' : 'pieces'} for better recommendations
+              <span className="block text-xs text-text-muted">Tags are suggested; it takes a few taps each.</span>
+            </span>
+            <ArrowRight size={16} className="shrink-0 text-text-muted" />
+          </button>
+        )}
 
         <DailyOutfitCard
           items={items}

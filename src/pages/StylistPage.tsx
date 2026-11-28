@@ -6,6 +6,9 @@ import { clsx } from 'clsx'
 
 import { StyleRequestForm } from '@/components/stylist/StyleRequestForm'
 import { OutfitResult } from '@/components/stylist/OutfitResult'
+import { AddItemModal } from '@/components/wardrobe/AddItemModal'
+import { updateItem as saveItemDetails } from '@/lib/wardrobeService'
+import { useAuth } from '@/contexts/AuthContext'
 import { StylistChat } from '@/components/stylist/StylistChat'
 import { Button } from '@/components/ui/Button'
 import { generateOutfit, swapPiece } from '@/lib/stylist'
@@ -136,6 +139,20 @@ export function StylistPage() {
       setSwappingId(null)
     }
   }
+  // Editing a piece from the outfit: saved to the Kloset, and the outfit on
+  // screen shows the new details straight away.
+  const { user } = useAuth()
+  const [editingItem, setEditingItem] = useState<ClothingItem | undefined>(undefined)
+  const handleEditSave = (edited: ClothingItem) => {
+    useWardrobeStore.getState().updateItem(edited.id, edited)
+    if (user) saveItemDetails(user.id, edited).catch((saveError) => console.error('[stylist] edit save failed', saveError))
+    setSuggestion((current) => current && {
+      ...current,
+      items: current.items.map((result) => result.item.id === edited.id ? { ...result, item: edited } : result),
+    })
+    setEditingItem(undefined)
+  }
+
   const handleRemovePiece = (itemId: string) => {
     if (!suggestion) return
     setSuggestion({ ...suggestion, id: crypto.randomUUID(), items: suggestion.items.filter((result) => result.item.id !== itemId) })
@@ -302,6 +319,7 @@ export function StylistPage() {
                   wardrobe={items}
                   onSwap={handleSwap}
                   onRemove={handleRemovePiece}
+                  onEdit={setEditingItem}
                   swappingId={swappingId}
                   swapNote={swapNote}
                 />
@@ -310,6 +328,15 @@ export function StylistPage() {
           </>
         )}
       </div>
+      {editingItem && (
+        <AddItemModal
+          key={editingItem.id}
+          open
+          onClose={() => setEditingItem(undefined)}
+          onSave={handleEditSave}
+          editItem={editingItem}
+        />
+      )}
     </div>
   )
 }

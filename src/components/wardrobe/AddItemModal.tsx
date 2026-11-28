@@ -1048,8 +1048,10 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
 
         {/* Detailed attributes are editable when reviewing an existing piece. */}
         {!!editItem && <>
-        {/* ── Garment construction details ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* ── Garment construction details: optional, folded away (hard to answer) ── */}
+        <details className="group rounded-xl border border-text-primary/10 px-4 py-3">
+        <summary className="cursor-pointer text-sm text-text-muted marker:content-none">More details (optional)</summary>
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className={reviewFieldClass('neckline_closure')}>
             <SectionLabel review={isLowConfidence('neckline_closure')}>Neckline / closure</SectionLabel>
             <select
@@ -1077,6 +1079,7 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
             </select>
           </div>
         </div>
+        </details>
 
         {/* ── Colours ── */}
         <div className={reviewFieldClass('colour')}>

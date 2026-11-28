@@ -35,6 +35,8 @@ interface OutfitResultProps {
   onRemove?: (itemId: string) => void
   /** The piece being swapped right now. */
   swappingId?: string | null
+  /** Edit a piece's details (name, type, fabric…). */
+  onEdit?: (item: ClothingItem) => void
   /** Shown under the pieces after a swap that found nothing. */
   swapNote?: string | null
 }
@@ -55,6 +57,7 @@ export function OutfitResult({
   wardrobe,
   onSwap,
   onRemove,
+  onEdit,
   swappingId = null,
   swapNote = null,
 }: OutfitResultProps) {
@@ -129,6 +132,7 @@ export function OutfitResult({
           item={opened?.item ?? null}
           open={!!opened}
           onClose={() => setOpenId(null)}
+          onEdit={opened && onEdit ? () => { onEdit(opened.item); setOpenId(null) } : undefined}
           actions={opened && (onSwap || onRemove) ? (
             <div className="mb-3 flex gap-2">
               {onSwap && (
@@ -258,7 +262,7 @@ export function OutfitResult({
 // ─── Individual outfit item tile ──────────────────────────────────────────────
 
 function OutfitItemTile({ result, onOpen, onSwap, swapping }: { result: OutfitItemResult; onOpen: () => void; onSwap?: () => void; swapping: boolean }) {
-  const { item, stylingNote } = result
+  const { item } = result
   const imageUrl = useItemImage(item)
   const primaryColour = item.colour[0]
   const bgHex = primaryColour ? colourNameToHex(primaryColour) : '#EDE9E2'
@@ -308,9 +312,6 @@ function OutfitItemTile({ result, onOpen, onSwap, swapping }: { result: OutfitIt
       {/* Info */}
       <div className="px-4 py-3">
         <p className="text-sm font-medium text-charcoal-900 truncate">{item.name}</p>
-        {stylingNote && (
-          <p className="text-2xs text-charcoal-400 mt-0.5 leading-snug">{stylingNote}</p>
-        )}
       </div>
       </button>
     </div>

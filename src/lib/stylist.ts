@@ -90,7 +90,33 @@ export function categoryFromName(item: ClothingItem): ClothingItem['category'] {
   const kinds = NAME_KINDS.filter(([, pattern]) => pattern.test(item.name)).map(([kind]) => kind)
   return kinds.length === 1 && kinds[0] !== item.category ? kinds[0] : item.category
 }
+// A piece saved without tags has no colours, so colour matching skipped it.
+// Read them from its name ("Brown Pants", "Light blue jeans") instead.
+const NAME_COLOURS: Array<[RegExp, string]> = [
+  [/dusty rose/, 'Dusty Rose'], [/forest green/, 'Forest Green'], [/sky blue|light blue|baby blue|powder blue/, 'Sky Blue'],
+  [/navy/, 'Navy'], [/charcoal/, 'Charcoal'], [/camel/, 'Camel'], [/\btan\b/, 'Tan'], [/cream|ivory|off.?white/, 'Cream'],
+  [/beige|nude/, 'Beige'], [/blush|\bpink/, 'Blush'], [/burgundy|maroon|wine|\bred\b/, 'Burgundy'], [/olive|khaki/, 'Olive'],
+  [/sage|mint/, 'Sage'], [/\bgreen/, 'Forest Green'], [/rust/, 'Rust'], [/terracotta|orange/, 'Terracotta'],
+  [/cobalt|\bblue/, 'Cobalt'], [/lavender|lilac/, 'Lavender'], [/plum|purple/, 'Plum'], [/gold|mustard|yellow/, 'Gold'],
+  [/silver/, 'Silver'], [/brown|chocolate|coffee/, 'Brown'], [/gr[ae]y/, 'Grey'], [/black/, 'Black'], [/white/, 'White'],
+]
+export function coloursFromName(name: string): string[] {
+  let words = name.toLowerCase()
+  const found: string[] = []
+  for (const [pattern, colour] of NAME_COLOURS) {
+    if (!pattern.test(words)) continue
+    if (!found.includes(colour)) found.push(colour)
+    // Used up, so "light blue" doesn't also count as plain blue.
+    words = words.replace(new RegExp(pattern.source, 'g'), ' ')
+  }
+  return found.slice(0, 2)
+}
+
 function withNamedCategory(item: ClothingItem): ClothingItem {
+  if (!item.colour.length) {
+    const colour = coloursFromName(item.name)
+    if (colour.length) item = { ...item, colour }
+  }
   const category = categoryFromName(item)
   if (category === item.category) return item
   console.log('[stylist] category from name', { name: item.name, saved: item.category, used: category })
@@ -410,6 +436,11 @@ const CASUAL_KNIT = /sweater|jumper|pullover|cardigan|\bknit/
 const FINE_KNIT = /turtleneck|roll.?neck|mock.?neck|cashmere|merino|fine.?knit|fine.?gauge/
 function unsuitableFor(item: ClothingItem, occasion: Occasion): boolean {
   const words = `${item.name} ${item.subcategory ?? ''} ${item.material ?? ''} ${item.construction ?? ''}`.toLowerCase()
+  // A piece with only a name ("Pants") could be sweatpants: it only goes in a
+  // dressy look when the name itself says it's dressy ("Brown pleated trousers").
+  const untagged = !item.subcategory && !item.material && !item.formality
+  if (untagged && DRESSY_OCCASIONS.includes(occasion) && ['tops', 'bottoms', 'dresses', 'outerwear'].includes(item.category)
+    && !(occasion === 'formal' ? FORMAL_WORDS : DRESSY_WORDS).test(item.name.toLowerCase())) return true
   if (occasion === 'date-night') {
     if (LOUNGE.test(words) || /gym|athletic|running|flip.?flop|\bslides?\b|crocs/.test(words)) return true
     // Fleece or jersey bottoms are sweats, whatever they're called.
@@ -497,6 +528,14 @@ function scoreItem(
   const itemIsBold = item.colour.some((colour) => boldColourHints.some((hint) => colour.toLowerCase().includes(hint)))
   const existingBoldItems = alreadySelected.filter((selected) => selected.colour.some((colour) => boldColourHints.some((hint) => colour.toLowerCase().includes(hint)))).length
   if (itemIsBold && existingBoldItems >= recommendationWorkbookGuide.outfitRules.maxBoldColourItems) score -= 5
+  // Cool pastels (sky blue, lavender) look washed out next to muddy warm
+  // mid-tones (brown, olive, khaki) on the main garments.
+  if (['tops', 'bottoms', 'dresses'].includes(item.category)) {
+    const coolPastel = (piece: ClothingItem) => piece.colour.some((c) => /sky blue|light blue|baby blue|lavender|lilac/i.test(c))
+    const mutedWarm = (piece: ClothingItem) => piece.colour.some((c) => /^(brown|olive|khaki|chocolate)$/i.test(c.trim()))
+    const mainPieces = alreadySelected.filter((piece) => ['tops', 'bottoms', 'dresses'].includes(piece.category))
+    if ((coolPastel(item) && mainPieces.some(mutedWarm)) || (mutedWarm(item) && mainPieces.some(coolPastel))) score -= 12
+  }
   const itemFit = `${item.fit ?? ''} ${item.name}`.toLowerCase()
   if (item.category === 'bottoms' && /loose|oversized|wide-leg/.test(itemFit)) {
     const selectedTop = alreadySelected.find((selected) => selected.category === 'tops')
@@ -697,6 +736,31 @@ function scoreIndianWearFit(item: ClothingItem, request: StyleRequest): number {
 
 // ─── Outfit assembly ──────────────────────────────────────────────────────────
 
+// Proportions at the waist. Trousers and skirts with a defined high waist
+// (high-rise, pleated, paperbag, belted) need a top that shows the waist: a
+// short or fitted top, or a shirt tucked in. A top that falls over the waist
+// and can't be tucked (twist or knot fronts, wrap, longline, tunic, kurti,
+// oversized) goes with a regular waist instead.
+const fitWords = (item: ClothingItem) => `${item.name} ${item.subcategory ?? ''} ${item.construction ?? ''} ${item.fit ?? ''}`.toLowerCase()
+const WAIST_DEFINED = /high.?(waist|rise)|pleat|paper.?bag|belted|sailor|tailored trouser/
+const COVERS_WAIST = /twist|knot|wrap|longline|long.?line|tunic|kurt[ai]|kaftan|oversized|boyfriend|relaxed|loose|hip.?length|drape|batwing|blouson|sweatshirt|hoodie/
+const SHOWS_WAIST = /crop|fitted|bodysuit|cami|tank|tube|corset|bustier|bralette|bandeau|slim/
+function hasDefinedWaist(item: ClothingItem) {
+  // Leggings are made to go under a kurti or tunic, so they don't count.
+  return item.category === 'bottoms' && WAIST_DEFINED.test(fitWords(item)) && !/low.?(waist|rise)|legging/.test(fitWords(item))
+}
+function hidesWaist(item: ClothingItem) {
+  if (item.category !== 'tops' && !(item.category === 'outerwear' && isStandaloneWoolen(item))) return false
+  const words = fitWords(item)
+  // A twist, knot or wrap front or a tunic sits over the waist however fitted it is.
+  // (A peplum marks the waist itself, so it can go with a high waist.)
+  if (/twist|knot|wrap|tunic|kurt[ai]|kaftan|longline|long.?line/.test(words) && !/crop/.test(words)) return true
+  if (SHOWS_WAIST.test(words)) return false
+  // A plain shirt tucks in; a twisted, wrapped or tunic one doesn't.
+  if (/shirt|blouse/.test(words) && !/twist|knot|wrap|tunic|kurt|kaftan|peplum|oversized/.test(words)) return false
+  return COVERS_WAIST.test(words)
+}
+
 function pickBest(
   items: ClothingItem[],
   category: ClothingItem['category'],
@@ -716,6 +780,7 @@ function pickBest(
     const isMini = (piece: ClothingItem) => /\bmini\b|short skirt|skort|shorts?\b/.test(`${piece.name} ${piece.subcategory ?? ''}`.toLowerCase())
     if ((isKurta(i) && selected.some(isMini)) || (isMini(i) && selected.some(isKurta))) return false
     if (isPrint(i) && selected.some(isPrint)) return false
+    if ((hasDefinedWaist(i) && selected.some(hidesWaist)) || (hidesWaist(i) && selected.some(hasDefinedWaist))) return false
     const details = `${i.name} ${i.subcategory ?? ''} ${i.material ?? ''} ${i.construction ?? ''}`.toLowerCase()
     // Keep linen out of cold-weather outfit recommendations.
     if (['cold', 'cool'].includes(request.weather) && /\blinen\b/.test(details)) return false
