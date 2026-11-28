@@ -19,7 +19,7 @@ const VALID_CATEGORIES = new Set(SCAN_CATEGORIES.map((c) => c.value))
 const VALID_PATTERNS = new Set(['solid', 'striped', 'checked', 'floral', 'abstract', 'animal-print', 'geometric', 'other'])
 const VALID_SEASONS = new Set(['spring', 'summer', 'autumn', 'winter', 'all-season'])
 const VALID_OCCASIONS = new Set(['work', 'casual', 'formal', 'date-night', 'weekend', 'travel', 'gym', 'special-event'])
-const FIT_MAP: Record<string, string> = { slim: 'Slim', regular: 'Regular', relaxed: 'Relaxed', oversized: 'Oversized', fitted: 'Fitted' }
+const FIT_MAP: Record<string, string> = { slim: 'Slim', regular: 'Regular', relaxed: 'Relaxed', oversized: 'Oversized', fitted: 'Fitted', straight: 'Straight' }
 const FORMALITY_MAP: Record<string, string> = { casual: 'Casual', 'smart casual': 'Smart Casual', business: 'Business', formal: 'Formal', 'black tie': 'Black Tie' }
 const WOOLENS = new Set(['sweater', 'knit top', 'knitted top', 'turtleneck', 'pullover', 'sweatshirt', 'hoodie', 'cardigan', 'coat', 'jacket', 'blazer', 'raincoat', 'puffer', 'parka', 'trench coat'])
 

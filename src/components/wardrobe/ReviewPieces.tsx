@@ -16,13 +16,15 @@ import type { ClothingCategory, ClothingItem, Pattern } from '@/types'
 // (from photo tagging when it's working, otherwise from the piece's name),
 // in plain words anyone can answer. Save keeps them; tapping a chip changes one.
 
+// "Other" opens a box to type the kind of piece in their own words.
+const OTHER = 'Other'
 const TYPES: Record<ClothingCategory, string[]> = {
-  tops: ['T-shirt', 'Shirt', 'Blouse', 'Polo', 'Tank or cami', 'Crop top', 'Corset', 'Kurti', 'Bodysuit', 'Other top'],
-  bottoms: ['Jeans', 'Trousers', 'Sweatpants', 'Leggings', 'Skirt', 'Mini skirt', 'Shorts', 'Cargo pants', 'Palazzo'],
-  dresses: ['Mini dress', 'Midi dress', 'Maxi dress', 'Slip dress', 'Shirt dress', 'Bodycon dress'],
-  outerwear: ['Sweater', 'Cardigan', 'Hoodie', 'Sweatshirt', 'Jacket', 'Blazer', 'Coat', 'Vest'],
-  shoes: ['Sneakers', 'Heels', 'Flats', 'Boots', 'Sandals', 'Loafers', 'Slides'],
-  accessories: ['Bag', 'Belt', 'Jewellery', 'Sunglasses', 'Scarf', 'Hat', 'Watch'],
+  tops: ['T-shirt', 'Shirt', 'Blouse', 'Polo', 'Tank or cami', 'Crop top', 'Off-shoulder', 'Tube top', 'Corset', 'Kurti', 'Bodysuit', OTHER],
+  bottoms: ['Jeans', 'Trousers', 'Sweatpants', 'Leggings', 'Skirt', 'Mini skirt', 'Shorts', 'Cargo pants', 'Palazzo', OTHER],
+  dresses: ['Mini dress', 'Midi dress', 'Maxi dress', 'Slip dress', 'Shirt dress', 'Bodycon dress', OTHER],
+  outerwear: ['Sweater', 'Cardigan', 'Hoodie', 'Sweatshirt', 'Jacket', 'Blazer', 'Coat', 'Vest', OTHER],
+  shoes: ['Sneakers', 'Heels', 'Flats', 'Boots', 'Sandals', 'Loafers', 'Slides', OTHER],
+  accessories: ['Bag', 'Belt', 'Jewellery', 'Sunglasses', 'Scarf', 'Hat', 'Watch', OTHER],
 }
 const FABRICS = ['Denim', 'Cotton', 'Linen', 'Knit', 'Sweat fabric', 'Silk or satin', 'Chiffon', 'Leather', 'Wool', 'Polyester']
 const DRESSY = [
@@ -32,7 +34,7 @@ const DRESSY = [
   { label: 'Work', formality: 'Business' },
   { label: 'Formal or evening', formality: 'Formal' },
 ]
-const FITS = ['Fitted', 'Regular', 'Relaxed', 'Oversized']
+const FITS = ['Fitted', 'Regular', 'Straight', 'Relaxed', 'Oversized']
 const PATTERNS: Array<{ label: string; value: Pattern }> = [
   { label: 'Plain', value: 'solid' }, { label: 'Striped', value: 'striped' }, { label: 'Checked', value: 'checked' },
   { label: 'Floral', value: 'floral' }, { label: 'Animal', value: 'animal-print' }, { label: 'Other print', value: 'abstract' },
@@ -45,6 +47,8 @@ interface Answers {
   name: string
   category: ClothingCategory
   type: string | null
+  /** What they typed when the type is Other. */
+  customType: string
   fabric: string | null
   dressy: string | null
   fit: string | null
@@ -53,7 +57,15 @@ interface Answers {
   highWaist: boolean
 }
 
-const find = (options: string[], words: string) => options.find((option) => words.includes(option.toLowerCase().split(' ')[0])) ?? null
+// Matches on an option's first word ("crop" for Crop top), ignoring hyphens. Never picks Other.
+const find = (options: string[], words: string) => {
+  const text = words.replace(/-/g, ' ')
+  return options.find((option) => {
+    if (option === OTHER) return false
+    const key = option.toLowerCase().split(' ')[0]
+    return words.includes(key) || text.includes(key.replace(/-/g, ' '))
+  }) ?? null
+}
 
 /** What the name alone suggests: "Brown Pants" → bottoms, trousers?, brown. */
 function guessFromName(item: ClothingItem): Answers {
@@ -66,6 +78,7 @@ function guessFromName(item: ClothingItem): Answers {
     name: item.name,
     category: item.category,
     type,
+    customType: '',
     fabric,
     dressy: type === 'Sweatpants' || type === 'Leggings' ? 'Lounge or gym' : null,
     fit: find(FITS, words),
@@ -96,7 +109,9 @@ function fromAnalysis(base: Answers, item: ClothingItem, analysis: Awaited<Retur
 }
 
 function toPatch(answers: Answers): Partial<ClothingItem> {
-  const subcategory = answers.type ? answers.type.toLowerCase().replace(' or cami', '').replace('other top', 'top') : undefined
+  const subcategory = answers.type === OTHER
+    ? answers.customType.trim().toLowerCase().slice(0, 40) || 'other'
+    : answers.type ? answers.type.toLowerCase().replace(' or cami', '') : undefined
   const material = answers.fabric === 'Sweat fabric' ? 'fleece jersey' : answers.fabric === 'Silk or satin' ? 'satin' : answers.fabric?.toLowerCase()
   const dressy = DRESSY.find((option) => option.label === answers.dressy)
   return {
@@ -210,6 +225,17 @@ export function ReviewPieces({ pieces, onClose }: { pieces: ClothingItem[]; onCl
             {(Object.keys(TYPES) as ClothingCategory[]).map((category) => chip(CATEGORY_LABEL[category], answers.category === category, () => { set('category', category); set('type', null) }))}
           </>)}
           {section('Type', TYPES[answers.category].map((type) => chip(type, answers.type === type, () => toggle('type', type))))}
+          {answers.type === OTHER && (
+            <input
+              autoFocus
+              value={answers.customType}
+              onChange={(event) => set('customType', event.target.value)}
+              placeholder="What kind of piece is it? e.g. wrap top"
+              aria-label="Type it in"
+              maxLength={40}
+              className="mt-3 w-full rounded-xl border border-text-primary/15 bg-surface px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-text-primary/40 focus:outline-none"
+            />
+          )}
           {answers.category !== 'shoes' && answers.category !== 'accessories' && section('Fabric', FABRICS.map((fabric) => chip(fabric, answers.fabric === fabric, () => toggle('fabric', fabric))))}
           {section('How dressy is it?', DRESSY.map((option) => chip(option.label, answers.dressy === option.label, () => toggle('dressy', option.label))))}
           {['tops', 'bottoms', 'dresses', 'outerwear'].includes(answers.category) && section('Fit', <>

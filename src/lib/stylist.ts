@@ -382,7 +382,7 @@ function isUnsuitableForBusinessMeeting(item: ClothingItem) {
 }
 
 function isStandaloneWoolen(item: ClothingItem) {
-  return /\b(sweater|knit top|knitted top|turtleneck|roll.?neck|high.?neck|sweatshirt|hoodie|vest|waistcoat)\b/i
+  return /\b(sweater|jumper|pullover|quarter.?zip|half.?zip|knit top|knitted top|turtleneck|roll.?neck|high.?neck|sweatshirt|hoodie|vest|waistcoat)\b/i
     .test(`${item.name} ${item.subcategory ?? ''} ${item.construction ?? ''}`)
 }
 
@@ -404,10 +404,6 @@ function isWarmTop(item: ClothingItem) {
 function isJacketOrCoat(item: ClothingItem) {
   const words = `${item.name} ${item.subcategory ?? ''}`.toLowerCase()
   return /jacket|coat|blazer|trench|parka|puffer|shacket|overshirt|bomber|anorak|raincoat/.test(words) && !isStandaloneWoolen(item)
-}
-
-function canBeVestCoverage(item: ClothingItem) {
-  return /\b(tank|camisole|cami)\b/i.test(`${item.name} ${item.subcategory ?? ''}`)
 }
 
 function isPrint(item: ClothingItem) {
@@ -794,6 +790,16 @@ function pickBest(
     // Keep linen out of cold-weather outfit recommendations.
     if (['cold', 'cool'].includes(request.weather) && /\blinen\b/.test(details)) return false
     if (request.weather === 'cold' && category === 'bottoms' && /\bshorts?\b/.test(details)) return false
+    // Warm and hot days: no sweaters, sweater tops, sweatshirts or warm knits
+    // (a knitted cami, tank, strapless or crochet top, or a knit polo, is fine), and nothing tagged winter-only.
+    if ((request.weather === 'hot' || request.weather === 'warm') && ['tops', 'outerwear', 'dresses'].includes(category)) {
+      const warmKnit = isStandaloneWoolen(i) || isCardiganTop(i) || /sweater|jumper|pullover|cardigan|sweatshirt|hoodie|fleece|wool|cashmere|turtleneck|roll.?neck|\bknit/.test(details)
+      const summerKnit = /sleeveless|cami|tank|halter|tube|crochet|strappy|strapless|bandeau|off.?shoulder|polo|waffle|\bshirt\b/.test(details)
+        // A fitted knit vest top is sleeveless; a sweater vest is still a sweater.
+        || (/\bvest\b/.test(details) && !/sweater vest|cable|chunky/.test(details))
+      if (warmKnit && (!summerKnit || /cable|chunky/.test(details))) return false
+      if (i.seasons.length && !i.seasons.some((season) => season === 'summer' || season === 'spring' || season === 'all-season')) return false
+    }
     if (category === 'outerwear') {
       const hasTurtleneck = selected.some((piece) => piece.category === 'tops'
         && /turtleneck|roll.?neck|high.?neck/.test(`${piece.name} ${piece.subcategory ?? ''} ${piece.neckline_closure ?? ''}`.toLowerCase()))
@@ -1153,7 +1159,8 @@ function mockEngine(
       const existingTop = existingTopIndex >= 0 ? resultItems[existingTopIndex].item : undefined
       const isVest = /\b(vest|waistcoat)\b/i.test(`${outer.name} ${outer.subcategory ?? ''}`)
       // A warm top (sweater top, knit top) never goes over another top.
-      const canLayerTop = existingTop && !isWarmTop(outer) && (isVest ? canBeVestCoverage(existingTop) : canBeCollaredLayer(existingTop))
+      // A vest is the top itself (a jacket can go over it, nothing under it).
+      const canLayerTop = existingTop && !isVest && !isWarmTop(outer) && canBeCollaredLayer(existingTop)
 
       if (isStandaloneWoolen(outer) && existingTop && !canLayerTop && pinnedItem) {
         // Keep the user's pinned starting item; don't add an incompatible inner layer.

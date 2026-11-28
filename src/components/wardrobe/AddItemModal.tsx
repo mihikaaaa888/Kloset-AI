@@ -34,7 +34,7 @@ const VALID_CATEGORIES = new Set(['tops', 'bottoms', 'dresses', 'outerwear', 'sh
 const VALID_PATTERNS = new Set(['solid', 'striped', 'checked', 'floral', 'abstract', 'animal-print', 'geometric', 'other'])
 const VALID_SEASONS = new Set(['spring', 'summer', 'autumn', 'winter', 'all-season'])
 const VALID_OCCASIONS = new Set(['work', 'casual', 'formal', 'date-night', 'weekend', 'travel', 'gym', 'special-event'])
-const FIT_MAP: Record<string, string> = { slim: 'Slim', regular: 'Regular', relaxed: 'Relaxed', oversized: 'Oversized', fitted: 'Fitted' }
+const FIT_MAP: Record<string, string> = { slim: 'Slim', regular: 'Regular', relaxed: 'Relaxed', oversized: 'Oversized', fitted: 'Fitted', straight: 'Straight' }
 const FORMALITY_MAP: Record<string, string> = { casual: 'Casual', 'smart casual': 'Smart Casual', business: 'Business', formal: 'Formal', 'black tie': 'Black Tie' }
 
 // ─── Options ──────────────────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ const SUBCATEGORIES: Partial<Record<ClothingCategory, string[]>> = {
   accessories: ['bag', 'belt', 'hat', 'scarf', 'jewelry', 'sunglasses', 'watch', 'other'],
 }
 
-const FIT_OPTIONS = ['Slim', 'Regular', 'Relaxed', 'Oversized', 'Fitted']
+const FIT_OPTIONS = ['Slim', 'Regular', 'Straight', 'Relaxed', 'Oversized', 'Fitted']
 
 const FORMALITY_OPTIONS = ['Casual', 'Smart Casual', 'Business', 'Formal', 'Black Tie']
 
