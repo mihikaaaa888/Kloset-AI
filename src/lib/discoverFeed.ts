@@ -63,10 +63,12 @@ const pick = <T,>(list: T[], index: number): T | undefined => (list.length ? lis
 // ─── Age ──────────────────────────────────────────────────────────────────────
 // Searches suit the person's age range: a word that steers the results on
 // some searches, and pieces left out that rarely suit the range.
+// Pieces that read older ("aunty") and rarely suit someone under 25.
+const YOUNG_SKIP = ['blouse', 'kurta', 'palazzo', 'midi skirt', 'maxi dress', 'shirt dress', 'trench coat', 'block heels', 'mules', 'derby shoes', 'watch', 'wallet']
 const AGE_FIT: Record<string, { word?: string; skip: string[] }> = {
-  'under-18': { word: 'trendy', skip: ['slip dress', 'block heels', 'tailored blazer', 'evening dress'] },
-  '18-24': { word: 'trendy', skip: [] },
-  'under-25': { word: 'trendy', skip: [] },
+  'under-18': { word: 'trendy', skip: ['slip dress', 'tailored blazer', 'evening dress', ...YOUNG_SKIP] },
+  '18-24': { word: 'trendy', skip: YOUNG_SKIP },
+  'under-25': { word: 'trendy', skip: YOUNG_SKIP },
   '25-34': { skip: [] },
   '35-44': { word: 'elegant', skip: ['tank top'] },
   '45-54': { word: 'elegant', skip: ['tank top', 'cropped jacket', 'shacket', 'slip dress', 'cargo pants'] },
@@ -75,7 +77,11 @@ const AGE_FIT: Record<string, { word?: string; skip: string[] }> = {
 const ageFit = (profile: UserProfile | null) => AGE_FIT[profile?.ageRange ?? ''] ?? { skip: [] }
 /** The category's search items for this audience, minus ones that rarely suit their age. */
 function itemsFor(category: ClothingCategory, audience: Audience, profile: UserProfile | null): string[] {
-  const all = ITEMS[category][audience].length ? ITEMS[category][audience] : ITEMS[category].women
+  const base = ITEMS[category][audience].length ? ITEMS[category][audience] : ITEMS[category].women
+  // Pieces people their age wear come first (baby tee, wide-leg jeans for under 25s).
+  const band = AGE_BAND[profile?.ageRange ?? '']
+  const agePieces = band ? AGE_PIECES[band][audience][category] ?? [] : []
+  const all = [...new Set([...agePieces, ...base])]
   const skip = new Set(ageFit(profile).skip)
   const fitting = all.filter((item) => !skip.has(item))
   return fitting.length ? fitting : all
@@ -247,7 +253,11 @@ export function buildKlosetQueries(
   const region = regionWord()
   const say = (category: ClothingCategory, colour: string | undefined, item: string, withStyle: boolean) => {
     const gendered = category !== 'accessories' || BAG_RE.test(item)
-    return [gendered ? (audience === 'women' ? "women's" : "men's") : '', colour, item, withStyle ? style : ageFit(profile).word, region].filter(Boolean).join(' ')
+    // Their style on half the searches; otherwise (or with no style chosen) a look word for their age.
+    const band = AGE_BAND[profile?.ageRange ?? '']
+    const ageWord = band ? pick(AGE_LOOKS[band], page + item.length) : ageFit(profile).word
+    const look = withStyle && style ? style : ageWord
+    return [gendered ? (audience === 'women' ? "women's" : "men's") : '', colour, item, look, region].filter(Boolean).join(' ')
   }
   const itemFor = (category: ClothingCategory, n: number) => {
     return pick(itemsFor(category, audience, profile), n) ?? category
@@ -295,7 +305,10 @@ export function buildKlosetQueries(
     out.push(query(need.category, (page + i) % 2 === 0 ? pick(favourites, page + i) : undefined, need[audience], `For ${need.label}`, i))
   }
   // 4. Nothing to go on yet (empty Kloset, no occasions): versatile basics.
-  const basics: [ClothingCategory, string][] = [['tops', 'white shirt'], ['bottoms', 'straight jeans'], ['outerwear', 'blazer'], ['shoes', 'white sneakers'], ['accessories', audience === 'women' ? 'leather tote bag' : 'leather belt'], ['tops', 'black t-shirt']]
+  const young = AGE_BAND[profile?.ageRange ?? ''] === 'young'
+  const basics: [ClothingCategory, string][] = young
+    ? [['tops', audience === 'women' ? 'baby tee' : 'oversized t-shirt'], ['bottoms', audience === 'women' ? 'wide-leg jeans' : 'baggy jeans'], ['outerwear', audience === 'women' ? 'cropped jacket' : 'bomber jacket'], ['shoes', 'chunky sneakers'], ['accessories', audience === 'women' ? 'shoulder bag' : 'crossbody bag'], ['tops', audience === 'women' ? 'fitted top' : 'graphic tee']]
+    : [['tops', 'white shirt'], ['bottoms', 'straight jeans'], ['outerwear', 'blazer'], ['shoes', 'white sneakers'], ['accessories', audience === 'women' ? 'leather tote bag' : 'leather belt'], ['tops', 'black t-shirt']]
   for (let i = 0; out.length < 6 && i < basics.length; i++) {
     const [category, item] = basics[(page + i) % basics.length]
     const basic = query(category, undefined, item, 'A versatile basic', i)

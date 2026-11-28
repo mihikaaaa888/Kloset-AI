@@ -213,6 +213,20 @@ function WebProductCard({ item, vote, onVote, reason }: { item: FeedItem; vote?:
             <X size={14} />
           </button>
         </div>
+        {/* Add to Kloset: a plus on the photo, a tick once it's in. */}
+        <button
+          type="button"
+          onClick={addToKloset}
+          disabled={inKloset}
+          title={inKloset ? 'In your Kloset' : 'Add to Kloset'}
+          aria-label={inKloset ? `${item.title} is in your Kloset` : `Add ${item.title} to Kloset`}
+          className={clsx(
+            'absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center rounded-full shadow-soft transition-colors disabled:cursor-default',
+            inKloset ? 'bg-text-primary text-warm-cream' : 'bg-warm-cream/90 text-text-primary hover:bg-warm-cream',
+          )}
+        >
+          {inKloset ? <Check size={16} /> : <Plus size={16} />}
+        </button>
       </div>
       <a href={item.url} target="_blank" rel="noopener noreferrer" className="mt-3 block">
         <p className="truncate text-xs text-text-muted">{item.retailer}</p>
@@ -220,16 +234,6 @@ function WebProductCard({ item, vote, onVote, reason }: { item: FeedItem; vote?:
         {item.price && <p className="mt-1 text-sm font-medium tabular-nums text-text-primary">{item.price}</p>}
         {reason && <p className="mt-1 truncate text-xs text-butter-yellow" title={reason}>{reason}</p>}
       </a>
-      <button
-        type="button"
-        onClick={addToKloset}
-        disabled={inKloset}
-        aria-label={inKloset ? `${item.title} is in your Kloset` : `Add ${item.title} to Kloset`}
-        className="mt-3 inline-flex h-7 items-center gap-1 rounded-full border border-text-primary/20 px-3 text-xs text-text-primary transition-colors hover:border-text-primary/45 hover:bg-text-primary/5 disabled:cursor-default disabled:border-transparent disabled:bg-text-primary/5 disabled:text-text-muted"
-      >
-        {inKloset ? <Check size={12} /> : <Plus size={12} />}
-        {inKloset ? 'In your Kloset' : 'Add to Kloset'}
-      </button>
     </article>
   )
 }

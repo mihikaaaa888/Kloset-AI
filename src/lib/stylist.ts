@@ -387,6 +387,8 @@ function isStandaloneWoolen(item: ClothingItem) {
 }
 
 function canBeCollaredLayer(item: ClothingItem) {
+  // A knit button-up (cardigan top, sweater top) is the top itself, not a shirt to layer.
+  if (isCardiganTop(item) || isStandaloneWoolen(item) || /cardigan|\bknit/.test(`${item.name} ${item.subcategory ?? ''}`.toLowerCase())) return false
   const details = `${item.name} ${item.subcategory ?? ''} ${item.neckline_closure ?? ''}`
   // Only a proper button-up shirt goes under a pullover sweater (its collar
   // showing). Polos, tees, long-sleeve and crop tops are complete tops.
@@ -486,6 +488,21 @@ function tooDressyFor(item: ClothingItem): number {
   if (EVENING.test(words)) penalty += 7
   if (/formal|black tie|business/.test((item.formality ?? '').toLowerCase())) penalty += 4
   return penalty
+}
+
+// Travel wants pieces you can sit, walk and carry things in for hours:
+// flat comfortable shoes, easy trousers or jeans, a roomy bag, layers. Heels,
+// minis, bodycon, satin and clutches step back. Softer for someone whose
+// style is dressier (romantic, classic, business), who may want to travel polished.
+const TRAVEL_EASY = /sneaker|trainer|samba|gazelle|loafer|ballet|\bflats?\b|boot|slip.?on|jeans|denim|trouser|jogger|track|cargo|wide.?leg|straight|leggings|palazzo|tee|t-?shirt|sweatshirt|hoodie|cardigan|sweater|knit|shirt|polo|tote|backpack|crossbody|cross.?body|shoulder bag|jacket|coat/
+const TRAVEL_FUSSY = /heel|stiletto|pump|platform|wedge|\bmini\b|micro|bodycon|corset|bustier|tube|strapless|bandeau|satin|silk|sequin|velvet|organza|chiffon|lace|clutch|backless|slip dress|white (linen|trousers|pants)/
+function travelScore(item: ClothingItem, profile: UserProfile | null): number {
+  const words = `${item.name} ${item.subcategory ?? ''} ${item.material ?? ''}`.toLowerCase()
+  const dressyStyle = (profile?.stylePreferences ?? []).some((style) => style === 'romantic' || style === 'classic' || style === 'business')
+  let score = 0
+  if (TRAVEL_FUSSY.test(words)) score -= dressyStyle ? 4 : 9
+  else if (TRAVEL_EASY.test(words)) score += 4
+  return score
 }
 
 function dressinessScore(item: ClothingItem, occasion: Occasion, profile: UserProfile | null): number {
@@ -597,6 +614,7 @@ function scoreItem(
   } else if (['casual', 'weekend', 'travel', 'gym'].includes(request.occasion)) {
     if (relaxed) score += 4
     score -= tooDressyFor(item)
+    if (request.occasion === 'travel') score += travelScore(item, profile)
   } else if (request.occasion === 'work' && /professional|business|tailored|blazer/.test(garmentDetails)) {
     score += 4
   }
@@ -766,6 +784,8 @@ function hidesWaist(item: ClothingItem) {
   return COVERS_WAIST.test(words)
 }
 
+const WARM_SHORTS = /\bwool|tweed|leather|corduroy|\bcord\b|\bknit|fleece|velvet|suede|bouc|felt|flannel/
+
 function pickBest(
   items: ClothingItem[],
   category: ClothingItem['category'],
@@ -789,7 +809,14 @@ function pickBest(
     const details = `${i.name} ${i.subcategory ?? ''} ${i.material ?? ''} ${i.construction ?? ''}`.toLowerCase()
     // Keep linen out of cold-weather outfit recommendations.
     if (['cold', 'cool'].includes(request.weather) && /\blinen\b/.test(details)) return false
-    if (request.weather === 'cold' && category === 'bottoms' && /\bshorts?\b/.test(details)) return false
+    // Shorts on cool, cold or rainy days only in a warm fabric (wool, tweed,
+    // leather, corduroy, knit), worn like a winter skirt; never cotton or linen ones.
+    const isShorts = (piece: ClothingItem) => piece.category === 'bottoms' && /\bshorts?\b|skort/.test(`${piece.name} ${piece.subcategory ?? ''}`.toLowerCase())
+      && !WARM_SHORTS.test(`${piece.name} ${piece.subcategory ?? ''} ${piece.material ?? ''} ${piece.construction ?? ''}`.toLowerCase())
+    if (['cold', 'cool', 'rainy'].includes(request.weather) && isShorts(i)) return false
+    // A sweater says it's cold: never summer shorts with a sweater, or a sweater with them.
+    const isSweaterTop = (piece: ClothingItem) => isStandaloneWoolen(piece) || isCardiganTop(piece) || /sweater|jumper|pullover|sweatshirt|hoodie|fleece/.test(`${piece.name} ${piece.subcategory ?? ''}`.toLowerCase())
+    if ((isShorts(i) && selected.some(isSweaterTop)) || (isSweaterTop(i) && selected.some(isShorts))) return false
     // Warm and hot days: no sweaters, sweater tops, sweatshirts or warm knits
     // (a knitted cami, tank, strapless or crochet top, or a knit polo, is fine), and nothing tagged winter-only.
     if ((request.weather === 'hot' || request.weather === 'warm') && ['tops', 'outerwear', 'dresses'].includes(category)) {

@@ -159,6 +159,17 @@ export function StylistPage() {
     setIsSaved(false)
   }
 
+  // The detected weather was wrong (or couldn't be read): dress for the weather they pick.
+  const handleChangeWeather = (weather: StyleRequest['weather']) => {
+    if (!currentRequest) return
+    const request = { ...currentRequest, weather }
+    console.log('[stylist] weather changed', { from: currentRequest.weather, to: weather })
+    setCurrentRequest(request)
+    const next = attempt + 1
+    setAttempt(next)
+    runGeneration(request, next)
+  }
+
   const handleTryAnother = () => {
     if (!currentRequest) return
     const next = attempt + 1
@@ -320,6 +331,7 @@ export function StylistPage() {
                   onSwap={handleSwap}
                   onRemove={handleRemovePiece}
                   onEdit={setEditingItem}
+                  onChangeWeather={handleChangeWeather}
                   swappingId={swappingId}
                   swapNote={swapNote}
                 />

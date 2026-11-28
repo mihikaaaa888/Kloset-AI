@@ -11,7 +11,7 @@ import { getDailyStylingTip, rateStylingTip, type StylingTip } from '@/lib/styli
 import { outfitRatingEvents } from '@/lib/recommendationFeedback'
 import { MisfitPicker } from '@/components/stylist/MisfitPicker'
 import { useRecommendationStore } from '@/store/recommendationStore'
-import type { OutfitSuggestion, OutfitItemResult } from '@/lib/stylist'
+import type { OutfitSuggestion, OutfitItemResult, WeatherCondition } from '@/lib/stylist'
 import type { ClothingItem, UserProfile } from '@/types'
 
 // ─── Occasion + weather display labels ───────────────────────────────────────
@@ -37,6 +37,8 @@ interface OutfitResultProps {
   swappingId?: string | null
   /** Edit a piece's details (name, type, fabric…). */
   onEdit?: (item: ClothingItem) => void
+  /** Dress the look for different weather (when the detected weather is wrong). */
+  onChangeWeather?: (weather: WeatherCondition) => void
   /** Shown under the pieces after a swap that found nothing. */
   swapNote?: string | null
 }
@@ -58,11 +60,13 @@ export function OutfitResult({
   onSwap,
   onRemove,
   onEdit,
+  onChangeWeather,
   swappingId = null,
   swapNote = null,
 }: OutfitResultProps) {
   const { name, items, stylingTips } = suggestion
   const [openId, setOpenId] = useState<string | null>(null)
+  const [pickingWeather, setPickingWeather] = useState(false)
   const opened = items.find((result) => result.item.id === openId) ?? null
   const [workbookTip, setWorkbookTip] = useState<StylingTip | null>(null)
   const outfitItems = items.map((result) => result.item)
@@ -111,6 +115,28 @@ export function OutfitResult({
               <h2 className="font-display text-4xl sm:text-5xl font-medium text-charcoal-900 leading-[1.05]">
                 {name}
               </h2>
+              {/* The weather the look is dressed for: local weather when it could be read. */}
+              <p className="mt-2 text-sm text-text-muted">
+                Dressed for {suggestion.weather === 'rainy' ? 'a rainy' : `a ${suggestion.weather}`} day
+                {onChangeWeather && (
+                  <> · <button type="button" onClick={() => setPickingWeather((open) => !open)} className="underline underline-offset-4 hover:text-text-primary">Change</button></>
+                )}
+              </p>
+              {onChangeWeather && pickingWeather && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(['hot', 'warm', 'cool', 'cold', 'rainy'] as WeatherCondition[]).map((weather) => (
+                    <button
+                      key={weather}
+                      type="button"
+                      aria-pressed={suggestion.weather === weather}
+                      onClick={() => { setPickingWeather(false); if (weather !== suggestion.weather) onChangeWeather(weather) }}
+                      className={clsx('rounded-full border px-3.5 py-1.5 text-xs capitalize transition-colors', suggestion.weather === weather ? 'border-dark-purple bg-dark-purple text-butter-yellow' : 'border-text-primary/15 text-text-primary hover:border-text-primary/40')}
+                    >
+                      {weather}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
