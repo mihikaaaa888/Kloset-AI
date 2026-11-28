@@ -57,9 +57,12 @@ const REMEMBER_PREFIX = 'kloset:live:v1:'
 const REMEMBER_INDEX = 'kloset:live:v1:index'
 const REMEMBER_MAX = 40
 
+// Results fetched ahead for the next visit are shown instantly while this fresh.
+const INSTANT_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
 function rememberResults(key: string, items: LiveProduct[]) {
   try {
-    localStorage.setItem(REMEMBER_PREFIX + key, JSON.stringify(items.slice(0, 48)))
+    localStorage.setItem(REMEMBER_PREFIX + key, JSON.stringify({ at: Date.now(), items: items.slice(0, 48) }))
     const index = (JSON.parse(localStorage.getItem(REMEMBER_INDEX) ?? '[]') as string[]).filter((entry) => entry !== key)
     index.push(key)
     for (const old of index.splice(0, Math.max(0, index.length - REMEMBER_MAX))) localStorage.removeItem(REMEMBER_PREFIX + old)
@@ -67,11 +70,23 @@ function rememberResults(key: string, items: LiveProduct[]) {
   } catch { /* storage full or blocked: nothing to remember */ }
 }
 
-function recallResults(key: string): LiveProduct[] | null {
+/** Remembered results for a search; with maxAgeMs, only if saved that recently. */
+function recallResults(key: string, maxAgeMs = Infinity): LiveProduct[] | null {
   try {
-    const items = JSON.parse(localStorage.getItem(REMEMBER_PREFIX + key) ?? 'null') as LiveProduct[] | null
+    const saved = JSON.parse(localStorage.getItem(REMEMBER_PREFIX + key) ?? 'null') as { at: number; items: LiveProduct[] } | LiveProduct[] | null
+    // Entries saved before timestamps were added are a bare array: fine as a fallback, never instant.
+    const items = Array.isArray(saved) ? (maxAgeMs === Infinity ? saved : null) : (saved && Date.now() - saved.at <= maxAgeMs ? saved.items : null)
     return Array.isArray(items) && items.length ? items : null
   } catch { return null }
+}
+
+/** Fetch searches ahead of time and keep the results on the device, for `instant` to show later. */
+export async function prefetchLiveProducts(queries: DiscoverQuery[], options: { brand?: string | null } = {}): Promise<void> {
+  const brand = options.brand ?? null
+  const key = `${brand ?? ''}|${queries.map((q) => q.text).join('|')}`
+  if (!queries.length || recallResults(key, INSTANT_MAX_AGE_MS)) return
+  const result = await fetchLiveProducts(queries, { brand })
+  if (result.status === 'ok' && result.items.length) rememberResults(key, result.items)
 }
 
 /**
@@ -79,8 +94,8 @@ function recallResults(key: string): LiveProduct[] | null {
  * loads when `enabled`, loadMore() fetches the next page. Searches again only
  * when the search words change, not on every re-render of profile or wardrobe.
  */
-export function useLiveProducts(queriesFor: (page: number) => DiscoverQuery[], options: { enabled?: boolean; brand?: string | null } = {}) {
-  const { enabled = true, brand = null } = options
+export function useLiveProducts(queriesFor: (page: number) => DiscoverQuery[], options: { enabled?: boolean; brand?: string | null; shuffle?: boolean; instant?: boolean } = {}) {
+  const { enabled = true, brand = null, shuffle = false, instant = false } = options
   const [items, setItems] = useState<LiveProduct[]>([])
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -96,7 +111,9 @@ export function useLiveProducts(queriesFor: (page: number) => DiscoverQuery[], o
     if (!queries.length) { setItems([]); return }
     setLoading(true)
     const key = `${brand ?? ''}|${queries.map((q) => q.text).join('|')}`
-    let result = await fetchLiveProducts(queries, { brand })
+    // Fetched ahead (prefetchLiveProducts) and still fresh: show it without waiting on a search.
+    const ready = instant ? recallResults(key, INSTANT_MAX_AGE_MS) : null
+    let result = ready ? { items: ready, status: 'ok' as const } : await fetchLiveProducts(queries, { brand })
     if (id !== requestId.current) return
     if (result.status === 'error' || result.status === 'no-key') {
       // Show what this search found last time; failing that, try once more
@@ -111,14 +128,17 @@ export function useLiveProducts(queriesFor: (page: number) => DiscoverQuery[], o
         result = await fetchLiveProducts(queries, { brand })
         if (id !== requestId.current) return
       }
-    } else if (result.status === 'ok' && result.items.length) {
+    } else if (result.status === 'ok' && result.items.length && !ready) {
       rememberResults(key, result.items)
     }
     setStatus(result.status)
     if (result.status === 'ok') {
       setItems((current) => {
         const seen = new Set(replace ? [] : current.map((item) => item.id))
-        return [...(replace ? [] : current), ...result.items.filter((item) => !seen.has(item.id))]
+        const fresh = result.items.filter((item) => !seen.has(item.id))
+        // Shuffle each batch on its own, so loading more never reorders cards already shown.
+        if (shuffle) for (let i = fresh.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [fresh[i], fresh[j]] = [fresh[j], fresh[i]] }
+        return [...(replace ? [] : current), ...fresh]
       })
       setPage(nextPage)
     }

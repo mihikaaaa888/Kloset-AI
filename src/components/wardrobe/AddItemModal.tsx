@@ -171,7 +171,7 @@ interface AddItemModalProps {
   editItem?: ClothingItem
   initialTab?: 'upload' | 'browse'
   initialFiles?: File[] | null
-  /** A photo (or several) held two or more pieces: they're cut out and handed over to review together. */
+  /** A photo (or several) held two or more pieces: they're cropped and handed over to review together. */
   onSplitPieces?: (pieces: Array<{ blob: Blob; category?: ClothingCategory; name?: string }>) => void
 }
 
@@ -307,11 +307,11 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
               setImageProcessingStep(`Photo scanning is busy. Trying again in ${seconds}s…`)
             })
             if (detected.length > parsed.garments.length) {
-              // Keep only boxes the on-device clothing outline confirms, cut out
-              // on white. Cloud boxes can land beside the person (a wall, a
+              // Keep only boxes the on-device clothing outline confirms, as
+              // zoomed crops. Cloud boxes can land beside the person (a wall, a
               // mirror); a plain crop of those is never shown.
               const confirmed = (await Promise.all(detected.map(async (piece) => {
-                const blob = await parsed.cutoutForBox(piece.box)
+                const blob = await parsed.cropForBox(piece.box)
                 return blob ? { blob, category: VALID_CATEGORIES.has(piece.category) ? piece.category as ClothingCategory : undefined, name: piece.name } : null
               }))).filter((piece): piece is NonNullable<typeof piece> => !!piece)
               if (confirmed.length > parsed.garments.length) pieces = confirmed
@@ -338,8 +338,8 @@ export function AddItemModal({ open, onClose, onSave, editItem, initialTab = 'up
 
       for (const piece of found) {
         setImageProcessingStep('Saving garment…')
-        // Save and preview the garment cutout so each wardrobe item shows just
-        // the piece. If detection falls back, piece.blob is the original photo.
+        // Save and preview the garment crop so each wardrobe item is framed
+        // around the piece. If detection falls back, piece.blob is the original photo.
         const imageId = await saveImage(piece.blob)
         const url = URL.createObjectURL(piece.blob)
         processed.push({ imageId, previewUrl: url, blob: piece.blob, detectedCategory: piece.category, detectedName: piece.name })

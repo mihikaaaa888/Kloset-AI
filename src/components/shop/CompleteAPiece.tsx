@@ -93,7 +93,7 @@ export function CompleteAPiece({ profile, wardrobe, feedback, initialAnchor }: C
           {COMPLEMENTS[anchor.category]
             .filter((category) => profile?.genderStylePreference !== 'masculine' || category !== 'dresses')
             .map((category) => <LiveGroup key={`${anchor.name}:${category}`} profile={profile} feedback={feedback} anchor={anchor} category={category} budgetRange={budgetRange} added={addedToOutfit} onAdd={addKey} />)}
-          <p className="text-center text-[10px] text-text-muted">Live from stores. Prices and stock are set by each store and may change.</p>
+          <p className="text-center text-xs text-text-muted">Live from stores. Prices and stock are set by each store and may change.</p>
         </div>
       </section>}
     </div>
@@ -199,6 +199,6 @@ function PhotoUploadTile({ onReady }: { onReady: (previewUrl: string, anchor: Pi
     </button>
     <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={(event) => { handleFile(event.target.files?.[0]); event.target.value = '' }} />
     {status === 'error' && <p className="mt-1 text-2xs text-red-700">{error}</p>}
-    {status === 'need-category' && previewUrl && <div className="absolute inset-1 flex flex-col justify-end gap-1 bg-warm-cream/95 p-2"><p className="text-2xs text-text-primary">Choose category</p><div className="flex flex-wrap gap-1">{CATEGORIES.map((category) => <button key={category} onClick={() => onReady(previewUrl, { name: `Your ${CATEGORY_LABELS[category].toLowerCase()}`, category, colours: [], occasions: [], imageUrl: previewUrl })} className="rounded-full border border-text-primary/20 px-2 py-1 text-[9px] text-text-primary">{CATEGORY_LABELS[category]}</button>)}</div></div>}
+    {status === 'need-category' && previewUrl && <div className="absolute inset-1 flex flex-col justify-end gap-1 bg-warm-cream/95 p-2"><p className="text-2xs text-text-primary">Choose category</p><div className="flex flex-wrap gap-1">{CATEGORIES.map((category) => <button key={category} onClick={() => onReady(previewUrl, { name: `Your ${CATEGORY_LABELS[category].toLowerCase()}`, category, colours: [], occasions: [], imageUrl: previewUrl })} className="rounded-full border border-text-primary/20 px-2 py-1 text-2xs text-text-primary">{CATEGORY_LABELS[category]}</button>)}</div></div>}
   </div>
 }
