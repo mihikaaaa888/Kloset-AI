@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, Shirt, Check, Compass, Plus } from 'lucide-react'
 import { HangerIcon } from '@/components/ui/HangerIcon'
@@ -86,6 +86,7 @@ export function StylistPage() {
       const result = await generateOutfit(request, items, profile, currentAttempt, pinnedItem ?? undefined, feedback, avoidItemIds, savedOutfits)
       if (result.suggestion) {
         setSuggestion(result.suggestion)
+        recentLooks.current = [...recentLooks.current, result.suggestion.items.map(({ item }) => item.id)].slice(-LOOKS_TO_REST)
         setTriedBySpot({})
         setSwapNote(null)
         setPageState('result')
@@ -100,7 +101,14 @@ export function StylistPage() {
     }
   }
 
+  // The looks shown since this request started (last few). Try another rests
+  // all of their pieces, not just the ones on screen, so shuffling moves
+  // through the whole Kloset instead of bouncing back to a couple of liked pieces.
+  const recentLooks = useRef<string[][]>([])
+  const LOOKS_TO_REST = 5
+
   const handleFormSubmit = (request: StyleRequest) => {
+    recentLooks.current = []
     setCurrentRequest(request)
     // Give each fresh outfit request its own deterministic rotation seed;
     // Try Another increments from it without resetting to the same first picks.
@@ -174,8 +182,9 @@ export function StylistPage() {
     if (!currentRequest) return
     const next = attempt + 1
     setAttempt(next)
-    // A whole new outfit: the pieces on screen sit out where something else can stand in.
-    runGeneration(currentRequest, next, suggestion?.items.map(({ item }) => item.id) ?? [])
+    // A whole new outfit: pieces from the last few looks sit out where something else can stand in.
+    const resting = [...new Set([...recentLooks.current.flat(), ...(suggestion?.items.map(({ item }) => item.id) ?? [])])]
+    runGeneration(currentRequest, next, resting)
   }
 
   const handleSave = () => {
